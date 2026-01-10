@@ -682,22 +682,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_settings(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
-        self.settings_form = QtWidgets.QFormLayout(wrapper)
+        wrapper_layout = QtWidgets.QVBoxLayout(wrapper)
 
-        self.policy_root_input = QtWidgets.QLineEdit()
-        browse_root = QtWidgets.QPushButton("Browse")
+        form_container = QtWidgets.QWidget(wrapper)
+        self.settings_form = QtWidgets.QFormLayout(form_container)
+
+        self.policy_root_input = QtWidgets.QLineEdit(form_container)
+        browse_root = QtWidgets.QPushButton("Browse", form_container)
         browse_root.clicked.connect(self._browse_policy_root)
         policy_root_row = QtWidgets.QHBoxLayout()
         policy_root_row.addWidget(self.policy_root_input)
         policy_root_row.addWidget(browse_root)
-        policy_root_container = QtWidgets.QWidget()
+        policy_root_container = QtWidgets.QWidget(form_container)
         policy_root_container.setLayout(policy_root_row)
 
-        self.amber_months_input = QtWidgets.QSpinBox()
+        self.amber_months_input = QtWidgets.QSpinBox(form_container)
         self.amber_months_input.setRange(0, 24)
-        self.overdue_days_input = QtWidgets.QSpinBox()
+        self.overdue_days_input = QtWidgets.QSpinBox(form_container)
         self.overdue_days_input.setRange(0, 365)
-        self.max_attachment_input = QtWidgets.QSpinBox()
+        self.max_attachment_input = QtWidgets.QSpinBox(form_container)
         self.max_attachment_input.setRange(0, 500)
 
         self.settings_form.addRow("Policy root folder", policy_root_container)
@@ -705,18 +708,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_form.addRow("Overdue grace days", self.overdue_days_input)
         self.settings_form.addRow("Max attachment MB", self.max_attachment_input)
 
-        access_group = QtWidgets.QGroupBox("Staff Data Source")
+        access_group = QtWidgets.QGroupBox("Staff Data Source", form_container)
         access_layout = QtWidgets.QFormLayout(access_group)
-        self.access_path = QtWidgets.QLineEdit()
-        self.access_mode = QtWidgets.QComboBox()
+        self.access_path = QtWidgets.QLineEdit(access_group)
+        self.access_mode = QtWidgets.QComboBox(access_group)
         self.access_mode.addItems(["table", "query"])
-        self.access_table = QtWidgets.QLineEdit()
-        self.access_query = QtWidgets.QPlainTextEdit()
-        self.access_fields = QtWidgets.QPlainTextEdit()
+        self.access_table = QtWidgets.QLineEdit(access_group)
+        self.access_query = QtWidgets.QPlainTextEdit(access_group)
+        self.access_fields = QtWidgets.QPlainTextEdit(access_group)
         self.access_fields.setPlaceholderText(
             '{"staff_id": "ID", "first_name": "FirstName", "last_name": "LastName", "email": "Email"}'
         )
-        test_button = QtWidgets.QPushButton("Test Connection")
+        test_button = QtWidgets.QPushButton("Test Connection", access_group)
         test_button.clicked.connect(self._test_access)
 
         access_layout.addRow("Access .accdb path", self.access_path)
@@ -728,25 +731,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.settings_form.addRow(access_group)
 
-        save_button = QtWidgets.QPushButton("Save Settings")
+        save_button = QtWidgets.QPushButton("Save Settings", wrapper)
         save_button.clicked.connect(self._save_settings)
 
         backup_row = QtWidgets.QHBoxLayout()
-        open_data = QtWidgets.QPushButton("Open data folder")
+        open_data = QtWidgets.QPushButton("Open data folder", wrapper)
         open_data.clicked.connect(self._open_data_folder)
-        backup = QtWidgets.QPushButton("Backup/Export")
+        backup = QtWidgets.QPushButton("Backup/Export", wrapper)
         backup.clicked.connect(self._backup_export)
         backup_row.addWidget(open_data)
         backup_row.addWidget(backup)
         backup_row.addStretch(1)
 
-        wrapper_layout = QtWidgets.QVBoxLayout()
-        wrapper_layout.addLayout(self.settings_form)
+        wrapper_layout.addWidget(form_container)
         wrapper_layout.addWidget(save_button)
         wrapper_layout.addLayout(backup_row)
-        wrapper_container = QtWidgets.QWidget()
-        wrapper_container.setLayout(wrapper_layout)
-        return wrapper_container
+        return wrapper
 
     def _browse_policy_root(self) -> None:
         directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Policy Root")
