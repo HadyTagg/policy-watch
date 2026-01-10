@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 
 
 @dataclass(frozen=True)
@@ -20,20 +20,14 @@ def _add_months(source: date, months: int) -> date:
 
 def traffic_light_status(
     today: date,
-    review_due_date: date,
     expiry_date: date,
     amber_months: int,
-    overdue_grace_days: int,
 ) -> TrafficResult:
     if today > expiry_date:
         return TrafficResult(status="Red", reason="Expired")
 
-    overdue_threshold = review_due_date + timedelta(days=overdue_grace_days)
-    if today > overdue_threshold:
-        return TrafficResult(status="Red", reason="Review overdue")
-
     amber_threshold = _add_months(today, amber_months)
-    if review_due_date <= amber_threshold:
-        return TrafficResult(status="Amber", reason="Review Needed")
+    if expiry_date <= amber_threshold:
+        return TrafficResult(status="Amber", reason="Review Due")
 
-    return TrafficResult(status="Green", reason="Current")
+    return TrafficResult(status="Green", reason="In Date")
