@@ -298,6 +298,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_expiry.blockSignals(False)
 
         versions = list_versions(self.conn, policy_id)
+        self.version_table.setColumnCount(8)
+        self.version_table.setHorizontalHeaderLabels(
+            ["Current", "Version", "Created", "Status", "Ratified", "File Name", "Size", "Hash"]
+        )
         self.version_table.setRowCount(len(versions))
         for row_index, version in enumerate(versions):
             is_current = policy["current_version_id"] == version["id"]
@@ -309,6 +313,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
             )
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
+            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
                 row_index,
                 2,
@@ -318,8 +324,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index, 4, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
             )
-            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
-            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
                 row_index, 5, QtWidgets.QTableWidgetItem(version["original_filename"])
             )
