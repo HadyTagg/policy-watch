@@ -23,10 +23,27 @@ EMAIL_LOG_FIELDS = [
     "error_text",
 ]
 
+EVENT_LOG_FIELDS = [
+    "occurred_at",
+    "actor",
+    "action",
+    "entity_type",
+    "entity_id",
+    "details",
+]
+
 
 def _canonical_row_content(row: dict) -> str:
     parts = []
     for field in EMAIL_LOG_FIELDS:
+        value = row.get(field, "")
+        parts.append(str(value) if value is not None else "")
+    return "|".join(parts)
+
+
+def _canonical_event_content(row: dict) -> str:
+    parts = []
+    for field in EVENT_LOG_FIELDS:
         value = row.get(field, "")
         parts.append(str(value) if value is not None else "")
     return "|".join(parts)
@@ -39,6 +56,13 @@ def _hash_chain(prev_hash: str, row_content: str) -> str:
 
 def get_latest_hash(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT latest_row_hash FROM audit_state WHERE singleton_id = 1").fetchone()
+    if row:
+        return row["latest_row_hash"]
+    return ""
+
+
+def get_latest_event_hash(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT latest_row_hash FROM audit_event_state WHERE singleton_id = 1").fetchone()
     if row:
         return row["latest_row_hash"]
     return ""
@@ -64,6 +88,26 @@ def append_email_log(conn: sqlite3.Connection, row: dict) -> None:
     )
 
 
+def append_event_log(conn: sqlite3.Connection, row: dict) -> None:
+    prev_hash = get_latest_event_hash(conn)
+    row_content = _canonical_event_content(row)
+    row_hash = _hash_chain(prev_hash, row_content)
+
+    fields = EVENT_LOG_FIELDS + ["prev_row_hash", "row_hash"]
+    values = [row.get(field) for field in EVENT_LOG_FIELDS] + [prev_hash, row_hash]
+
+    placeholders = ", ".join(["?"] * len(fields))
+    conn.execute(
+        f"INSERT INTO audit_events ({', '.join(fields)}) VALUES ({placeholders})",
+        values,
+    )
+    conn.execute(
+        "INSERT INTO audit_event_state (singleton_id, latest_row_hash) VALUES (1, ?) "
+        "ON CONFLICT(singleton_id) DO UPDATE SET latest_row_hash = excluded.latest_row_hash",
+        (row_hash,),
+    )
+
+
 def verify_audit_log(conn: sqlite3.Connection) -> tuple[bool, str]:
     rows = conn.execute(
         "SELECT * FROM email_log ORDER BY id"
@@ -77,6 +121,24 @@ def verify_audit_log(conn: sqlite3.Connection) -> tuple[bool, str]:
             return False, f"Hash mismatch at id {row_dict['id']}"
         prev_hash = row_dict["row_hash"]
     latest_hash = get_latest_hash(conn)
+    if rows and latest_hash != rows[-1]["row_hash"]:
+        return False, "Latest hash mismatch"
+    return True, "Audit log verified"
+
+
+def verify_event_log(conn: sqlite3.Connection) -> tuple[bool, str]:
+    rows = conn.execute(
+        "SELECT * FROM audit_events ORDER BY id"
+    ).fetchall()
+    prev_hash = ""
+    for row in rows:
+        row_dict = dict(row)
+        row_content = _canonical_event_content(row_dict)
+        expected_hash = _hash_chain(prev_hash, row_content)
+        if row_dict["row_hash"] != expected_hash:
+            return False, f"Hash mismatch at id {row_dict['id']}"
+        prev_hash = row_dict["row_hash"]
+    latest_hash = get_latest_event_hash(conn)
     if rows and latest_hash != rows[-1]["row_hash"]:
         return False, "Latest hash mismatch"
     return True, "Audit log verified"

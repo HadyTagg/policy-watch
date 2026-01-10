@@ -104,7 +104,24 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 row_hash TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                occurred_at TEXT NOT NULL,
+                actor TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                prev_row_hash TEXT NOT NULL,
+                row_hash TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS audit_state (
+                singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+                latest_row_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_event_state (
                 singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
                 latest_row_hash TEXT NOT NULL
             );
@@ -119,6 +136,18 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             BEFORE DELETE ON email_log
             BEGIN
                 SELECT RAISE(ABORT, 'email_log is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS audit_events_no_update
+            BEFORE UPDATE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS audit_events_no_delete
+            BEFORE DELETE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events is append-only');
             END;
             """
         )
