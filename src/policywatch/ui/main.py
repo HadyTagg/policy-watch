@@ -17,6 +17,7 @@ from policywatch.services import (
     list_categories,
     list_policies,
     list_versions,
+    mark_version_ratified,
     parse_mapping_json,
     set_current_version,
 )
@@ -277,11 +278,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selection:
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        self.conn.execute(
-            "UPDATE policy_versions SET ratified = 1, ratified_at = ?, ratified_by_user_id = NULL WHERE id = ?",
-            (datetime.utcnow().isoformat(), version_id),
-        )
-        self.conn.commit()
+        mark_version_ratified(self.conn, version_id, None)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._refresh_policies()
@@ -319,6 +316,21 @@ class MainWindow(QtWidgets.QMainWindow):
             (value, self.current_policy_id),
         )
         self.conn.commit()
+        try:
+            actor = os.getlogin()
+        except OSError:
+            actor = None
+        audit.append_event_log(
+            self.conn,
+            {
+                "occurred_at": datetime.utcnow().isoformat(),
+                "actor": actor,
+                "action": "update_policy_field",
+                "entity_type": "policy",
+                "entity_id": self.current_policy_id,
+                "details": f"{field}={value}",
+            },
+        )
         self._refresh_policies()
 
     def _on_status_changed(self, status: str) -> None:

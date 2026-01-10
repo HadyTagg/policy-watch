@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from policywatch import audit
 from policywatch import config
 from policywatch.policies import build_policy_path, next_version_number, slugify
 from policywatch.traffic import traffic_light_status
@@ -20,6 +21,33 @@ def _resolve_london_tz() -> datetime.tzinfo:
 
 
 LONDON_TZ = _resolve_london_tz()
+
+
+def _resolve_actor() -> str | None:
+    try:
+        return os.getlogin()
+    except OSError:
+        return None
+
+
+def _log_event(
+    conn,
+    action: str,
+    entity_type: str,
+    entity_id: int | None,
+    details: str | None = None,
+) -> None:
+    audit.append_event_log(
+        conn,
+        {
+            "occurred_at": datetime.datetime.utcnow().isoformat(),
+            "actor": _resolve_actor(),
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "details": details,
+        },
+    )
 
 
 @dataclass(frozen=True)
@@ -126,6 +154,7 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
         ),
     )
     conn.commit()
+    _log_event(conn, "create_policy", "policy", cursor.lastrowid, f"title={title}")
     return cursor.lastrowid
 
 
@@ -198,6 +227,13 @@ def add_policy_version(
         ),
     )
     conn.commit()
+    _log_event(
+        conn,
+        "add_policy_version",
+        "policy_version",
+        cursor.lastrowid,
+        f"policy_id={policy_id} version={version_number}",
+    )
     current_version_id = conn.execute(
         "SELECT current_version_id FROM policies WHERE id = ?",
         (policy_id,),
@@ -214,6 +250,7 @@ def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
         (ratified_at, user_id, version_id),
     )
     conn.commit()
+    _log_event(conn, "ratify_version", "policy_version", version_id, None)
 
 
 def set_current_version(conn, policy_id: int, version_id: int) -> None:
@@ -222,6 +259,7 @@ def set_current_version(conn, policy_id: int, version_id: int) -> None:
         (version_id, policy_id),
     )
     conn.commit()
+    _log_event(conn, "set_current_version", "policy", policy_id, f"version_id={version_id}")
 
 
 def get_version_file(conn, version_id: int) -> str:
@@ -238,13 +276,15 @@ def list_categories(conn) -> list[str]:
 
 def create_category(conn, name: str) -> None:
     created_at = datetime.datetime.utcnow().isoformat()
-    conn.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (name, created_at))
+    cursor = conn.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (name, created_at))
     conn.commit()
+    _log_event(conn, "create_category", "category", cursor.lastrowid, f"name={name}")
 
 
 def delete_category(conn, category_id: int) -> None:
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
+    _log_event(conn, "delete_category", "category", category_id, None)
 
 
 def export_backup(conn, destination: Path, include_files: bool) -> None:

@@ -23,10 +23,27 @@ EMAIL_LOG_FIELDS = [
     "error_text",
 ]
 
+EVENT_LOG_FIELDS = [
+    "occurred_at",
+    "actor",
+    "action",
+    "entity_type",
+    "entity_id",
+    "details",
+]
+
 
 def _canonical_row_content(row: dict) -> str:
     parts = []
     for field in EMAIL_LOG_FIELDS:
+        value = row.get(field, "")
+        parts.append(str(value) if value is not None else "")
+    return "|".join(parts)
+
+
+def _canonical_event_content(row: dict) -> str:
+    parts = []
+    for field in EVENT_LOG_FIELDS:
         value = row.get(field, "")
         parts.append(str(value) if value is not None else "")
     return "|".join(parts)
@@ -39,6 +56,13 @@ def _hash_chain(prev_hash: str, row_content: str) -> str:
 
 def get_latest_hash(conn: sqlite3.Connection) -> str:
     row = conn.execute("SELECT latest_row_hash FROM audit_state WHERE singleton_id = 1").fetchone()
+    if row:
+        return row["latest_row_hash"]
+    return ""
+
+
+def get_latest_event_hash(conn: sqlite3.Connection) -> str:
+    row = conn.execute("SELECT latest_row_hash FROM audit_event_state WHERE singleton_id = 1").fetchone()
     if row:
         return row["latest_row_hash"]
     return ""
@@ -59,6 +83,26 @@ def append_email_log(conn: sqlite3.Connection, row: dict) -> None:
     )
     conn.execute(
         "INSERT INTO audit_state (singleton_id, latest_row_hash) VALUES (1, ?) "
+        "ON CONFLICT(singleton_id) DO UPDATE SET latest_row_hash = excluded.latest_row_hash",
+        (row_hash,),
+    )
+
+
+def append_event_log(conn: sqlite3.Connection, row: dict) -> None:
+    prev_hash = get_latest_event_hash(conn)
+    row_content = _canonical_event_content(row)
+    row_hash = _hash_chain(prev_hash, row_content)
+
+    fields = EVENT_LOG_FIELDS + ["prev_row_hash", "row_hash"]
+    values = [row.get(field) for field in EVENT_LOG_FIELDS] + [prev_hash, row_hash]
+
+    placeholders = ", ".join(["?"] * len(fields))
+    conn.execute(
+        f"INSERT INTO audit_events ({', '.join(fields)}) VALUES ({placeholders})",
+        values,
+    )
+    conn.execute(
+        "INSERT INTO audit_event_state (singleton_id, latest_row_hash) VALUES (1, ?) "
         "ON CONFLICT(singleton_id) DO UPDATE SET latest_row_hash = excluded.latest_row_hash",
         (row_hash,),
     )
