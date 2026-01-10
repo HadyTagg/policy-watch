@@ -99,12 +99,14 @@ class PolicyDialog(QtWidgets.QDialog):
 
         self.effective_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.effective_date.setCalendarPopup(True)
-        self.review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
-        self.review_due_date.setCalendarPopup(True)
+        self.effective_date.setDisplayFormat("dd/MM/yyyy")
+        self.review_frequency = QtWidgets.QSpinBox()
+        self.review_frequency.setRange(1, 36)
+        self.review_frequency.setValue(12)
         self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.expiry_date.setCalendarPopup(True)
+        self.expiry_date.setDisplayFormat("dd/MM/yyyy")
 
-        self.owner_input = QtWidgets.QLineEdit()
         self.notes_input = QtWidgets.QPlainTextEdit()
         self.file_path_input = QtWidgets.QLineEdit()
         self.file_path_input.setReadOnly(True)
@@ -121,9 +123,8 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Category", self.category_combo)
         form.addRow("Status", self.status_combo)
         form.addRow("Effective Date", self.effective_date)
-        form.addRow("Review Due", self.review_due_date)
+        form.addRow("Review Frequency (Months)", self.review_frequency)
         form.addRow("Expiry", self.expiry_date)
-        form.addRow("Owner", self.owner_input)
         form.addRow("Notes", self.notes_input)
         form.addRow("Policy File", file_container)
 
@@ -172,13 +173,28 @@ class PolicyDialog(QtWidgets.QDialog):
             category=category,
             status=self.status_combo.currentText(),
             effective=self.effective_date.date().toString("yyyy-MM-dd"),
-            review_due=self.review_due_date.date().toString("yyyy-MM-dd"),
+            review_due=str(self.review_frequency.value()),
             expiry=self.expiry_date.date().toString("yyyy-MM-dd"),
-            owner=self.owner_input.text().strip() or None,
             notes=self.notes_input.toPlainText().strip() or None,
             created_by_user_id=None,
         )
-        add_policy_version(self.conn, policy_id, Path(file_path), None)
+        try:
+            add_policy_version(
+                self.conn,
+                policy_id,
+                Path(file_path),
+                None,
+                {
+                    "status": self.status_combo.currentText(),
+                    "effective_date": self.effective_date.date().toString("yyyy-MM-dd"),
+                    "review_frequency_months": self.review_frequency.value(),
+                    "expiry_date": self.expiry_date.date().toString("yyyy-MM-dd"),
+                    "notes": self.notes_input.toPlainText().strip() or None,
+                },
+            )
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
+            return
         self.on_saved()
         self.accept()
 
