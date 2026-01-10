@@ -461,7 +461,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         color_map = {
             "Green": QtGui.QColor("#d7f5dd"),
-            "Amber": QtGui.QColor("#fff3cd"),
+            "Amber": QtGui.QColor("#ffec99"),
             "Red": QtGui.QColor("#f8d7da"),
         }
         color = color_map.get(status)
@@ -474,6 +474,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 item.setBackground(color)
                 item.setForeground(text_color)
                 item.setToolTip(reason)
+            else:
+                item.setBackground(QtGui.QColor("#dbeafe"))
+                item.setForeground(text_color)
 
     def _update_policy_field(self, field: str, value: str) -> None:
         if not self.current_policy_id:
@@ -628,7 +631,7 @@ class MainWindow(QtWidgets.QMainWindow):
         expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         expiry_date.setCalendarPopup(True)
         expiry_date.setDisplayFormat("dd/MM/yyyy")
-        expiry_date.setEnabled(False)
+        expiry_date.setEnabled(True)
         notes_input = QtWidgets.QPlainTextEdit()
 
         form.addRow("Status", status_combo)
@@ -651,7 +654,8 @@ class MainWindow(QtWidgets.QMainWindow):
         def update_expiry_date() -> None:
             if not effective_date.isEnabled():
                 return
-            expiry_date.setDate(effective_date.date().addMonths(review_frequency.value()))
+            if expiry_date.isEnabled():
+                expiry_date.setDate(effective_date.date().addMonths(review_frequency.value()))
 
         def update_metadata_state(status: str) -> None:
             is_draft = status == "Draft"
@@ -678,7 +682,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     review_frequency.setValue(12)
                 if effective_date.date() == min_date:
                     effective_date.setDate(QtCore.QDate.currentDate())
-                expiry_date.setEnabled(False)
+                expiry_date.setEnabled(True)
                 effective_date.setSpecialValueText("")
                 expiry_date.setSpecialValueText("")
                 review_frequency.setSpecialValueText("")

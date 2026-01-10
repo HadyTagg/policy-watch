@@ -109,7 +109,7 @@ class PolicyDialog(QtWidgets.QDialog):
         self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.expiry_date.setCalendarPopup(True)
         self.expiry_date.setDisplayFormat("dd/MM/yyyy")
-        self.expiry_date.setEnabled(False)
+        self.expiry_date.setEnabled(True)
 
         self.notes_input = QtWidgets.QPlainTextEdit()
         self.file_path_input = QtWidgets.QLineEdit()
@@ -211,7 +211,8 @@ class PolicyDialog(QtWidgets.QDialog):
     def _update_expiry_date(self) -> None:
         if not self.effective_date.isEnabled():
             return
-        self.expiry_date.setDate(self.effective_date.date().addMonths(self.review_frequency.value()))
+        if self.expiry_date.isEnabled():
+            self.expiry_date.setDate(self.effective_date.date().addMonths(self.review_frequency.value()))
 
     def _update_metadata_state(self, status: str) -> None:
         is_draft = status == "Draft"
@@ -238,7 +239,7 @@ class PolicyDialog(QtWidgets.QDialog):
                 self.review_frequency.setValue(12)
             if self.effective_date.date() == min_date:
                 self.effective_date.setDate(QtCore.QDate.currentDate())
-            self.expiry_date.setEnabled(False)
+            self.expiry_date.setEnabled(True)
             self.effective_date.setSpecialValueText("")
             self.expiry_date.setSpecialValueText("")
             self.review_frequency.setSpecialValueText("")

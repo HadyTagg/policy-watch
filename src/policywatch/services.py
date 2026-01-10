@@ -158,7 +158,6 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
     slug = slugify(title)
     review_frequency = int(review_due)
     review_due_date = _review_due_date(effective, review_frequency)
-    expiry = review_due_date
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -247,7 +246,6 @@ def add_policy_version(
         (metadata or {}).get("review_frequency_months") or policy_row["review_frequency_months"] or 1
     )
     review_due_date = _review_due_date(effective_date, review_frequency)
-    expiry_date = review_due_date
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
@@ -270,7 +268,7 @@ def add_policy_version(
             effective_date,
             review_due_date,
             review_frequency,
-            (metadata or {}).get("expiry_date") or expiry_date,
+            (metadata or {}).get("expiry_date") or policy_row["expiry_date"],
             (metadata or {}).get("notes") or policy_row["notes"],
         ),
     )
