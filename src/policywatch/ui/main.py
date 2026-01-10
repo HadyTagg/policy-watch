@@ -319,12 +319,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "Red": QtGui.QColor("#f8d7da"),
         }
         color = color_map.get(status)
+        text_color = QtGui.QColor("#1f1f1f")
         for column in range(self.table.columnCount()):
             item = self.table.item(row_index, column)
             if not item:
                 continue
             if color:
                 item.setBackground(color)
+                item.setForeground(text_color)
                 item.setToolTip(reason)
 
     def _update_policy_field(self, field: str, value: str) -> None:
