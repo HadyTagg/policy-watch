@@ -415,6 +415,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "Not Ratified", "Version must be ratified first.")
             return
         set_current_version(self.conn, self.current_policy_id, version_id)
+        self._load_policy_detail(self.current_policy_id)
         self._refresh_policies()
         self._load_audit_log()
         self._load_send_policies()
@@ -747,6 +748,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.policy_send_table.itemChanged.connect(self._recalculate_attachments)
+        self.policy_send_table.itemClicked.connect(self._recalculate_attachments)
         policy_layout.addWidget(self.policy_send_table)
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
@@ -798,7 +800,10 @@ class MainWindow(QtWidgets.QMainWindow):
         for row_index, row in enumerate(rows):
             checkbox = QtWidgets.QTableWidgetItem()
             checkbox.setFlags(
-                QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+                QtCore.Qt.ItemIsUserCheckable
+                | QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsEditable
             )
             checkbox.setCheckState(QtCore.Qt.Unchecked)
             self.policy_send_table.setItem(row_index, 0, checkbox)
