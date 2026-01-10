@@ -235,6 +235,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = CategoryManagerDialog(self.conn, _refresh_categories_and_audit, self)
         dialog.exec()
         self._refresh_policies()
+        self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
     def _open_new_policy(self) -> None:
@@ -573,6 +574,7 @@ class MainWindow(QtWidgets.QMainWindow):
             },
         )
         self._refresh_policies()
+        self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
     def _format_file_size(self, size_bytes: int) -> str:
@@ -621,7 +623,7 @@ class MainWindow(QtWidgets.QMainWindow):
         effective_date.setCalendarPopup(True)
         effective_date.setDisplayFormat("dd/MM/yyyy")
         review_frequency = QtWidgets.QSpinBox()
-        review_frequency.setRange(1, 36)
+        review_frequency.setRange(0, 36)
         review_frequency.setValue(12)
         expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         expiry_date.setCalendarPopup(True)
@@ -664,12 +666,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 expiry_date.setSpecialValueText("")
                 effective_date.setDate(min_date)
                 expiry_date.setDate(min_date)
+                review_frequency.setSpecialValueText("")
+                review_frequency.setValue(0)
+                effective_date.setDisplayFormat(" ")
+                expiry_date.setDisplayFormat(" ")
             else:
                 effective_date.setEnabled(True)
                 review_frequency.setEnabled(True)
+                review_frequency.setMinimum(1)
+                if review_frequency.value() == 0:
+                    review_frequency.setValue(12)
                 expiry_date.setEnabled(False)
                 effective_date.setSpecialValueText("")
                 expiry_date.setSpecialValueText("")
+                review_frequency.setSpecialValueText("")
+                effective_date.setDisplayFormat("dd/MM/yyyy")
+                expiry_date.setDisplayFormat("dd/MM/yyyy")
                 update_expiry_date()
 
         effective_date.dateChanged.connect(update_expiry_date)
