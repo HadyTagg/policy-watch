@@ -72,10 +72,10 @@ class PolicyRow:
     id: int
     title: str
     category: str
-    status: str
+    status: str | None
     ratified: bool
-    review_due_date: str
-    expiry_date: str
+    review_due_date: str | None
+    expiry_date: str | None
     current_version_id: int | None
     current_version_number: int | None
     traffic_status: str
@@ -94,10 +94,10 @@ def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
         SELECT p.id, p.title, p.category,
-               COALESCE(v.status, p.status) AS status,
-               COALESCE(v.ratified, 0) AS ratified,
-               COALESCE(v.review_due_date, p.review_due_date) AS review_due_date,
-               COALESCE(v.expiry_date, p.expiry_date) AS expiry_date,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
+               CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.expiry_date END AS expiry_date,
                p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
@@ -112,9 +112,14 @@ def list_policies(conn) -> list[PolicyRow]:
     overdue_days = int(config.get_setting(conn, "overdue_grace_days", 0) or 0)
 
     for row in rows:
-        review_due = datetime.date.fromisoformat(row["review_due_date"])
-        expiry = datetime.date.fromisoformat(row["expiry_date"])
-        traffic = traffic_light_status(today, review_due, expiry, amber_months, overdue_days)
+        traffic_status = ""
+        traffic_reason = ""
+        if row["review_due_date"] and row["expiry_date"]:
+            review_due = datetime.date.fromisoformat(row["review_due_date"])
+            expiry = datetime.date.fromisoformat(row["expiry_date"])
+            traffic = traffic_light_status(today, review_due, expiry, amber_months, overdue_days)
+            traffic_status = traffic.status
+            traffic_reason = traffic.reason
         policies.append(
             PolicyRow(
                 id=row["id"],
@@ -126,8 +131,8 @@ def list_policies(conn) -> list[PolicyRow]:
                 expiry_date=row["expiry_date"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
-                traffic_status=traffic.status,
-                traffic_reason=traffic.reason,
+                traffic_status=traffic_status,
+                traffic_reason=traffic_reason,
             )
         )
     return policies

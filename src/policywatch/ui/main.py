@@ -121,7 +121,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(dashboard, "Dashboard")
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
-        self.tabs.addTab(email_compose, "Compose Email")
+        self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
         self.tabs.addTab(audit_log, "Audit Log")
         self.tabs.addTab(settings, "Settings")
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -179,13 +179,20 @@ class MainWindow(QtWidgets.QMainWindow):
         for row_index, policy in enumerate(filtered):
             title_item = QtWidgets.QTableWidgetItem(policy.title)
             category_item = QtWidgets.QTableWidgetItem(policy.category)
-            status_item = QtWidgets.QTableWidgetItem(policy.status)
-            ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
-            current_version_item = QtWidgets.QTableWidgetItem(
-                str(policy.current_version_number) if policy.current_version_number else ""
-            )
-            review_due_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.review_due_date))
-            expiry_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.expiry_date))
+            if policy.current_version_id:
+                status_item = QtWidgets.QTableWidgetItem(policy.status or "")
+                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
+                current_version_item = QtWidgets.QTableWidgetItem(
+                    str(policy.current_version_number) if policy.current_version_number else ""
+                )
+                review_due_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.review_due_date))
+                expiry_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.expiry_date))
+            else:
+                status_item = QtWidgets.QTableWidgetItem("")
+                ratified_item = QtWidgets.QTableWidgetItem("")
+                current_version_item = QtWidgets.QTableWidgetItem("")
+                review_due_item = QtWidgets.QTableWidgetItem("")
+                expiry_item = QtWidgets.QTableWidgetItem("")
             items = [
                 title_item,
                 category_item,
@@ -197,7 +204,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
             for column, item in enumerate(items):
                 self.table.setItem(row_index, column, item)
-            self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
+            if policy.current_version_id:
+                self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -216,6 +224,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tabs.setCurrentIndex(0)
             self.tabs.blockSignals(False)
             QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+        if index == self.policy_distributor_index:
+            self._load_send_policies()
 
     def _open_categories(self) -> None:
         def _refresh_categories_and_audit() -> None:
@@ -338,6 +348,15 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
+        if (
+            QtWidgets.QMessageBox.question(
+                self,
+                "Confirm",
+                "Mark selected version as ratified?",
+            )
+            != QtWidgets.QMessageBox.Yes
+        ):
+            return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         mark_version_ratified(self.conn, version_id, None)
         if self.current_policy_id:
@@ -348,6 +367,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def _mark_unratified(self) -> None:
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
+            return
+        if (
+            QtWidgets.QMessageBox.question(
+                self,
+                "Confirm",
+                "Mark selected version as not ratified?",
+            )
+            != QtWidgets.QMessageBox.Yes
+        ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         unmark_version_ratified(self.conn, version_id)
@@ -362,6 +390,15 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
+        if (
+            QtWidgets.QMessageBox.question(
+                self,
+                "Confirm",
+                "Set selected version as current?",
+            )
+            != QtWidgets.QMessageBox.Yes
+        ):
+            return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         ratified = self.conn.execute(
             "SELECT ratified FROM policy_versions WHERE id = ?",
@@ -373,6 +410,7 @@ class MainWindow(QtWidgets.QMainWindow):
         set_current_version(self.conn, self.current_policy_id, version_id)
         self._refresh_policies()
         self._load_audit_log()
+        self._load_send_policies()
 
     def _open_file_location(self) -> None:
         selection = self.version_table.selectionModel().selectedRows()
@@ -678,7 +716,7 @@ class MainWindow(QtWidgets.QMainWindow):
         set_current_button.clicked.connect(self._set_current)
         open_location_button = QtWidgets.QPushButton("Open File Location")
         open_location_button.clicked.connect(self._open_file_location)
-        button_row.addWidget(QtWidgets.QPushButton("Upload New Version", clicked=self._upload_version))
+        button_row.addWidget(QtWidgets.QPushButton("Add Version", clicked=self._upload_version))
         button_row.addWidget(ratify_button)
         button_row.addWidget(unratify_button)
         button_row.addWidget(set_current_button)
@@ -703,9 +741,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.policy_send_table.itemChanged.connect(self._recalculate_attachments)
         policy_layout.addWidget(self.policy_send_table)
-        reload_policies = QtWidgets.QPushButton("Reload Policies")
-        reload_policies.clicked.connect(self._load_send_policies)
-        policy_layout.addWidget(reload_policies)
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
         recipient_layout = QtWidgets.QVBoxLayout(recipient_group)
