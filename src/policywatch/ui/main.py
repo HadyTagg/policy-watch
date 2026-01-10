@@ -626,6 +626,7 @@ class MainWindow(QtWidgets.QMainWindow):
         expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         expiry_date.setCalendarPopup(True)
         expiry_date.setDisplayFormat("dd/MM/yyyy")
+        expiry_date.setEnabled(False)
         notes_input = QtWidgets.QPlainTextEdit()
 
         form.addRow("Status", status_combo)
@@ -644,6 +645,37 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(save_button)
         button_row.addWidget(cancel_button)
         layout.addLayout(button_row)
+
+        def update_expiry_date() -> None:
+            if not effective_date.isEnabled():
+                return
+            expiry_date.setDate(effective_date.date().addMonths(review_frequency.value()))
+
+        def update_metadata_state(status: str) -> None:
+            is_draft = status == "Draft"
+            min_date = QtCore.QDate(1900, 1, 1)
+            effective_date.setMinimumDate(min_date)
+            expiry_date.setMinimumDate(min_date)
+            if is_draft:
+                effective_date.setEnabled(False)
+                review_frequency.setEnabled(False)
+                expiry_date.setEnabled(False)
+                effective_date.setSpecialValueText("")
+                expiry_date.setSpecialValueText("")
+                effective_date.setDate(min_date)
+                expiry_date.setDate(min_date)
+            else:
+                effective_date.setEnabled(True)
+                review_frequency.setEnabled(True)
+                expiry_date.setEnabled(False)
+                effective_date.setSpecialValueText("")
+                expiry_date.setSpecialValueText("")
+                update_expiry_date()
+
+        effective_date.dateChanged.connect(update_expiry_date)
+        review_frequency.valueChanged.connect(update_expiry_date)
+        status_combo.currentTextChanged.connect(update_metadata_state)
+        update_metadata_state(status_combo.currentText())
 
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return None

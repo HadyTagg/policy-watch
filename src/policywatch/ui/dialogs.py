@@ -96,16 +96,20 @@ class PolicyDialog(QtWidgets.QDialog):
         self.category_combo.setEditable(False)
         self.status_combo = QtWidgets.QComboBox()
         self.status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        self.status_combo.currentTextChanged.connect(self._update_metadata_state)
 
         self.effective_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.effective_date.setCalendarPopup(True)
         self.effective_date.setDisplayFormat("dd/MM/yyyy")
+        self.effective_date.dateChanged.connect(self._update_expiry_date)
         self.review_frequency = QtWidgets.QSpinBox()
         self.review_frequency.setRange(1, 36)
         self.review_frequency.setValue(12)
+        self.review_frequency.valueChanged.connect(self._update_expiry_date)
         self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.expiry_date.setCalendarPopup(True)
         self.expiry_date.setDisplayFormat("dd/MM/yyyy")
+        self.expiry_date.setEnabled(False)
 
         self.notes_input = QtWidgets.QPlainTextEdit()
         self.file_path_input = QtWidgets.QLineEdit()
@@ -143,6 +147,7 @@ class PolicyDialog(QtWidgets.QDialog):
         layout.addLayout(button_row)
 
         self._load_categories()
+        self._update_metadata_state(self.status_combo.currentText())
 
     def _load_categories(self) -> None:
         rows = self.conn.execute("SELECT name FROM categories ORDER BY name").fetchall()
@@ -202,3 +207,29 @@ class PolicyDialog(QtWidgets.QDialog):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy Document")
         if file_path:
             self.file_path_input.setText(file_path)
+
+    def _update_expiry_date(self) -> None:
+        if not self.effective_date.isEnabled():
+            return
+        self.expiry_date.setDate(self.effective_date.date().addMonths(self.review_frequency.value()))
+
+    def _update_metadata_state(self, status: str) -> None:
+        is_draft = status == "Draft"
+        min_date = QtCore.QDate(1900, 1, 1)
+        self.effective_date.setMinimumDate(min_date)
+        self.expiry_date.setMinimumDate(min_date)
+        if is_draft:
+            self.effective_date.setEnabled(False)
+            self.review_frequency.setEnabled(False)
+            self.expiry_date.setEnabled(False)
+            self.effective_date.setSpecialValueText("")
+            self.expiry_date.setSpecialValueText("")
+            self.effective_date.setDate(min_date)
+            self.expiry_date.setDate(min_date)
+        else:
+            self.effective_date.setEnabled(True)
+            self.review_frequency.setEnabled(True)
+            self.expiry_date.setEnabled(False)
+            self.effective_date.setSpecialValueText("")
+            self.expiry_date.setSpecialValueText("")
+            self._update_expiry_date()
