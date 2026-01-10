@@ -33,6 +33,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._selected_row: int | None = None
+        self._selected_version_row: int | None = None
 
         self.setWindowTitle("Policy Watch")
 
@@ -46,6 +47,14 @@ class MainWindow(QtWidgets.QMainWindow):
         manage_categories_action = QtGui.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
+
+        toolbar.addSeparator()
+        spacer = QtWidgets.QWidget()
+        spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+        toolbar.addWidget(spacer)
+        settings_action = QtGui.QAction("Settings", self)
+        settings_action.triggered.connect(self._open_settings)
+        toolbar.addAction(settings_action)
 
         header = QtWidgets.QLabel(f"Welcome, {username}.")
         header.setStyleSheet("font-size: 16px; font-weight: 600;")
@@ -125,7 +134,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
         self.tabs.addTab(audit_log, "Audit Log")
-        self.tabs.addTab(settings, "Settings")
+        self.settings_index = self.tabs.addTab(settings, "Settings")
+        self.tabs.tabBar().setTabVisible(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         container = QtWidgets.QWidget()
@@ -221,6 +231,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_policy_detail(policy_id)
         self._highlight_selected_row(selected[0].row())
 
+    def _open_settings(self) -> None:
+        self.tabs.setCurrentIndex(self.settings_index)
+
     def _highlight_selected_row(self, row_index: int) -> None:
         if self._selected_row is not None and self._selected_row != row_index:
             self._set_row_bold(self._selected_row, False)
@@ -236,14 +249,20 @@ class MainWindow(QtWidgets.QMainWindow):
             font.setBold(enabled)
             item.setFont(font)
 
-    def _on_tab_changed(self, index: int) -> None:
-        if index == self.policy_detail_index and not self.current_policy_id:
-            self.tabs.blockSignals(True)
-            self.tabs.setCurrentIndex(0)
-            self.tabs.blockSignals(False)
-            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
-        if index == self.policy_distributor_index:
-            self._load_send_policies()
+    def _highlight_version_row(self, row_index: int) -> None:
+        if self._selected_version_row is not None and self._selected_version_row != row_index:
+            self._set_version_row_bold(self._selected_version_row, False)
+        self._selected_version_row = row_index
+        self._set_version_row_bold(row_index, True)
+
+    def _set_version_row_bold(self, row_index: int, enabled: bool) -> None:
+        for column in range(self.version_table.columnCount()):
+            item = self.version_table.item(row_index, column)
+            if not item:
+                continue
+            font = item.font()
+            font.setBold(enabled)
+            item.setFont(font)
 
     def _on_tab_changed(self, index: int) -> None:
         if index == self.policy_detail_index and not self.current_policy_id:
@@ -285,6 +304,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
+        self._selected_version_row = None
         version = None
         if policy["current_version_id"]:
             version = self.conn.execute(
@@ -327,8 +347,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
             )
-            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
-            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
                 row_index,
                 2,
@@ -473,6 +491,7 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
+        self._highlight_version_row(selection[0].row())
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
