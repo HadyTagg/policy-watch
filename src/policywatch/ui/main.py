@@ -81,13 +81,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table = QtWidgets.QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
             [
-                "Title",
                 "Category",
+                "Title",
                 "Status",
-                "Ratified",
                 "Current Version",
                 "Review Due",
                 "Expiry",
+                "Ratified",
             ]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -177,35 +177,37 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.table.setRowCount(len(filtered))
         for row_index, policy in enumerate(filtered):
-            title_item = QtWidgets.QTableWidgetItem(policy.title)
             category_item = QtWidgets.QTableWidgetItem(policy.category)
+            title_item = QtWidgets.QTableWidgetItem(policy.title)
             if policy.current_version_id:
                 status_item = QtWidgets.QTableWidgetItem(policy.status or "")
-                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
                 review_due_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.review_due_date))
                 expiry_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.expiry_date))
+                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
             else:
                 status_item = QtWidgets.QTableWidgetItem("")
-                ratified_item = QtWidgets.QTableWidgetItem("")
                 current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
                 expiry_item = QtWidgets.QTableWidgetItem("")
+                ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
-                title_item,
                 category_item,
+                title_item,
                 status_item,
-                ratified_item,
                 current_version_item,
                 review_due_item,
                 expiry_item,
+                ratified_item,
             ]
             for column, item in enumerate(items):
                 self.table.setItem(row_index, column, item)
             if policy.current_version_id:
                 self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
+            else:
+                self._apply_no_current_row_color(row_index)
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -313,18 +315,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QTableWidgetItem(self._format_datetime_display(version["created_at"])),
             )
             self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
+            self.version_table.setItem(
+                row_index, 4, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
+            )
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
             self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
-                row_index, 5, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
-            )
-            self.version_table.setItem(
-                row_index, 6, QtWidgets.QTableWidgetItem(version["original_filename"])
+                row_index, 5, QtWidgets.QTableWidgetItem(version["original_filename"])
             )
             self.version_table.setItem(
                 row_index,
-                7,
+                6,
                 QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
+            self.version_table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
             for row_index in range(self.version_table.rowCount()):
@@ -474,9 +478,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 item.setBackground(color)
                 item.setForeground(text_color)
                 item.setToolTip(reason)
-            else:
-                item.setBackground(QtGui.QColor("#dbeafe"))
-                item.setForeground(text_color)
+
+    def _apply_no_current_row_color(self, row_index: int) -> None:
+        text_color = QtGui.QColor("#1f1f1f")
+        for column in range(self.table.columnCount()):
+            item = self.table.item(row_index, column)
+            if not item:
+                continue
+            item.setBackground(QtGui.QColor("#dbeafe"))
+            item.setForeground(text_color)
 
     def _update_policy_field(self, field: str, value: str) -> None:
         if not self.current_policy_id:
@@ -725,7 +735,7 @@ class MainWindow(QtWidgets.QMainWindow):
         versions_layout = QtWidgets.QVBoxLayout(versions)
         self.version_table = QtWidgets.QTableWidget(0, 8)
         self.version_table.setHorizontalHeaderLabels(
-            ["Current", "Version", "Created", "Status", "Hash", "Ratified", "File Name", "Size"]
+            ["Current", "Version", "Created", "Status", "Ratified", "File Name", "Size", "Hash"]
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
