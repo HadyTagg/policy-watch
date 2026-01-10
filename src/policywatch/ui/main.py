@@ -204,6 +204,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_policies()
 
     def _open_new_policy(self) -> None:
+        if not list_categories(self.conn):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Categories",
+                "Create at least one category before adding policies.",
+            )
+            return
         dialog = PolicyDialog(self.conn, self._refresh_policies, self)
         dialog.exec()
         self._load_send_policies()
@@ -215,20 +222,21 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
-        current_version = None
-        if policy["current_version_id"]:
-            current_version = self.conn.execute(
-                "SELECT ratified FROM policy_versions WHERE id = ?",
-                (policy["current_version_id"],),
-            ).fetchone()
+        self.detail_status.blockSignals(True)
+        self.detail_effective.blockSignals(True)
+        self.detail_review_due.blockSignals(True)
+        self.detail_expiry.blockSignals(True)
         self.detail_title.setText(policy["title"])
         self.detail_category.setText(policy["category"])
         self.detail_status.setCurrentText(policy["status"])
-        self.detail_ratified.setChecked(bool(current_version["ratified"]) if current_version else False)
         self.detail_effective.setDate(QtCore.QDate.fromString(policy["effective_date"], "yyyy-MM-dd"))
         self.detail_review_due.setDate(QtCore.QDate.fromString(policy["review_due_date"], "yyyy-MM-dd"))
         self.detail_expiry.setDate(QtCore.QDate.fromString(policy["expiry_date"], "yyyy-MM-dd"))
         self.detail_notes.setPlainText(policy["notes"] or "")
+        self.detail_status.blockSignals(False)
+        self.detail_effective.blockSignals(False)
+        self.detail_review_due.blockSignals(False)
+        self.detail_expiry.blockSignals(False)
 
         versions = list_versions(self.conn, policy_id)
         self.version_table.setRowCount(len(versions))
@@ -303,6 +311,28 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path = get_version_file(self.conn, version_id)
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
 
+    def _update_policy_field(self, field: str, value: str) -> None:
+        if not self.current_policy_id:
+            return
+        self.conn.execute(
+            f"UPDATE policies SET {field} = ? WHERE id = ?",
+            (value, self.current_policy_id),
+        )
+        self.conn.commit()
+        self._refresh_policies()
+
+    def _on_status_changed(self, status: str) -> None:
+        self._update_policy_field("status", status)
+
+    def _on_effective_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("effective_date", value.toString("yyyy-MM-dd"))
+
+    def _on_review_due_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("review_due_date", value.toString("yyyy-MM-dd"))
+
+    def _on_expiry_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("expiry_date", value.toString("yyyy-MM-dd"))
+
     def _build_policy_detail(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
@@ -315,25 +345,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.setReadOnly(True)
         self.detail_status = QtWidgets.QComboBox()
         self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Archived"])
-        self.detail_status.setEnabled(False)
-        self.detail_ratified = QtWidgets.QCheckBox("Yes")
-        self.detail_ratified.setEnabled(False)
+        self.detail_status.currentTextChanged.connect(self._on_status_changed)
         self.detail_effective = QtWidgets.QDateEdit()
         self.detail_effective.setCalendarPopup(True)
-        self.detail_effective.setEnabled(False)
+        self.detail_effective.dateChanged.connect(self._on_effective_changed)
         self.detail_review_due = QtWidgets.QDateEdit()
         self.detail_review_due.setCalendarPopup(True)
-        self.detail_review_due.setEnabled(False)
+        self.detail_review_due.dateChanged.connect(self._on_review_due_changed)
         self.detail_expiry = QtWidgets.QDateEdit()
         self.detail_expiry.setCalendarPopup(True)
-        self.detail_expiry.setEnabled(False)
+        self.detail_expiry.dateChanged.connect(self._on_expiry_changed)
         self.detail_notes = QtWidgets.QPlainTextEdit()
         self.detail_notes.setReadOnly(True)
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
         form.addRow("Status", self.detail_status)
-        form.addRow("Ratified", self.detail_ratified)
         form.addRow("Effective Date", self.detail_effective)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Expiry", self.detail_expiry)
