@@ -31,6 +31,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.conn = conn
         self.current_policy_id: int | None = None
+        self._notes_dirty = False
 
         self.setWindowTitle("Policy Watch")
 
@@ -79,14 +80,13 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.status_filter, 1)
         filter_row.addWidget(self.ratified_filter, 1)
 
-        self.table = QtWidgets.QTableWidget(0, 7)
+        self.table = QtWidgets.QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             [
                 "Category",
                 "Title",
                 "Status",
                 "Current Version",
-                "Review Due",
                 "Expiry",
                 "Ratified",
             ]
@@ -185,13 +185,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
-                review_due_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.review_due_date))
                 expiry_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.expiry_date))
                 ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
             else:
                 status_item = QtWidgets.QTableWidgetItem("")
                 current_version_item = QtWidgets.QTableWidgetItem("")
-                review_due_item = QtWidgets.QTableWidgetItem("")
                 expiry_item = QtWidgets.QTableWidgetItem("")
                 ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
@@ -199,7 +197,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 title_item,
                 status_item,
                 current_version_item,
-                review_due_item,
                 expiry_item,
                 ratified_item,
             ]
@@ -273,6 +270,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ).fetchone()
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
+        self.detail_notes.blockSignals(True)
         self.detail_title.setText(policy["title"])
         self.detail_category.setText(policy["category"])
         status_value = version["status"] if version and version["status"] else policy["status"]
@@ -283,6 +281,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.setPlainText(notes_value or "")
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
+        self.detail_notes.blockSignals(False)
+        self._notes_dirty = False
 
         versions = list_versions(self.conn, policy_id)
         headers = ["Current", "Version", "Created", "Status", "Ratified", "File Name", "Size", "Hash"]
@@ -459,11 +459,14 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
+        self.detail_notes.blockSignals(True)
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
+        self.detail_notes.blockSignals(False)
+        self._notes_dirty = False
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         color_map = {
@@ -523,6 +526,7 @@ class MainWindow(QtWidgets.QMainWindow):
         field_labels = {
             "status": "Status",
             "expiry_date": "Expiry",
+            "notes": "Notes",
         }
         label = field_labels.get(field, field)
         response = QtWidgets.QMessageBox.question(
@@ -613,6 +617,13 @@ class MainWindow(QtWidgets.QMainWindow):
             widget.setSpecialValueText("")
             widget.setDisplayFormat(" ")
 
+    def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        if obj is self.detail_notes and event.type() == QtCore.QEvent.FocusOut and self._notes_dirty:
+            text_value = self.detail_notes.toPlainText().strip()
+            self._notes_dirty = False
+            self._update_policy_field("notes", text_value)
+        return super().eventFilter(obj, event)
+
     def _prompt_version_metadata(self) -> dict | None:
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Version Metadata")
@@ -674,6 +685,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_expiry_changed(self, value: QtCore.QDate) -> None:
         self._update_policy_field("expiry_date", value.toString("yyyy-MM-dd"))
 
+    def _mark_notes_dirty(self) -> None:
+        self._notes_dirty = True
+
     def _build_policy_detail(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
@@ -704,7 +718,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_expiry.setDisplayFormat("dd/MM/yyyy")
         self.detail_expiry.dateChanged.connect(self._on_expiry_changed)
         self.detail_notes = QtWidgets.QPlainTextEdit()
-        self.detail_notes.setReadOnly(True)
+        self.detail_notes.setReadOnly(False)
+        self.detail_notes.textChanged.connect(self._mark_notes_dirty)
+        self.detail_notes.installEventFilter(self)
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
