@@ -245,6 +245,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if index == self.policy_distributor_index:
             self._load_send_policies()
 
+    def _on_tab_changed(self, index: int) -> None:
+        if index == self.policy_detail_index and not self.current_policy_id:
+            self.tabs.blockSignals(True)
+            self.tabs.setCurrentIndex(0)
+            self.tabs.blockSignals(False)
+            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+        if index == self.policy_distributor_index:
+            self._load_send_policies()
+
     def _open_categories(self) -> None:
         def _refresh_categories_and_audit() -> None:
             self._refresh_categories()
@@ -318,6 +327,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
             )
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
+            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
                 row_index,
                 2,
