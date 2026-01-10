@@ -104,7 +104,24 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 row_hash TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                occurred_at TEXT NOT NULL,
+                actor TEXT,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER,
+                details TEXT,
+                prev_row_hash TEXT NOT NULL,
+                row_hash TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS audit_state (
+                singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+                latest_row_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audit_event_state (
                 singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
                 latest_row_hash TEXT NOT NULL
             );
@@ -120,8 +137,35 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             BEGIN
                 SELECT RAISE(ABORT, 'email_log is append-only');
             END;
+
+            CREATE TRIGGER IF NOT EXISTS audit_events_no_update
+            BEFORE UPDATE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events is append-only');
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS audit_events_no_delete
+            BEFORE DELETE ON audit_events
+            BEGIN
+                SELECT RAISE(ABORT, 'audit_events is append-only');
+            END;
             """
         )
+    _ensure_policy_version_metadata(conn)
+
+
+def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(policy_versions)").fetchall()}
+    additions = [
+        ("status", "TEXT"),
+        ("effective_date", "TEXT"),
+        ("review_due_date", "TEXT"),
+        ("expiry_date", "TEXT"),
+        ("notes", "TEXT"),
+    ]
+    for name, column_type in additions:
+        if name not in columns:
+            conn.execute(f"ALTER TABLE policy_versions ADD COLUMN {name} {column_type}")
 
 
 @contextmanager
