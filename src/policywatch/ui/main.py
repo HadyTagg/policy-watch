@@ -301,7 +301,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index,
                 0,
-                QtWidgets.QTableWidgetItem("Current" if is_current else ""),
+                QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current"),
             )
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
@@ -797,6 +797,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             checkbox = QtWidgets.QTableWidgetItem()
+            checkbox.setFlags(
+                QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+            )
             checkbox.setCheckState(QtCore.Qt.Unchecked)
             self.policy_send_table.setItem(row_index, 0, checkbox)
             self.policy_send_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["title"]))
