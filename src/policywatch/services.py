@@ -322,12 +322,22 @@ def unmark_version_ratified(conn, version_id: int) -> None:
 
 
 def set_current_version(conn, policy_id: int, version_id: int) -> None:
+    version_number = None
+    version_row = conn.execute(
+        "SELECT version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if version_row:
+        version_number = version_row["version_number"]
     conn.execute(
         "UPDATE policies SET current_version_id = ? WHERE id = ?",
         (version_id, policy_id),
     )
     conn.commit()
-    _log_event(conn, "set_current_version", "policy", policy_id, f"version_id={version_id}")
+    details = f"version_id={version_id}"
+    if version_number is not None:
+        details = f"{details} (v{version_number})"
+    _log_event(conn, "set_current_version", "policy", policy_id, details)
 
 
 def unset_current_version(conn, policy_id: int) -> None:
