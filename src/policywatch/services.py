@@ -331,9 +331,28 @@ def set_current_version(conn, policy_id: int, version_id: int) -> None:
 
 
 def unset_current_version(conn, policy_id: int) -> None:
+    policy_row = conn.execute(
+        "SELECT current_version_id FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    current_version_id = policy_row["current_version_id"] if policy_row else None
+    version_number = None
+    if current_version_id:
+        version_row = conn.execute(
+            "SELECT version_number FROM policy_versions WHERE id = ?",
+            (current_version_id,),
+        ).fetchone()
+        if version_row:
+            version_number = version_row["version_number"]
     conn.execute("UPDATE policies SET current_version_id = NULL WHERE id = ?", (policy_id,))
     conn.commit()
-    _log_event(conn, "unset_current_version", "policy", policy_id, None)
+    details = None
+    if current_version_id:
+        if version_number is not None:
+            details = f"previous_version_id={current_version_id} (v{version_number})"
+        else:
+            details = f"previous_version_id={current_version_id}"
+    _log_event(conn, "unset_current_version", "policy", policy_id, details)
 
 
 def update_policy_title(conn, policy_id: int, title: str) -> None:
