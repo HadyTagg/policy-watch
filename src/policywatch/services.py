@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from policywatch import audit
 from policywatch import config
 from policywatch.policies import build_policy_path, next_version_number, slugify
 from policywatch.traffic import traffic_light_status
@@ -22,6 +23,50 @@ def _resolve_london_tz() -> datetime.tzinfo:
 LONDON_TZ = _resolve_london_tz()
 
 
+def _resolve_actor() -> str | None:
+    try:
+        return os.getlogin()
+    except OSError:
+        return None
+
+
+def _log_event(
+    conn,
+    action: str,
+    entity_type: str,
+    entity_id: int | None,
+    details: str | None = None,
+) -> None:
+    audit.append_event_log(
+        conn,
+        {
+            "occurred_at": datetime.datetime.utcnow().isoformat(),
+            "actor": _resolve_actor(),
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "details": details,
+        },
+    )
+
+
+def _add_months(date_value: datetime.date, months: int) -> datetime.date:
+    year = date_value.year + (date_value.month - 1 + months) // 12
+    month = (date_value.month - 1 + months) % 12 + 1
+    day = min(
+        date_value.day,
+        [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
+            month - 1
+        ],
+    )
+    return datetime.date(year, month, day)
+
+
+def _review_due_date(effective_date: str, frequency_months: int) -> str:
+    effective = datetime.date.fromisoformat(effective_date)
+    return _add_months(effective, frequency_months).isoformat()
+
+
 @dataclass(frozen=True)
 class PolicyRow:
     id: int
@@ -31,7 +76,6 @@ class PolicyRow:
     ratified: bool
     review_due_date: str
     expiry_date: str
-    owner: str | None
     current_version_id: int | None
     current_version_number: int | None
     traffic_status: str
@@ -49,8 +93,12 @@ def _policy_root(conn) -> Path:
 def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
-        SELECT p.id, p.title, p.category, p.status, p.ratified, p.review_due_date,
-               p.expiry_date, p.owner, p.current_version_id,
+        SELECT p.id, p.title, p.category,
+               COALESCE(v.status, p.status) AS status,
+               COALESCE(v.ratified, 0) AS ratified,
+               COALESCE(v.review_due_date, p.review_due_date) AS review_due_date,
+               COALESCE(v.expiry_date, p.expiry_date) AS expiry_date,
+               p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
         LEFT JOIN policy_versions v ON v.id = p.current_version_id
@@ -76,7 +124,6 @@ def list_policies(conn) -> list[PolicyRow]:
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
                 expiry_date=row["expiry_date"],
-                owner=row["owner"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
                 traffic_status=traffic.status,
@@ -101,16 +148,18 @@ def list_versions(conn, policy_id: int) -> list[dict]:
 
 
 def create_policy(conn, title: str, category: str, status: str, effective: str, review_due: str, expiry: str,
-                  owner: str | None, notes: str | None, created_by_user_id: int | None) -> int:
+                  notes: str | None, created_by_user_id: int | None) -> int:
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
+    review_frequency = int(review_due)
+    review_due_date = _review_due_date(effective, review_frequency)
     cursor = conn.execute(
         """
         INSERT INTO policies (
             title, slug, category, status, ratified, ratified_at, ratified_by_user_id,
-            effective_date, review_due_date, expiry_date, owner, notes,
+            effective_date, review_due_date, review_frequency_months, expiry_date, owner, notes,
             current_version_id, created_at, created_by_user_id
-        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
+        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         (
             title,
@@ -118,15 +167,17 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
             category,
             status,
             effective,
-            review_due,
+            review_due_date,
+            review_frequency,
             expiry,
-            owner,
+            None,
             notes,
             created_at,
             created_by_user_id,
         ),
     )
     conn.commit()
+    _log_event(conn, "create_policy", "policy", cursor.lastrowid, f"title={title}")
     return cursor.lastrowid
 
 
@@ -135,6 +186,7 @@ def add_policy_version(
     policy_id: int,
     original_path: Path,
     created_by_user_id: int | None,
+    metadata: dict | None = None,
 ) -> int:
     existing = conn.execute(
         "SELECT version_number FROM policy_versions WHERE policy_id = ?",
@@ -143,7 +195,12 @@ def add_policy_version(
     version_number = next_version_number([row["version_number"] for row in existing])
 
     policy_row = conn.execute(
-        "SELECT title, category FROM policies WHERE id = ?",
+        """
+        SELECT title, category, status, effective_date, review_due_date,
+               review_frequency_months, expiry_date, notes
+        FROM policies
+        WHERE id = ?
+        """,
         (policy_id,),
     ).fetchone()
     if not policy_row:
@@ -168,17 +225,30 @@ def add_policy_version(
                 break
             dest.write(chunk)
             sha256.update(chunk)
+    existing_hash = conn.execute(
+        "SELECT 1 FROM policy_versions WHERE policy_id = ? AND sha256_hash = ? LIMIT 1",
+        (policy_id, sha256.hexdigest()),
+    ).fetchone()
+    if existing_hash:
+        temp_path.unlink(missing_ok=True)
+        raise ValueError("No change detected. Policy document matches an existing version.")
     temp_path.replace(target_path)
 
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
+    effective_date = (metadata or {}).get("effective_date") or policy_row["effective_date"]
+    review_frequency = int(
+        (metadata or {}).get("review_frequency_months") or policy_row["review_frequency_months"] or 1
+    )
+    review_due_date = _review_due_date(effective_date, review_frequency)
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
             policy_id, version_number, created_at, created_by_user_id,
             file_path, original_filename, file_size_bytes, sha256_hash,
-            ratified, ratified_at, ratified_by_user_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+            ratified, ratified_at, ratified_by_user_id,
+            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?)
         """,
         (
             policy_id,
@@ -189,19 +259,52 @@ def add_policy_version(
             original_path.name,
             file_size,
             sha256.hexdigest(),
+            (metadata or {}).get("status") or policy_row["status"],
+            effective_date,
+            review_due_date,
+            review_frequency,
+            (metadata or {}).get("expiry_date") or policy_row["expiry_date"],
+            (metadata or {}).get("notes") or policy_row["notes"],
         ),
     )
     conn.commit()
+    _log_event(
+        conn,
+        "add_policy_version",
+        "policy_version",
+        cursor.lastrowid,
+        f"policy_id={policy_id} version={version_number}",
+    )
     return cursor.lastrowid
 
 
 def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
     ratified_at = datetime.datetime.utcnow().isoformat()
+    version_row = conn.execute(
+        "SELECT version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
     conn.execute(
         "UPDATE policy_versions SET ratified = 1, ratified_at = ?, ratified_by_user_id = ? WHERE id = ?",
         (ratified_at, user_id, version_id),
     )
     conn.commit()
+    details = f"version={version_row['version_number']}" if version_row else None
+    _log_event(conn, "ratify_version", "policy_version", version_id, details)
+
+
+def unmark_version_ratified(conn, version_id: int) -> None:
+    version_row = conn.execute(
+        "SELECT version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    conn.execute(
+        "UPDATE policy_versions SET ratified = 0, ratified_at = NULL, ratified_by_user_id = NULL WHERE id = ?",
+        (version_id,),
+    )
+    conn.commit()
+    details = f"version={version_row['version_number']}" if version_row else None
+    _log_event(conn, "unratify_version", "policy_version", version_id, details)
 
 
 def set_current_version(conn, policy_id: int, version_id: int) -> None:
@@ -210,6 +313,7 @@ def set_current_version(conn, policy_id: int, version_id: int) -> None:
         (version_id, policy_id),
     )
     conn.commit()
+    _log_event(conn, "set_current_version", "policy", policy_id, f"version_id={version_id}")
 
 
 def get_version_file(conn, version_id: int) -> str:
@@ -226,13 +330,15 @@ def list_categories(conn) -> list[str]:
 
 def create_category(conn, name: str) -> None:
     created_at = datetime.datetime.utcnow().isoformat()
-    conn.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (name, created_at))
+    cursor = conn.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (name, created_at))
     conn.commit()
+    _log_event(conn, "create_category", "category", cursor.lastrowid, f"name={name}")
 
 
 def delete_category(conn, category_id: int) -> None:
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
+    _log_event(conn, "delete_category", "category", category_id, None)
 
 
 def export_backup(conn, destination: Path, include_files: bool) -> None:
