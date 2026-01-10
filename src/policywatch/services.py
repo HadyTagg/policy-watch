@@ -323,6 +323,50 @@ def unset_current_version(conn, policy_id: int) -> None:
     _log_event(conn, "unset_current_version", "policy", policy_id, None)
 
 
+def update_policy_title(conn, policy_id: int, title: str) -> None:
+    policy_row = conn.execute(
+        "SELECT title, category FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if not policy_row:
+        raise ValueError("Policy not found")
+    current_title = policy_row["title"]
+    if current_title == title:
+        return
+    new_slug = slugify(title)
+    policy_root = _policy_root(conn)
+    versions = conn.execute(
+        """
+        SELECT id, version_number, original_filename, file_path
+        FROM policy_versions
+        WHERE policy_id = ?
+        """,
+        (policy_id,),
+    ).fetchall()
+    for version in versions:
+        target_path = build_policy_path(
+            policy_root,
+            policy_row["category"],
+            new_slug,
+            version["version_number"],
+            version["original_filename"],
+        )
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        current_path = Path(version["file_path"])
+        if current_path.exists() and current_path != target_path:
+            current_path.rename(target_path)
+        conn.execute(
+            "UPDATE policy_versions SET file_path = ? WHERE id = ?",
+            (str(target_path), version["id"]),
+        )
+    conn.execute(
+        "UPDATE policies SET title = ?, slug = ? WHERE id = ?",
+        (title, new_slug, policy_id),
+    )
+    conn.commit()
+    _log_event(conn, "update_policy_title", "policy", policy_id, f"title={title}")
+
+
 def get_version_file(conn, version_id: int) -> str:
     row = conn.execute("SELECT file_path FROM policy_versions WHERE id = ?", (version_id,)).fetchone()
     if not row:
