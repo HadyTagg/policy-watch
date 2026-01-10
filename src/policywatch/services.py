@@ -73,6 +73,19 @@ def _policy_root(conn) -> Path:
     return paths.data_dir / "policies"
 
 
+def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
+    current = path
+    stop_at = stop_at.resolve()
+    while True:
+        current = current.resolve()
+        if current == stop_at or not current.exists():
+            break
+        if any(current.iterdir()):
+            break
+        current.rmdir()
+        current = current.parent
+
+
 def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
@@ -355,6 +368,7 @@ def update_policy_title(conn, policy_id: int, title: str) -> None:
         current_path = Path(version["file_path"])
         if current_path.exists() and current_path != target_path:
             current_path.rename(target_path)
+            _cleanup_empty_dirs(current_path.parent, policy_root)
         conn.execute(
             "UPDATE policy_versions SET file_path = ? WHERE id = ?",
             (str(target_path), version["id"]),
@@ -365,6 +379,51 @@ def update_policy_title(conn, policy_id: int, title: str) -> None:
     )
     conn.commit()
     _log_event(conn, "update_policy_title", "policy", policy_id, f"title={title}")
+
+
+def update_policy_category(conn, policy_id: int, category: str) -> None:
+    policy_row = conn.execute(
+        "SELECT title, category FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if not policy_row:
+        raise ValueError("Policy not found")
+    current_category = policy_row["category"]
+    if current_category == category:
+        return
+    policy_root = _policy_root(conn)
+    slug = slugify(policy_row["title"])
+    versions = conn.execute(
+        """
+        SELECT id, version_number, original_filename, file_path
+        FROM policy_versions
+        WHERE policy_id = ?
+        """,
+        (policy_id,),
+    ).fetchall()
+    for version in versions:
+        target_path = build_policy_path(
+            policy_root,
+            category,
+            slug,
+            version["version_number"],
+            version["original_filename"],
+        )
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        current_path = Path(version["file_path"])
+        if current_path.exists() and current_path != target_path:
+            current_path.rename(target_path)
+            _cleanup_empty_dirs(current_path.parent, policy_root)
+        conn.execute(
+            "UPDATE policy_versions SET file_path = ? WHERE id = ?",
+            (str(target_path), version["id"]),
+        )
+    conn.execute(
+        "UPDATE policies SET category = ? WHERE id = ?",
+        (category, policy_id),
+    )
+    conn.commit()
+    _log_event(conn, "update_policy_category", "policy", policy_id, f"category={category}")
 
 
 def get_version_file(conn, version_id: int) -> str:
