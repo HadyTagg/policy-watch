@@ -51,7 +51,7 @@ class PolicyWatchApp:
         self._ensure_admin()
         login = LoginWindow(self.authenticate)
         if login.exec() == QtWidgets.QDialog.Accepted:
-            main = MainWindow(login.username_input.text())
+            main = MainWindow(login.username_input.text(), self.conn)
             main.resize(800, 600)
             main.show()
             app.exec()
