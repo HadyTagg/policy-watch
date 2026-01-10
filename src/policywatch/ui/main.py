@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
@@ -16,11 +16,11 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
 
-        new_policy_action = QtWidgets.QAction("New Policy", self)
+        new_policy_action = QtGui.QAction("New Policy", self)
         new_policy_action.triggered.connect(self._open_new_policy)
         toolbar.addAction(new_policy_action)
 
-        manage_categories_action = QtWidgets.QAction("Manage Categories", self)
+        manage_categories_action = QtGui.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
 
