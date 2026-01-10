@@ -77,10 +77,9 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.ratified_filter, 1)
         filter_row.addWidget(self.show_expired)
 
-        self.table = QtWidgets.QTableWidget(0, 8)
+        self.table = QtWidgets.QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
             [
-                "Traffic Light",
                 "Title",
                 "Category",
                 "Status",
@@ -171,22 +170,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.table.setRowCount(len(filtered))
         for row_index, policy in enumerate(filtered):
-            traffic_item = QtWidgets.QTableWidgetItem(policy.traffic_status)
-            traffic_item.setToolTip(policy.traffic_reason)
-            self.table.setItem(row_index, 0, traffic_item)
-            self.table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(policy.title))
-            self.table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(policy.category))
-            self.table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(policy.status))
-            self.table.setItem(row_index, 4, QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No"))
-            self.table.setItem(
-                row_index,
-                5,
-                QtWidgets.QTableWidgetItem(
-                    str(policy.current_version_number) if policy.current_version_number else ""
-                ),
+            title_item = QtWidgets.QTableWidgetItem(policy.title)
+            category_item = QtWidgets.QTableWidgetItem(policy.category)
+            status_item = QtWidgets.QTableWidgetItem(policy.status)
+            ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
+            current_version_item = QtWidgets.QTableWidgetItem(
+                str(policy.current_version_number) if policy.current_version_number else ""
             )
-            self.table.setItem(row_index, 6, QtWidgets.QTableWidgetItem(policy.review_due_date))
-            self.table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(policy.expiry_date))
+            review_due_item = QtWidgets.QTableWidgetItem(policy.review_due_date)
+            expiry_item = QtWidgets.QTableWidgetItem(policy.expiry_date)
+            items = [
+                title_item,
+                category_item,
+                status_item,
+                ratified_item,
+                current_version_item,
+                review_due_item,
+                expiry_item,
+            ]
+            for column, item in enumerate(items):
+                self.table.setItem(row_index, column, item)
+            self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -308,8 +312,47 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path = get_version_file(self.conn, version_id)
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
 
+    def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
+        color_map = {
+            "Green": QtGui.QColor("#d7f5dd"),
+            "Amber": QtGui.QColor("#fff3cd"),
+            "Red": QtGui.QColor("#f8d7da"),
+        }
+        color = color_map.get(status)
+        for column in range(self.table.columnCount()):
+            item = self.table.item(row_index, column)
+            if not item:
+                continue
+            if color:
+                item.setBackground(color)
+                item.setToolTip(reason)
+
     def _update_policy_field(self, field: str, value: str) -> None:
         if not self.current_policy_id:
+            return
+        current = self.conn.execute(
+            f"SELECT {field} FROM policies WHERE id = ?",
+            (self.current_policy_id,),
+        ).fetchone()
+        if not current:
+            return
+        current_value = current[field]
+        if current_value == value:
+            return
+        field_labels = {
+            "status": "Status",
+            "effective_date": "Effective Date",
+            "review_due_date": "Review Due",
+            "expiry_date": "Expiry",
+        }
+        label = field_labels.get(field, field)
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Change",
+            f"Change {label} from {current_value} to {value}?",
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            self._load_policy_detail(self.current_policy_id)
             return
         self.conn.execute(
             f"UPDATE policies SET {field} = ? WHERE id = ?",
@@ -669,6 +712,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ["Occurred At", "Actor", "Action", "Entity", "Details"]
         )
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.audit_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export CSV")
@@ -692,8 +736,20 @@ class MainWindow(QtWidgets.QMainWindow):
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
         rows = self.conn.execute(
             """
-            SELECT occurred_at, actor, action, entity_type, entity_id, details
-            FROM audit_events
+            SELECT ae.occurred_at,
+                   ae.actor,
+                   ae.action,
+                   ae.entity_type,
+                   ae.entity_id,
+                   ae.details,
+                   COALESCE(p.title, pv_policy.title) AS policy_title
+            FROM audit_events ae
+            LEFT JOIN policies p
+                ON ae.entity_type = 'policy' AND p.id = ae.entity_id
+            LEFT JOIN policy_versions pv
+                ON ae.entity_type = 'policy_version' AND pv.id = ae.entity_id
+            LEFT JOIN policies pv_policy
+                ON pv.policy_id = pv_policy.id
             WHERE date(occurred_at) BETWEEN ? AND ?
             ORDER BY occurred_at DESC
             """,
@@ -702,7 +758,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             entity = row["entity_type"]
-            if row["entity_id"] is not None:
+            if row["policy_title"]:
+                entity = row["policy_title"]
+            elif row["entity_id"] is not None:
                 entity = f"{entity} #{row['entity_id']}"
             self.audit_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(row["occurred_at"]))
             self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
