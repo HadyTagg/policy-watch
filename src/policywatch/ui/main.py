@@ -313,6 +313,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
             )
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
+            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
                 row_index,
                 2,
