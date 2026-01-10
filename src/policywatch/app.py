@@ -14,7 +14,7 @@ class PolicyWatchApp:
         self.paths = config.get_paths()
         self.conn = db.connect(self.paths.db_path)
         db.apply_schema(self.conn)
-        self._ensure_admin()
+        self._app: QtWidgets.QApplication | None = None
 
     def _ensure_admin(self) -> None:
         row = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
@@ -47,6 +47,8 @@ class PolicyWatchApp:
 
     def run(self) -> None:
         app = QtWidgets.QApplication([])
+        self._app = app
+        self._ensure_admin()
         login = LoginWindow(self.authenticate)
         if login.exec() == QtWidgets.QDialog.Accepted:
             main = MainWindow(login.username_input.text())
