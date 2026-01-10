@@ -42,10 +42,6 @@ class MainWindow(QtWidgets.QMainWindow):
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
 
-        upload_version_action = QtGui.QAction("Upload Version", self)
-        upload_version_action.triggered.connect(self._upload_version)
-        toolbar.addAction(upload_version_action)
-
         header = QtWidgets.QLabel(f"Welcome, {username}.")
         header.setStyleSheet("font-size: 16px; font-weight: 600;")
 
@@ -80,7 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.ratified_filter, 1)
         filter_row.addWidget(self.show_expired)
 
-        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table = QtWidgets.QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
                 "Traffic Light",
@@ -91,7 +87,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Current Version",
                 "Review Due",
                 "Expiry",
-                "Owner",
             ]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -101,7 +96,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
-            "No policies yet. Use the toolbar to add policies and upload versions."
+            "No policies yet. Use the toolbar to add policies, then upload versions from Policy Detail."
         )
         self.empty_state.setAlignment(QtCore.Qt.AlignCenter)
         self.empty_state.setStyleSheet("color: #666; padding: 12px;")
@@ -191,7 +186,6 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             self.table.setItem(row_index, 6, QtWidgets.QTableWidgetItem(policy.review_due_date))
             self.table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(policy.expiry_date))
-            self.table.setItem(row_index, 8, QtWidgets.QTableWidgetItem(policy.owner or ""))
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -221,14 +215,19 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
+        current_version = None
+        if policy["current_version_id"]:
+            current_version = self.conn.execute(
+                "SELECT ratified FROM policy_versions WHERE id = ?",
+                (policy["current_version_id"],),
+            ).fetchone()
         self.detail_title.setText(policy["title"])
         self.detail_category.setText(policy["category"])
         self.detail_status.setCurrentText(policy["status"])
-        self.detail_ratified.setChecked(bool(policy["ratified"]))
+        self.detail_ratified.setChecked(bool(current_version["ratified"]) if current_version else False)
         self.detail_effective.setDate(QtCore.QDate.fromString(policy["effective_date"], "yyyy-MM-dd"))
         self.detail_review_due.setDate(QtCore.QDate.fromString(policy["review_due_date"], "yyyy-MM-dd"))
         self.detail_expiry.setDate(QtCore.QDate.fromString(policy["expiry_date"], "yyyy-MM-dd"))
-        self.detail_owner.setText(policy["owner"] or "")
         self.detail_notes.setPlainText(policy["notes"] or "")
 
         versions = list_versions(self.conn, policy_id)
@@ -257,7 +256,11 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy File")
         if not file_path:
             return
-        add_policy_version(self.conn, self.current_policy_id, Path(file_path), None)
+        try:
+            add_policy_version(self.conn, self.current_policy_id, Path(file_path), None)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
+            return
         self._load_policy_detail(self.current_policy_id)
         self._refresh_policies()
 
@@ -273,6 +276,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.conn.commit()
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._refresh_policies()
 
     def _set_current(self) -> None:
         if not self.current_policy_id:
@@ -323,8 +327,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_expiry = QtWidgets.QDateEdit()
         self.detail_expiry.setCalendarPopup(True)
         self.detail_expiry.setEnabled(False)
-        self.detail_owner = QtWidgets.QLineEdit()
-        self.detail_owner.setReadOnly(True)
         self.detail_notes = QtWidgets.QPlainTextEdit()
         self.detail_notes.setReadOnly(True)
 
@@ -335,7 +337,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Effective Date", self.detail_effective)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Expiry", self.detail_expiry)
-        form.addRow("Owner", self.detail_owner)
         form.addRow("Notes", self.detail_notes)
 
         versions = QtWidgets.QGroupBox("Version History")
@@ -346,6 +347,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         versions_layout.addWidget(self.version_table)
 
         button_row = QtWidgets.QHBoxLayout()
