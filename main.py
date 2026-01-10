@@ -1,1 +1,5 @@
-print ("this is a test")
+from policywatch.app import main
+
+
+if __name__ == "__main__":
+    main()
