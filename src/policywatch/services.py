@@ -76,9 +76,12 @@ def _policy_root(conn) -> Path:
 def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
-        SELECT p.id, p.title, p.category, p.status,
+        SELECT p.id, p.title, p.category,
+               COALESCE(v.status, p.status) AS status,
                COALESCE(v.ratified, 0) AS ratified,
-               p.review_due_date, p.expiry_date, p.current_version_id,
+               COALESCE(v.review_due_date, p.review_due_date) AS review_due_date,
+               COALESCE(v.expiry_date, p.expiry_date) AS expiry_date,
+               p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
         LEFT JOIN policy_versions v ON v.id = p.current_version_id
@@ -171,7 +174,11 @@ def add_policy_version(
     version_number = next_version_number([row["version_number"] for row in existing])
 
     policy_row = conn.execute(
-        "SELECT title, category FROM policies WHERE id = ?",
+        """
+        SELECT title, category, status, effective_date, review_due_date, expiry_date, notes
+        FROM policies
+        WHERE id = ?
+        """,
         (policy_id,),
     ).fetchone()
     if not policy_row:
@@ -212,8 +219,9 @@ def add_policy_version(
         INSERT INTO policy_versions (
             policy_id, version_number, created_at, created_by_user_id,
             file_path, original_filename, file_size_bytes, sha256_hash,
-            ratified, ratified_at, ratified_by_user_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL)
+            ratified, ratified_at, ratified_by_user_id,
+            status, effective_date, review_due_date, expiry_date, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?)
         """,
         (
             policy_id,
@@ -224,6 +232,11 @@ def add_policy_version(
             original_path.name,
             file_size,
             sha256.hexdigest(),
+            policy_row["status"],
+            policy_row["effective_date"],
+            policy_row["review_due_date"],
+            policy_row["expiry_date"],
+            policy_row["notes"],
         ),
     )
     conn.commit()

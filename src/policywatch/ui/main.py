@@ -211,11 +211,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_tab_changed(self, index: int) -> None:
         if index == self.policy_detail_index and not self.current_policy_id:
-            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+            self.tabs.blockSignals(True)
             self.tabs.setCurrentIndex(0)
+            self.tabs.blockSignals(False)
+            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
     def _open_categories(self) -> None:
-        dialog = CategoryManagerDialog(self.conn, self._refresh_categories, self)
+        def _refresh_categories_and_audit() -> None:
+            self._refresh_categories()
+            self._load_audit_log()
+
+        dialog = CategoryManagerDialog(self.conn, _refresh_categories_and_audit, self)
         dialog.exec()
         self._refresh_policies()
         self._load_audit_log()
@@ -240,17 +246,36 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
+        version = None
+        if policy["current_version_id"]:
+            version = self.conn.execute(
+                """
+                SELECT status, effective_date, review_due_date, expiry_date, notes
+                FROM policy_versions
+                WHERE id = ?
+                """,
+                (policy["current_version_id"],),
+            ).fetchone()
         self.detail_status.blockSignals(True)
         self.detail_effective.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_title.setText(policy["title"])
         self.detail_category.setText(policy["category"])
-        self.detail_status.setCurrentText(policy["status"])
-        self.detail_effective.setDate(QtCore.QDate.fromString(policy["effective_date"], "yyyy-MM-dd"))
-        self.detail_review_due.setDate(QtCore.QDate.fromString(policy["review_due_date"], "yyyy-MM-dd"))
-        self.detail_expiry.setDate(QtCore.QDate.fromString(policy["expiry_date"], "yyyy-MM-dd"))
-        self.detail_notes.setPlainText(policy["notes"] or "")
+        status_value = version["status"] if version and version["status"] else policy["status"]
+        effective_value = (
+            version["effective_date"] if version and version["effective_date"] else policy["effective_date"]
+        )
+        review_due_value = (
+            version["review_due_date"] if version and version["review_due_date"] else policy["review_due_date"]
+        )
+        expiry_value = version["expiry_date"] if version and version["expiry_date"] else policy["expiry_date"]
+        notes_value = version["notes"] if version and version["notes"] else policy["notes"]
+        self.detail_status.setCurrentText(status_value)
+        self.detail_effective.setDate(QtCore.QDate.fromString(effective_value, "yyyy-MM-dd"))
+        self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))
+        self.detail_expiry.setDate(QtCore.QDate.fromString(expiry_value, "yyyy-MM-dd"))
+        self.detail_notes.setPlainText(notes_value or "")
         self.detail_status.blockSignals(False)
         self.detail_effective.blockSignals(False)
         self.detail_review_due.blockSignals(False)
@@ -350,10 +375,23 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_policy_field(self, field: str, value: str) -> None:
         if not self.current_policy_id:
             return
-        current = self.conn.execute(
-            f"SELECT {field} FROM policies WHERE id = ?",
+        policy_row = self.conn.execute(
+            "SELECT current_version_id FROM policies WHERE id = ?",
             (self.current_policy_id,),
         ).fetchone()
+        if not policy_row:
+            return
+        current_version_id = policy_row["current_version_id"]
+        if current_version_id:
+            current = self.conn.execute(
+                f"SELECT {field} FROM policy_versions WHERE id = ?",
+                (current_version_id,),
+            ).fetchone()
+        else:
+            current = self.conn.execute(
+                f"SELECT {field} FROM policies WHERE id = ?",
+                (self.current_policy_id,),
+            ).fetchone()
         if not current:
             return
         current_value = current[field]
@@ -374,10 +412,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if response != QtWidgets.QMessageBox.Yes:
             self._load_policy_detail(self.current_policy_id)
             return
-        self.conn.execute(
-            f"UPDATE policies SET {field} = ? WHERE id = ?",
-            (value, self.current_policy_id),
-        )
+        if current_version_id:
+            self.conn.execute(
+                f"UPDATE policy_versions SET {field} = ? WHERE id = ?",
+                (value, current_version_id),
+            )
+        else:
+            self.conn.execute(
+                f"UPDATE policies SET {field} = ? WHERE id = ?",
+                (value, self.current_policy_id),
+            )
         self.conn.commit()
         try:
             actor = os.getlogin()
@@ -389,8 +433,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "occurred_at": datetime.utcnow().isoformat(),
                 "actor": actor,
                 "action": "update_policy_field",
-                "entity_type": "policy",
-                "entity_id": self.current_policy_id,
+                "entity_type": "policy_version" if current_version_id else "policy",
+                "entity_id": current_version_id or self.current_policy_id,
                 "details": f"{field}={value}",
             },
         )
@@ -540,6 +584,7 @@ class MainWindow(QtWidgets.QMainWindow):
             SELECT p.title, p.category, v.id AS version_id, v.version_number, v.file_size_bytes
             FROM policy_versions v
             JOIN policies p ON p.id = v.policy_id
+            WHERE p.current_version_id = v.id
             ORDER BY p.title, v.version_number DESC
             """
         ).fetchall()
