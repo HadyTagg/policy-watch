@@ -50,23 +50,6 @@ def _log_event(
     )
 
 
-def _add_months(date_value: datetime.date, months: int) -> datetime.date:
-    year = date_value.year + (date_value.month - 1 + months) // 12
-    month = (date_value.month - 1 + months) % 12 + 1
-    day = min(
-        date_value.day,
-        [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
-            month - 1
-        ],
-    )
-    return datetime.date(year, month, day)
-
-
-def _review_due_date(effective_date: str, frequency_months: int) -> str:
-    effective = datetime.date.fromisoformat(effective_date)
-    return _add_months(effective, frequency_months).isoformat()
-
-
 @dataclass(frozen=True)
 class PolicyRow:
     id: int
@@ -109,15 +92,13 @@ def list_policies(conn) -> list[PolicyRow]:
     policies: list[PolicyRow] = []
     today = datetime.datetime.now(LONDON_TZ).date()
     amber_months = int(config.get_setting(conn, "amber_months", 2) or 2)
-    overdue_days = int(config.get_setting(conn, "overdue_grace_days", 0) or 0)
 
     for row in rows:
         traffic_status = ""
         traffic_reason = ""
-        if row["review_due_date"] and row["expiry_date"]:
-            review_due = datetime.date.fromisoformat(row["review_due_date"])
+        if row["expiry_date"]:
             expiry = datetime.date.fromisoformat(row["expiry_date"])
-            traffic = traffic_light_status(today, review_due, expiry, amber_months, overdue_days)
+            traffic = traffic_light_status(today, expiry, amber_months)
             traffic_status = traffic.status
             traffic_reason = traffic.reason
         policies.append(
@@ -152,12 +133,19 @@ def list_versions(conn, policy_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def create_policy(conn, title: str, category: str, status: str, effective: str, review_due: str, expiry: str,
-                  notes: str | None, created_by_user_id: int | None) -> int:
+def create_policy(
+    conn,
+    title: str,
+    category: str,
+    status: str,
+    expiry: str,
+    notes: str | None,
+    created_by_user_id: int | None,
+) -> int:
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
-    review_frequency = int(review_due)
-    review_due_date = _review_due_date(effective, review_frequency)
+    effective_date = expiry or ""
+    review_due_date = expiry or ""
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -171,9 +159,9 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
             slug,
             category,
             status,
-            effective,
+            effective_date,
             review_due_date,
-            review_frequency,
+            None,
             expiry,
             None,
             notes,
@@ -241,11 +229,19 @@ def add_policy_version(
 
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
-    effective_date = (metadata or {}).get("effective_date") or policy_row["effective_date"]
-    review_frequency = int(
-        (metadata or {}).get("review_frequency_months") or policy_row["review_frequency_months"] or 1
-    )
-    review_due_date = _review_due_date(effective_date, review_frequency)
+    effective_date = policy_row["effective_date"]
+    review_frequency = policy_row["review_frequency_months"]
+    expiry_date = policy_row["expiry_date"]
+    status = policy_row["status"]
+    notes = policy_row["notes"]
+    if metadata:
+        if "expiry_date" in metadata:
+            expiry_date = metadata["expiry_date"]
+        if "status" in metadata:
+            status = metadata["status"]
+        if "notes" in metadata:
+            notes = metadata["notes"]
+    review_due_date = expiry_date or ""
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
@@ -264,12 +260,12 @@ def add_policy_version(
             original_path.name,
             file_size,
             sha256.hexdigest(),
-            (metadata or {}).get("status") or policy_row["status"],
+            status,
             effective_date,
             review_due_date,
             review_frequency,
-            (metadata or {}).get("expiry_date") or policy_row["expiry_date"],
-            (metadata or {}).get("notes") or policy_row["notes"],
+            expiry_date,
+            notes,
         ),
     )
     conn.commit()
@@ -319,6 +315,12 @@ def set_current_version(conn, policy_id: int, version_id: int) -> None:
     )
     conn.commit()
     _log_event(conn, "set_current_version", "policy", policy_id, f"version_id={version_id}")
+
+
+def unset_current_version(conn, policy_id: int) -> None:
+    conn.execute("UPDATE policies SET current_version_id = NULL WHERE id = ?", (policy_id,))
+    conn.commit()
+    _log_event(conn, "unset_current_version", "policy", policy_id, None)
 
 
 def get_version_file(conn, version_id: int) -> str:

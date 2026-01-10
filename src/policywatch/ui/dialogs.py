@@ -98,14 +98,6 @@ class PolicyDialog(QtWidgets.QDialog):
         self.status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
         self.status_combo.currentTextChanged.connect(self._update_metadata_state)
 
-        self.effective_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
-        self.effective_date.setCalendarPopup(True)
-        self.effective_date.setDisplayFormat("dd/MM/yyyy")
-        self.effective_date.dateChanged.connect(self._update_expiry_date)
-        self.review_frequency = QtWidgets.QSpinBox()
-        self.review_frequency.setRange(0, 36)
-        self.review_frequency.setValue(12)
-        self.review_frequency.valueChanged.connect(self._update_expiry_date)
         self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.expiry_date.setCalendarPopup(True)
         self.expiry_date.setDisplayFormat("dd/MM/yyyy")
@@ -126,8 +118,6 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Title", self.title_input)
         form.addRow("Category", self.category_combo)
         form.addRow("Status", self.status_combo)
-        form.addRow("Effective Date", self.effective_date)
-        form.addRow("Review Frequency (Months)", self.review_frequency)
         form.addRow("Expiry", self.expiry_date)
         form.addRow("Notes", self.notes_input)
         form.addRow("Policy File", file_container)
@@ -177,9 +167,7 @@ class PolicyDialog(QtWidgets.QDialog):
             title=title,
             category=category,
             status=self.status_combo.currentText(),
-            effective=self.effective_date.date().toString("yyyy-MM-dd"),
-            review_due=str(self.review_frequency.value()),
-            expiry=self.expiry_date.date().toString("yyyy-MM-dd"),
+            expiry=self._expiry_value(),
             notes=self.notes_input.toPlainText().strip() or None,
             created_by_user_id=None,
         )
@@ -191,9 +179,7 @@ class PolicyDialog(QtWidgets.QDialog):
                 None,
                 {
                     "status": self.status_combo.currentText(),
-                    "effective_date": self.effective_date.date().toString("yyyy-MM-dd"),
-                    "review_frequency_months": self.review_frequency.value(),
-                    "expiry_date": self.expiry_date.date().toString("yyyy-MM-dd"),
+                    "expiry_date": self._expiry_value(),
                     "notes": self.notes_input.toPlainText().strip() or None,
                 },
             )
@@ -208,41 +194,23 @@ class PolicyDialog(QtWidgets.QDialog):
         if file_path:
             self.file_path_input.setText(file_path)
 
-    def _update_expiry_date(self) -> None:
-        if not self.effective_date.isEnabled():
-            return
-        if self.expiry_date.isEnabled():
-            self.expiry_date.setDate(self.effective_date.date().addMonths(self.review_frequency.value()))
-
     def _update_metadata_state(self, status: str) -> None:
         is_draft = status == "Draft"
         min_date = QtCore.QDate(1900, 1, 1)
-        self.effective_date.setMinimumDate(min_date)
         self.expiry_date.setMinimumDate(min_date)
         if is_draft:
-            self.effective_date.setEnabled(False)
-            self.review_frequency.setEnabled(False)
             self.expiry_date.setEnabled(False)
-            self.effective_date.setSpecialValueText("")
             self.expiry_date.setSpecialValueText("")
-            self.effective_date.setDate(min_date)
             self.expiry_date.setDate(min_date)
-            self.review_frequency.setSpecialValueText("")
-            self.review_frequency.setValue(0)
-            self.effective_date.setDisplayFormat(" ")
             self.expiry_date.setDisplayFormat(" ")
         else:
-            self.effective_date.setEnabled(True)
-            self.review_frequency.setEnabled(True)
-            self.review_frequency.setMinimum(1)
-            if self.review_frequency.value() == 0:
-                self.review_frequency.setValue(12)
-            if self.effective_date.date() == min_date:
-                self.effective_date.setDate(QtCore.QDate.currentDate())
             self.expiry_date.setEnabled(True)
-            self.effective_date.setSpecialValueText("")
             self.expiry_date.setSpecialValueText("")
-            self.review_frequency.setSpecialValueText("")
-            self.effective_date.setDisplayFormat("dd/MM/yyyy")
             self.expiry_date.setDisplayFormat("dd/MM/yyyy")
-            self._update_expiry_date()
+            if self.expiry_date.date() == min_date:
+                self.expiry_date.setDate(QtCore.QDate.currentDate())
+
+    def _expiry_value(self) -> str:
+        if not self.expiry_date.isEnabled():
+            return ""
+        return self.expiry_date.date().toString("yyyy-MM-dd")
