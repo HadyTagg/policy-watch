@@ -267,6 +267,14 @@ class MainWindow(QtWidgets.QMainWindow):
             font.setBold(enabled)
             item.setFont(font)
 
+    def _select_version_row_by_id(self, version_id: int) -> None:
+        for row_index in range(self.version_table.rowCount()):
+            row_version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
+            if row_version_id == version_id:
+                self.version_table.selectRow(row_index)
+                self._highlight_version_row(row_index)
+                break
+
     def _on_tab_changed(self, index: int) -> None:
         if index == self.policy_detail_index and not self.current_policy_id:
             self.tabs.blockSignals(True)
@@ -371,14 +379,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 6,
                 QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
-            self.version_table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
-            self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
+        self.version_table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
+        self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
-            for row_index in range(self.version_table.rowCount()):
-                version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
-                if version_id == policy["current_version_id"]:
-                    self.version_table.selectRow(row_index)
-                    break
+            self._select_version_row_by_id(policy["current_version_id"])
 
     def _upload_version(self) -> None:
         if not self.current_policy_id:
@@ -416,6 +420,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mark_version_ratified(self.conn, version_id, None)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._select_version_row_by_id(version_id)
             self._refresh_policies()
             self._load_audit_log()
 
@@ -436,6 +441,7 @@ class MainWindow(QtWidgets.QMainWindow):
         unmark_version_ratified(self.conn, version_id)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._select_version_row_by_id(version_id)
             self._refresh_policies()
             self._load_audit_log()
 
@@ -471,6 +477,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _set_not_current(self) -> None:
         if not self.current_policy_id:
             return
+        selection = self.version_table.selectionModel().selectedRows()
+        selected_version_id = None
+        if selection:
+            selected_version_id = self.version_table.item(selection[0].row(), 0).data(
+                QtCore.Qt.UserRole
+            )
         if (
             QtWidgets.QMessageBox.question(
                 self,
@@ -482,6 +494,8 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         unset_current_version(self.conn, self.current_policy_id)
         self._load_policy_detail(self.current_policy_id)
+        if selected_version_id is not None:
+            self._select_version_row_by_id(selected_version_id)
         self._refresh_policies()
         self._load_audit_log()
         self._load_send_policies()
@@ -826,6 +840,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.version_table.setStyleSheet(
+            "QTableView::item:selected { background-color: hotpink; }"
+        )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
