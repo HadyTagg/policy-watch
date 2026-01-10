@@ -32,6 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.conn = conn
         self.current_policy_id: int | None = None
         self._notes_dirty = False
+        self._selected_row: int | None = None
 
         self.setWindowTitle("Policy Watch")
 
@@ -209,6 +210,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
+        self._selected_row = None
 
     def _on_policy_selected(self) -> None:
         selected = self.table.selectionModel().selectedRows()
@@ -217,6 +219,31 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_id = self.table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
+        self._highlight_selected_row(selected[0].row())
+
+    def _highlight_selected_row(self, row_index: int) -> None:
+        if self._selected_row is not None and self._selected_row != row_index:
+            self._set_row_bold(self._selected_row, False)
+        self._selected_row = row_index
+        self._set_row_bold(row_index, True)
+
+    def _set_row_bold(self, row_index: int, enabled: bool) -> None:
+        for column in range(self.table.columnCount()):
+            item = self.table.item(row_index, column)
+            if not item:
+                continue
+            font = item.font()
+            font.setBold(enabled)
+            item.setFont(font)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == self.policy_detail_index and not self.current_policy_id:
+            self.tabs.blockSignals(True)
+            self.tabs.setCurrentIndex(0)
+            self.tabs.blockSignals(False)
+            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+        if index == self.policy_distributor_index:
+            self._load_send_policies()
 
     def _on_tab_changed(self, index: int) -> None:
         if index == self.policy_detail_index and not self.current_policy_id:
