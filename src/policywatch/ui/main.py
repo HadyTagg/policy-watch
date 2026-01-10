@@ -297,24 +297,31 @@ class MainWindow(QtWidgets.QMainWindow):
         versions = list_versions(self.conn, policy_id)
         self.version_table.setRowCount(len(versions))
         for row_index, version in enumerate(versions):
+            is_current = policy["current_version_id"] == version["id"]
             self.version_table.setItem(
-                row_index, 0, QtWidgets.QTableWidgetItem(str(version["version_number"]))
+                row_index,
+                0,
+                QtWidgets.QTableWidgetItem("Current" if is_current else ""),
+            )
+            self.version_table.setItem(
+                row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
             )
             self.version_table.setItem(
                 row_index,
-                1,
+                2,
                 QtWidgets.QTableWidgetItem(self._format_datetime_display(version["created_at"])),
             )
-            self.version_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
+            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
             self.version_table.setItem(
-                row_index, 3, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
+                row_index, 5, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
             )
             self.version_table.setItem(
-                row_index, 4, QtWidgets.QTableWidgetItem(version["original_filename"])
+                row_index, 6, QtWidgets.QTableWidgetItem(version["original_filename"])
             )
             self.version_table.setItem(
                 row_index,
-                5,
+                7,
                 QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
@@ -663,6 +670,18 @@ class MainWindow(QtWidgets.QMainWindow):
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
 
+        versions = QtWidgets.QGroupBox("Version History")
+        versions_layout = QtWidgets.QVBoxLayout(versions)
+        self.version_table = QtWidgets.QTableWidget(0, 8)
+        self.version_table.setHorizontalHeaderLabels(
+            ["Current", "Version", "Created", "Status", "Hash", "Ratified", "File Name", "Size"]
+        )
+        self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.version_table.itemSelectionChanged.connect(self._on_version_selected)
+        versions_layout.addWidget(self.version_table)
+
         summary = QtWidgets.QGroupBox("Policy Metadata")
         form = QtWidgets.QFormLayout(summary)
         self.detail_title = QtWidgets.QLineEdit()
@@ -695,18 +714,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Notes", self.detail_notes)
 
-        versions = QtWidgets.QGroupBox("Version History")
-        versions_layout = QtWidgets.QVBoxLayout(versions)
-        self.version_table = QtWidgets.QTableWidget(0, 6)
-        self.version_table.setHorizontalHeaderLabels(
-            ["Version", "Created", "Hash", "Ratified", "File Name", "Size"]
-        )
-        self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.version_table.itemSelectionChanged.connect(self._on_version_selected)
-        versions_layout.addWidget(self.version_table)
-
         button_row = QtWidgets.QHBoxLayout()
         ratify_button = QtWidgets.QPushButton("Mark Ratified")
         ratify_button.clicked.connect(self._mark_ratified)
@@ -714,7 +721,7 @@ class MainWindow(QtWidgets.QMainWindow):
         unratify_button.clicked.connect(self._mark_unratified)
         set_current_button = QtWidgets.QPushButton("Set Current")
         set_current_button.clicked.connect(self._set_current)
-        open_location_button = QtWidgets.QPushButton("Open File Location")
+        open_location_button = QtWidgets.QPushButton("Open Policy Document")
         open_location_button.clicked.connect(self._open_file_location)
         button_row.addWidget(QtWidgets.QPushButton("Add Version", clicked=self._upload_version))
         button_row.addWidget(ratify_button)
@@ -723,8 +730,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(open_location_button)
         button_row.addStretch(1)
 
-        layout.addWidget(summary)
         layout.addWidget(versions)
+        layout.addWidget(summary)
         layout.addLayout(button_row)
         return wrapper
 
