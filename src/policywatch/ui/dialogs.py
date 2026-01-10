@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Callable
 
 from PySide6 import QtCore, QtWidgets
 
-from policywatch.services import create_category, create_policy
+from policywatch.services import add_policy_version, create_category, create_policy
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -105,6 +106,15 @@ class PolicyDialog(QtWidgets.QDialog):
 
         self.owner_input = QtWidgets.QLineEdit()
         self.notes_input = QtWidgets.QPlainTextEdit()
+        self.file_path_input = QtWidgets.QLineEdit()
+        self.file_path_input.setReadOnly(True)
+        browse_button = QtWidgets.QPushButton("Browse")
+        browse_button.clicked.connect(self._browse_file)
+        file_row = QtWidgets.QHBoxLayout()
+        file_row.addWidget(self.file_path_input)
+        file_row.addWidget(browse_button)
+        file_container = QtWidgets.QWidget()
+        file_container.setLayout(file_row)
 
         form = QtWidgets.QFormLayout()
         form.addRow("Title", self.title_input)
@@ -115,6 +125,7 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Expiry", self.expiry_date)
         form.addRow("Owner", self.owner_input)
         form.addRow("Notes", self.notes_input)
+        form.addRow("Policy File", file_container)
 
         self.save_button = QtWidgets.QPushButton("Save")
         self.save_button.clicked.connect(self._save)
@@ -151,8 +162,11 @@ class PolicyDialog(QtWidgets.QDialog):
         if not title or not category:
             QtWidgets.QMessageBox.warning(self, "Missing", "Title and category are required.")
             return
-
-        create_policy(
+        file_path = self.file_path_input.text().strip()
+        if not file_path:
+            QtWidgets.QMessageBox.warning(self, "Missing", "Select a policy document.")
+            return
+        policy_id = create_policy(
             self.conn,
             title=title,
             category=category,
@@ -164,5 +178,11 @@ class PolicyDialog(QtWidgets.QDialog):
             notes=self.notes_input.toPlainText().strip() or None,
             created_by_user_id=None,
         )
+        add_policy_version(self.conn, policy_id, Path(file_path), None)
         self.on_saved()
         self.accept()
+
+    def _browse_file(self) -> None:
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy Document")
+        if file_path:
+            self.file_path_input.setText(file_path)

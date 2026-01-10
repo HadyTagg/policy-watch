@@ -34,6 +34,6 @@ def traffic_light_status(
 
     amber_threshold = _add_months(today, amber_months)
     if review_due_date <= amber_threshold:
-        return TrafficResult(status="Amber", reason="Review upcoming")
+        return TrafficResult(status="Amber", reason="Review Needed")
 
     return TrafficResult(status="Green", reason="Current")

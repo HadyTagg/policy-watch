@@ -24,7 +24,7 @@ def test_traffic_amber():
         overdue_grace_days=0,
     )
     assert result.status == "Amber"
-    assert result.reason == "Review upcoming"
+    assert result.reason == "Review Needed"
 
 
 def test_traffic_red_overdue():

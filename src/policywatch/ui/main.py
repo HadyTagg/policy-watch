@@ -212,6 +212,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_new_policy(self) -> None:
         dialog = PolicyDialog(self.conn, self._refresh_policies, self)
         dialog.exec()
+        self._load_send_policies()
 
     def _load_policy_detail(self, policy_id: int) -> None:
         policy = self.conn.execute(
