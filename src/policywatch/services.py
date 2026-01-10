@@ -5,14 +5,21 @@ import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from policywatch import config
 from policywatch.policies import build_policy_path, next_version_number, slugify
 from policywatch.traffic import traffic_light_status
 
-LONDON_TZ = ZoneInfo("Europe/London")
+
+def _resolve_london_tz() -> datetime.tzinfo:
+    try:
+        return ZoneInfo("Europe/London")
+    except ZoneInfoNotFoundError:
+        return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
+
+
+LONDON_TZ = _resolve_london_tz()
 
 
 @dataclass(frozen=True)
