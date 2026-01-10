@@ -14,6 +14,7 @@ class PolicyWatchApp:
         self.paths = config.get_paths()
         self.conn = db.connect(self.paths.db_path)
         db.apply_schema(self.conn)
+        config.ensure_defaults(self.conn)
         self._app: QtWidgets.QApplication | None = None
 
     def _ensure_admin(self) -> None:

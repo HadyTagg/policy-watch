@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from typing import Any
 from pathlib import Path
 
 DEFAULT_SETTINGS = {
@@ -40,3 +41,30 @@ def get_paths() -> AppPaths:
     data_dir = resolve_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     return AppPaths(data_dir=data_dir, db_path=data_dir / "policywatch.db")
+
+
+def ensure_defaults(conn) -> None:
+    for key, value in DEFAULT_SETTINGS.items():
+        conn.execute(
+            "INSERT INTO config (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO NOTHING",
+            (key, json.dumps(value) if isinstance(value, (dict, list)) else str(value)),
+        )
+    conn.commit()
+
+
+def get_setting(conn, key: str, default: Any | None = None) -> str:
+    row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
+    if row:
+        return row["value"]
+    return str(default) if default is not None else ""
+
+
+def set_setting(conn, key: str, value: Any) -> None:
+    stored = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+    conn.execute(
+        "INSERT INTO config (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, stored),
+    )
+    conn.commit()

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import datetime
 import sqlite3
 from typing import Callable
 
 from PySide6 import QtCore, QtWidgets
 
-from policywatch.policies import slugify
+from policywatch.services import create_category, create_policy
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -55,13 +54,8 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         name = self.category_input.text().strip()
         if not name:
             return
-        created_at = datetime.datetime.utcnow().isoformat()
         try:
-            with self.conn:
-                self.conn.execute(
-                    "INSERT INTO categories (name, created_at) VALUES (?, ?)",
-                    (name, created_at),
-                )
+            create_category(self.conn, name)
         except sqlite3.IntegrityError:
             QtWidgets.QMessageBox.warning(self, "Duplicate", "Category already exists.")
             return
@@ -75,6 +69,13 @@ class CategoryManagerDialog(QtWidgets.QDialog):
             return
         row = selection[0].row()
         category_id = int(self.table.item(row, 0).text())
+        policy_count = self.conn.execute(
+            "SELECT COUNT(*) AS count FROM policies WHERE category = (SELECT name FROM categories WHERE id = ?)",
+            (category_id,),
+        ).fetchone()
+        if policy_count and policy_count["count"] > 0:
+            QtWidgets.QMessageBox.warning(self, "In Use", "Category is assigned to policies.")
+            return
         with self.conn:
             self.conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
         self._load_categories()
@@ -115,14 +116,14 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Owner", self.owner_input)
         form.addRow("Notes", self.notes_input)
 
-        save_button = QtWidgets.QPushButton("Save")
-        save_button.clicked.connect(self._save)
+        self.save_button = QtWidgets.QPushButton("Save")
+        self.save_button.clicked.connect(self._save)
         cancel_button = QtWidgets.QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
 
         button_row = QtWidgets.QHBoxLayout()
         button_row.addStretch(1)
-        button_row.addWidget(save_button)
+        button_row.addWidget(self.save_button)
         button_row.addWidget(cancel_button)
 
         layout = QtWidgets.QVBoxLayout(self)
@@ -135,6 +136,14 @@ class PolicyDialog(QtWidgets.QDialog):
         rows = self.conn.execute("SELECT name FROM categories ORDER BY name").fetchall()
         self.category_combo.clear()
         self.category_combo.addItems([row["name"] for row in rows])
+        has_categories = bool(rows)
+        self.save_button.setEnabled(has_categories)
+        if not has_categories:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Categories",
+                "Create at least one category before adding policies.",
+            )
 
     def _save(self) -> None:
         title = self.title_input.text().strip()
@@ -143,29 +152,17 @@ class PolicyDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "Missing", "Title and category are required.")
             return
 
-        created_at = datetime.datetime.utcnow().isoformat()
-        slug = slugify(title)
-        with self.conn:
-            self.conn.execute(
-                """
-                INSERT INTO policies (
-                    title, slug, category, status, ratified, ratified_at, ratified_by_user_id,
-                    effective_date, review_due_date, expiry_date, owner, notes,
-                    current_version_id, created_at, created_by_user_id
-                ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, NULL)
-                """,
-                (
-                    title,
-                    slug,
-                    category,
-                    self.status_combo.currentText(),
-                    self.effective_date.date().toString("yyyy-MM-dd"),
-                    self.review_due_date.date().toString("yyyy-MM-dd"),
-                    self.expiry_date.date().toString("yyyy-MM-dd"),
-                    self.owner_input.text().strip() or None,
-                    self.notes_input.toPlainText().strip() or None,
-                    created_at,
-                ),
-            )
+        create_policy(
+            self.conn,
+            title=title,
+            category=category,
+            status=self.status_combo.currentText(),
+            effective=self.effective_date.date().toString("yyyy-MM-dd"),
+            review_due=self.review_due_date.date().toString("yyyy-MM-dd"),
+            expiry=self.expiry_date.date().toString("yyyy-MM-dd"),
+            owner=self.owner_input.text().strip() or None,
+            notes=self.notes_input.toPlainText().strip() or None,
+            created_by_user_id=None,
+        )
         self.on_saved()
         self.accept()
