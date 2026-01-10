@@ -332,7 +332,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notes_dirty = False
 
         versions = list_versions(self.conn, policy_id)
-        headers = ["Current", "Version", "Created", "Status", "Ratified", "File Name", "Size", "Hash"]
+        headers = ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
@@ -342,7 +342,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index,
                 0,
-                QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current"),
+                QtWidgets.QTableWidgetItem(self._format_datetime_display(version["created_at"])),
             )
             self.version_table.setItem(
                 row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
@@ -350,12 +350,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.version_table.setItem(
                 row_index,
                 2,
-                QtWidgets.QTableWidgetItem(self._format_datetime_display(version["created_at"])),
+                QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current"),
             )
-            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(version["status"] or ""))
             self.version_table.setItem(
                 row_index, 4, QtWidgets.QTableWidgetItem("Yes" if version["ratified"] else "No")
             )
+            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["status"] or ""))
             self.version_table.setItem(
                 row_index, 5, QtWidgets.QTableWidgetItem(version["original_filename"])
             )
@@ -742,7 +742,7 @@ class MainWindow(QtWidgets.QMainWindow):
         versions_layout = QtWidgets.QVBoxLayout(versions)
         self.version_table = QtWidgets.QTableWidget(0, 8)
         self.version_table.setHorizontalHeaderLabels(
-            ["Current", "Version", "Created", "Status", "Ratified", "File Name", "Size", "Hash"]
+            ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
