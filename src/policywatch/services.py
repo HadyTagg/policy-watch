@@ -31,7 +31,6 @@ class PolicyRow:
     ratified: bool
     review_due_date: str
     expiry_date: str
-    owner: str | None
     current_version_id: int | None
     current_version_number: int | None
     traffic_status: str
@@ -49,8 +48,9 @@ def _policy_root(conn) -> Path:
 def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
-        SELECT p.id, p.title, p.category, p.status, p.ratified, p.review_due_date,
-               p.expiry_date, p.owner, p.current_version_id,
+        SELECT p.id, p.title, p.category, p.status,
+               COALESCE(v.ratified, 0) AS ratified,
+               p.review_due_date, p.expiry_date, p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
         LEFT JOIN policy_versions v ON v.id = p.current_version_id
@@ -76,7 +76,6 @@ def list_policies(conn) -> list[PolicyRow]:
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
                 expiry_date=row["expiry_date"],
-                owner=row["owner"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
                 traffic_status=traffic.status,
@@ -101,7 +100,7 @@ def list_versions(conn, policy_id: int) -> list[dict]:
 
 
 def create_policy(conn, title: str, category: str, status: str, effective: str, review_due: str, expiry: str,
-                  owner: str | None, notes: str | None, created_by_user_id: int | None) -> int:
+                  notes: str | None, created_by_user_id: int | None) -> int:
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
     cursor = conn.execute(
@@ -120,7 +119,7 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
             effective,
             review_due,
             expiry,
-            owner,
+            None,
             notes,
             created_at,
             created_by_user_id,
@@ -168,6 +167,13 @@ def add_policy_version(
                 break
             dest.write(chunk)
             sha256.update(chunk)
+    existing_hash = conn.execute(
+        "SELECT 1 FROM policy_versions WHERE policy_id = ? AND sha256_hash = ? LIMIT 1",
+        (policy_id, sha256.hexdigest()),
+    ).fetchone()
+    if existing_hash:
+        temp_path.unlink(missing_ok=True)
+        raise ValueError("No change detected. Policy document matches an existing version.")
     temp_path.replace(target_path)
 
     file_size = target_path.stat().st_size
@@ -192,6 +198,12 @@ def add_policy_version(
         ),
     )
     conn.commit()
+    current_version_id = conn.execute(
+        "SELECT current_version_id FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if current_version_id and not current_version_id["current_version_id"]:
+        set_current_version(conn, policy_id, cursor.lastrowid)
     return cursor.lastrowid
 
 
