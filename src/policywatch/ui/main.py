@@ -360,9 +360,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 2,
                 QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current"),
             )
-            self.version_table.setItem(
-                row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
-            )
+            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
+            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(ratified_value))
             self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["status"] or ""))
             self.version_table.setItem(
                 row_index, 5, QtWidgets.QTableWidgetItem(version["original_filename"])

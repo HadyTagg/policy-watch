@@ -378,7 +378,13 @@ def update_policy_title(conn, policy_id: int, title: str) -> None:
         (title, new_slug, policy_id),
     )
     conn.commit()
-    _log_event(conn, "update_policy_title", "policy", policy_id, f"title={title}")
+    _log_event(
+        conn,
+        "update_policy_title",
+        "policy",
+        policy_id,
+        f"title: {current_title} -> {title}",
+    )
 
 
 def update_policy_category(conn, policy_id: int, category: str) -> None:
@@ -423,7 +429,13 @@ def update_policy_category(conn, policy_id: int, category: str) -> None:
         (category, policy_id),
     )
     conn.commit()
-    _log_event(conn, "update_policy_category", "policy", policy_id, f"category={category}")
+    _log_event(
+        conn,
+        "update_policy_category",
+        "policy",
+        policy_id,
+        f"category: {current_category} -> {category}",
+    )
 
 
 def get_version_file(conn, version_id: int) -> str:
