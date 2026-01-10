@@ -152,6 +152,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             """
         )
     _ensure_policy_version_metadata(conn)
+    _ensure_policy_metadata(conn)
 
 
 def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
@@ -160,12 +161,19 @@ def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
         ("status", "TEXT"),
         ("effective_date", "TEXT"),
         ("review_due_date", "TEXT"),
+        ("review_frequency_months", "INTEGER"),
         ("expiry_date", "TEXT"),
         ("notes", "TEXT"),
     ]
     for name, column_type in additions:
         if name not in columns:
             conn.execute(f"ALTER TABLE policy_versions ADD COLUMN {name} {column_type}")
+
+
+def _ensure_policy_metadata(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(policies)").fetchall()}
+    if "review_frequency_months" not in columns:
+        conn.execute("ALTER TABLE policies ADD COLUMN review_frequency_months INTEGER")
 
 
 @contextmanager

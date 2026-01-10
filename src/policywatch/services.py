@@ -50,6 +50,23 @@ def _log_event(
     )
 
 
+def _add_months(date_value: datetime.date, months: int) -> datetime.date:
+    year = date_value.year + (date_value.month - 1 + months) // 12
+    month = (date_value.month - 1 + months) % 12 + 1
+    day = min(
+        date_value.day,
+        [31, 29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][
+            month - 1
+        ],
+    )
+    return datetime.date(year, month, day)
+
+
+def _review_due_date(effective_date: str, frequency_months: int) -> str:
+    effective = datetime.date.fromisoformat(effective_date)
+    return _add_months(effective, frequency_months).isoformat()
+
+
 @dataclass(frozen=True)
 class PolicyRow:
     id: int
@@ -134,13 +151,15 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
                   notes: str | None, created_by_user_id: int | None) -> int:
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
+    review_frequency = int(review_due)
+    review_due_date = _review_due_date(effective, review_frequency)
     cursor = conn.execute(
         """
         INSERT INTO policies (
             title, slug, category, status, ratified, ratified_at, ratified_by_user_id,
-            effective_date, review_due_date, expiry_date, owner, notes,
+            effective_date, review_due_date, review_frequency_months, expiry_date, owner, notes,
             current_version_id, created_at, created_by_user_id
-        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
+        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         (
             title,
@@ -148,7 +167,8 @@ def create_policy(conn, title: str, category: str, status: str, effective: str, 
             category,
             status,
             effective,
-            review_due,
+            review_due_date,
+            review_frequency,
             expiry,
             None,
             notes,
@@ -176,7 +196,8 @@ def add_policy_version(
 
     policy_row = conn.execute(
         """
-        SELECT title, category, status, effective_date, review_due_date, expiry_date, notes
+        SELECT title, category, status, effective_date, review_due_date,
+               review_frequency_months, expiry_date, notes
         FROM policies
         WHERE id = ?
         """,
@@ -215,14 +236,19 @@ def add_policy_version(
 
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
+    effective_date = (metadata or {}).get("effective_date") or policy_row["effective_date"]
+    review_frequency = int(
+        (metadata or {}).get("review_frequency_months") or policy_row["review_frequency_months"] or 1
+    )
+    review_due_date = _review_due_date(effective_date, review_frequency)
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
             policy_id, version_number, created_at, created_by_user_id,
             file_path, original_filename, file_size_bytes, sha256_hash,
             ratified, ratified_at, ratified_by_user_id,
-            status, effective_date, review_due_date, expiry_date, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?)
+            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?)
         """,
         (
             policy_id,
@@ -234,8 +260,9 @@ def add_policy_version(
             file_size,
             sha256.hexdigest(),
             (metadata or {}).get("status") or policy_row["status"],
-            (metadata or {}).get("effective_date") or policy_row["effective_date"],
-            (metadata or {}).get("review_due_date") or policy_row["review_due_date"],
+            effective_date,
+            review_due_date,
+            review_frequency,
             (metadata or {}).get("expiry_date") or policy_row["expiry_date"],
             (metadata or {}).get("notes") or policy_row["notes"],
         ),
@@ -253,12 +280,31 @@ def add_policy_version(
 
 def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
     ratified_at = datetime.datetime.utcnow().isoformat()
+    version_row = conn.execute(
+        "SELECT version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
     conn.execute(
         "UPDATE policy_versions SET ratified = 1, ratified_at = ?, ratified_by_user_id = ? WHERE id = ?",
         (ratified_at, user_id, version_id),
     )
     conn.commit()
-    _log_event(conn, "ratify_version", "policy_version", version_id, None)
+    details = f"version={version_row['version_number']}" if version_row else None
+    _log_event(conn, "ratify_version", "policy_version", version_id, details)
+
+
+def unmark_version_ratified(conn, version_id: int) -> None:
+    version_row = conn.execute(
+        "SELECT version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    conn.execute(
+        "UPDATE policy_versions SET ratified = 0, ratified_at = NULL, ratified_by_user_id = NULL WHERE id = ?",
+        (version_id,),
+    )
+    conn.commit()
+    details = f"version={version_row['version_number']}" if version_row else None
+    _log_event(conn, "unratify_version", "policy_version", version_id, details)
 
 
 def set_current_version(conn, policy_id: int, version_id: int) -> None:
