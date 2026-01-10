@@ -420,6 +420,7 @@ class MainWindow(QtWidgets.QMainWindow):
         mark_version_ratified(self.conn, version_id, None)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._select_version_row_by_id(version_id)
             self._refresh_policies()
             self._load_audit_log()
 
@@ -440,6 +441,7 @@ class MainWindow(QtWidgets.QMainWindow):
         unmark_version_ratified(self.conn, version_id)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._select_version_row_by_id(version_id)
             self._refresh_policies()
             self._load_audit_log()
 
