@@ -301,6 +301,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
+        if policy["current_version_id"]:
+            for row_index in range(self.version_table.rowCount()):
+                version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
+                if version_id == policy["current_version_id"]:
+                    self.version_table.selectRow(row_index)
+                    break
 
     def _upload_version(self) -> None:
         if not self.current_policy_id:
@@ -309,8 +315,11 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy File")
         if not file_path:
             return
+        metadata = self._prompt_version_metadata()
+        if metadata is None:
+            return
         try:
-            add_policy_version(self.conn, self.current_policy_id, Path(file_path), None)
+            add_policy_version(self.conn, self.current_policy_id, Path(file_path), None, metadata)
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
             return
@@ -355,6 +364,35 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path = get_version_file(self.conn, version_id)
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
 
+    def _on_version_selected(self) -> None:
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+        version = self.conn.execute(
+            """
+            SELECT status, effective_date, review_due_date, expiry_date, notes
+            FROM policy_versions
+            WHERE id = ?
+            """,
+            (version_id,),
+        ).fetchone()
+        if not version:
+            return
+        self.detail_status.blockSignals(True)
+        self.detail_effective.blockSignals(True)
+        self.detail_review_due.blockSignals(True)
+        self.detail_expiry.blockSignals(True)
+        self.detail_status.setCurrentText(version["status"] or "")
+        self.detail_effective.setDate(QtCore.QDate.fromString(version["effective_date"], "yyyy-MM-dd"))
+        self.detail_review_due.setDate(QtCore.QDate.fromString(version["review_due_date"], "yyyy-MM-dd"))
+        self.detail_expiry.setDate(QtCore.QDate.fromString(version["expiry_date"], "yyyy-MM-dd"))
+        self.detail_notes.setPlainText(version["notes"] or "")
+        self.detail_status.blockSignals(False)
+        self.detail_effective.blockSignals(False)
+        self.detail_review_due.blockSignals(False)
+        self.detail_expiry.blockSignals(False)
+
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         color_map = {
             "Green": QtGui.QColor("#d7f5dd"),
@@ -375,13 +413,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_policy_field(self, field: str, value: str) -> None:
         if not self.current_policy_id:
             return
+        selected = self.version_table.selectionModel().selectedRows()
+        selected_version_id = None
+        if selected:
+            selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         policy_row = self.conn.execute(
             "SELECT current_version_id FROM policies WHERE id = ?",
             (self.current_policy_id,),
         ).fetchone()
         if not policy_row:
             return
-        current_version_id = policy_row["current_version_id"]
+        current_version_id = selected_version_id or policy_row["current_version_id"]
         if current_version_id:
             current = self.conn.execute(
                 f"SELECT {field} FROM policy_versions WHERE id = ?",
@@ -453,6 +495,49 @@ class MainWindow(QtWidgets.QMainWindow):
         size_gb = size_mb / 1024
         return f"{size_gb:.2f} GB"
 
+    def _prompt_version_metadata(self) -> dict | None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Version Metadata")
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        form = QtWidgets.QFormLayout()
+        status_combo = QtWidgets.QComboBox()
+        status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        effective_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        effective_date.setCalendarPopup(True)
+        review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        review_due_date.setCalendarPopup(True)
+        expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        expiry_date.setCalendarPopup(True)
+        notes_input = QtWidgets.QPlainTextEdit()
+
+        form.addRow("Status", status_combo)
+        form.addRow("Effective Date", effective_date)
+        form.addRow("Review Due", review_due_date)
+        form.addRow("Expiry", expiry_date)
+        form.addRow("Notes", notes_input)
+        layout.addLayout(form)
+
+        button_row = QtWidgets.QHBoxLayout()
+        save_button = QtWidgets.QPushButton("Save")
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        save_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        button_row.addStretch(1)
+        button_row.addWidget(save_button)
+        button_row.addWidget(cancel_button)
+        layout.addLayout(button_row)
+
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        return {
+            "status": status_combo.currentText(),
+            "effective_date": effective_date.date().toString("yyyy-MM-dd"),
+            "review_due_date": review_due_date.date().toString("yyyy-MM-dd"),
+            "expiry_date": expiry_date.date().toString("yyyy-MM-dd"),
+            "notes": notes_input.toPlainText().strip() or None,
+        }
+
     def _on_status_changed(self, status: str) -> None:
         self._update_policy_field("status", status)
 
@@ -507,6 +592,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
         button_row = QtWidgets.QHBoxLayout()

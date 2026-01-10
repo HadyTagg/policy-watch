@@ -166,6 +166,7 @@ def add_policy_version(
     policy_id: int,
     original_path: Path,
     created_by_user_id: int | None,
+    metadata: dict | None = None,
 ) -> int:
     existing = conn.execute(
         "SELECT version_number FROM policy_versions WHERE policy_id = ?",
@@ -232,11 +233,11 @@ def add_policy_version(
             original_path.name,
             file_size,
             sha256.hexdigest(),
-            policy_row["status"],
-            policy_row["effective_date"],
-            policy_row["review_due_date"],
-            policy_row["expiry_date"],
-            policy_row["notes"],
+            (metadata or {}).get("status") or policy_row["status"],
+            (metadata or {}).get("effective_date") or policy_row["effective_date"],
+            (metadata or {}).get("review_due_date") or policy_row["review_due_date"],
+            (metadata or {}).get("expiry_date") or policy_row["expiry_date"],
+            (metadata or {}).get("notes") or policy_row["notes"],
         ),
     )
     conn.commit()
@@ -247,12 +248,6 @@ def add_policy_version(
         cursor.lastrowid,
         f"policy_id={policy_id} version={version_number}",
     )
-    current_version_id = conn.execute(
-        "SELECT current_version_id FROM policies WHERE id = ?",
-        (policy_id,),
-    ).fetchone()
-    if current_version_id and not current_version_id["current_version_id"]:
-        set_current_version(conn, policy_id, cursor.lastrowid)
     return cursor.lastrowid
 
 

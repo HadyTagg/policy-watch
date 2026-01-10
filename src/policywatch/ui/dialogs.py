@@ -176,7 +176,19 @@ class PolicyDialog(QtWidgets.QDialog):
             created_by_user_id=None,
         )
         try:
-            add_policy_version(self.conn, policy_id, Path(file_path), None)
+            add_policy_version(
+                self.conn,
+                policy_id,
+                Path(file_path),
+                None,
+                {
+                    "status": self.status_combo.currentText(),
+                    "effective_date": self.effective_date.date().toString("yyyy-MM-dd"),
+                    "review_due_date": self.review_due_date.date().toString("yyyy-MM-dd"),
+                    "expiry_date": self.expiry_date.date().toString("yyyy-MM-dd"),
+                    "notes": self.notes_input.toPlainText().strip() or None,
+                },
+            )
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
             return
