@@ -17,6 +17,7 @@ from policywatch.services import (
     list_categories,
     list_policies,
     list_versions,
+    mark_version_ratified,
     parse_mapping_json,
     set_current_version,
 )
@@ -41,10 +42,6 @@ class MainWindow(QtWidgets.QMainWindow):
         manage_categories_action = QtGui.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
-
-        upload_version_action = QtGui.QAction("Upload Version", self)
-        upload_version_action.triggered.connect(self._upload_version)
-        toolbar.addAction(upload_version_action)
 
         header = QtWidgets.QLabel(f"Welcome, {username}.")
         header.setStyleSheet("font-size: 16px; font-weight: 600;")
@@ -80,7 +77,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.ratified_filter, 1)
         filter_row.addWidget(self.show_expired)
 
-        self.table = QtWidgets.QTableWidget(0, 9)
+        self.table = QtWidgets.QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
                 "Traffic Light",
@@ -91,7 +88,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Current Version",
                 "Review Due",
                 "Expiry",
-                "Owner",
             ]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -101,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
-            "No policies yet. Use the toolbar to add policies and upload versions."
+            "No policies yet. Use the toolbar to add policies, then upload versions from Policy Detail."
         )
         self.empty_state.setAlignment(QtCore.Qt.AlignCenter)
         self.empty_state.setStyleSheet("color: #666; padding: 12px;")
@@ -191,7 +187,6 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             self.table.setItem(row_index, 6, QtWidgets.QTableWidgetItem(policy.review_due_date))
             self.table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(policy.expiry_date))
-            self.table.setItem(row_index, 8, QtWidgets.QTableWidgetItem(policy.owner or ""))
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -210,6 +205,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_policies()
 
     def _open_new_policy(self) -> None:
+        if not list_categories(self.conn):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Categories",
+                "Create at least one category before adding policies.",
+            )
+            return
         dialog = PolicyDialog(self.conn, self._refresh_policies, self)
         dialog.exec()
         self._load_send_policies()
@@ -221,15 +223,21 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
+        self.detail_status.blockSignals(True)
+        self.detail_effective.blockSignals(True)
+        self.detail_review_due.blockSignals(True)
+        self.detail_expiry.blockSignals(True)
         self.detail_title.setText(policy["title"])
         self.detail_category.setText(policy["category"])
         self.detail_status.setCurrentText(policy["status"])
-        self.detail_ratified.setChecked(bool(policy["ratified"]))
         self.detail_effective.setDate(QtCore.QDate.fromString(policy["effective_date"], "yyyy-MM-dd"))
         self.detail_review_due.setDate(QtCore.QDate.fromString(policy["review_due_date"], "yyyy-MM-dd"))
         self.detail_expiry.setDate(QtCore.QDate.fromString(policy["expiry_date"], "yyyy-MM-dd"))
-        self.detail_owner.setText(policy["owner"] or "")
         self.detail_notes.setPlainText(policy["notes"] or "")
+        self.detail_status.blockSignals(False)
+        self.detail_effective.blockSignals(False)
+        self.detail_review_due.blockSignals(False)
+        self.detail_expiry.blockSignals(False)
 
         versions = list_versions(self.conn, policy_id)
         self.version_table.setRowCount(len(versions))
@@ -257,7 +265,11 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy File")
         if not file_path:
             return
-        add_policy_version(self.conn, self.current_policy_id, Path(file_path), None)
+        try:
+            add_policy_version(self.conn, self.current_policy_id, Path(file_path), None)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
+            return
         self._load_policy_detail(self.current_policy_id)
         self._refresh_policies()
 
@@ -266,13 +278,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selection:
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        self.conn.execute(
-            "UPDATE policy_versions SET ratified = 1, ratified_at = ?, ratified_by_user_id = NULL WHERE id = ?",
-            (datetime.utcnow().isoformat(), version_id),
-        )
-        self.conn.commit()
+        mark_version_ratified(self.conn, version_id, None)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._refresh_policies()
 
     def _set_current(self) -> None:
         if not self.current_policy_id:
@@ -299,6 +308,43 @@ class MainWindow(QtWidgets.QMainWindow):
         file_path = get_version_file(self.conn, version_id)
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
 
+    def _update_policy_field(self, field: str, value: str) -> None:
+        if not self.current_policy_id:
+            return
+        self.conn.execute(
+            f"UPDATE policies SET {field} = ? WHERE id = ?",
+            (value, self.current_policy_id),
+        )
+        self.conn.commit()
+        try:
+            actor = os.getlogin()
+        except OSError:
+            actor = None
+        audit.append_event_log(
+            self.conn,
+            {
+                "occurred_at": datetime.utcnow().isoformat(),
+                "actor": actor,
+                "action": "update_policy_field",
+                "entity_type": "policy",
+                "entity_id": self.current_policy_id,
+                "details": f"{field}={value}",
+            },
+        )
+        self._refresh_policies()
+
+    def _on_status_changed(self, status: str) -> None:
+        self._update_policy_field("status", status)
+
+    def _on_effective_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("effective_date", value.toString("yyyy-MM-dd"))
+
+    def _on_review_due_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("review_due_date", value.toString("yyyy-MM-dd"))
+
+    def _on_expiry_changed(self, value: QtCore.QDate) -> None:
+        self._update_policy_field("expiry_date", value.toString("yyyy-MM-dd"))
+
     def _build_policy_detail(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
@@ -311,31 +357,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.setReadOnly(True)
         self.detail_status = QtWidgets.QComboBox()
         self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Archived"])
-        self.detail_status.setEnabled(False)
-        self.detail_ratified = QtWidgets.QCheckBox("Yes")
-        self.detail_ratified.setEnabled(False)
+        self.detail_status.currentTextChanged.connect(self._on_status_changed)
         self.detail_effective = QtWidgets.QDateEdit()
         self.detail_effective.setCalendarPopup(True)
-        self.detail_effective.setEnabled(False)
+        self.detail_effective.dateChanged.connect(self._on_effective_changed)
         self.detail_review_due = QtWidgets.QDateEdit()
         self.detail_review_due.setCalendarPopup(True)
-        self.detail_review_due.setEnabled(False)
+        self.detail_review_due.dateChanged.connect(self._on_review_due_changed)
         self.detail_expiry = QtWidgets.QDateEdit()
         self.detail_expiry.setCalendarPopup(True)
-        self.detail_expiry.setEnabled(False)
-        self.detail_owner = QtWidgets.QLineEdit()
-        self.detail_owner.setReadOnly(True)
+        self.detail_expiry.dateChanged.connect(self._on_expiry_changed)
         self.detail_notes = QtWidgets.QPlainTextEdit()
         self.detail_notes.setReadOnly(True)
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
         form.addRow("Status", self.detail_status)
-        form.addRow("Ratified", self.detail_ratified)
         form.addRow("Effective Date", self.detail_effective)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Expiry", self.detail_expiry)
-        form.addRow("Owner", self.detail_owner)
         form.addRow("Notes", self.detail_notes)
 
         versions = QtWidgets.QGroupBox("Version History")
@@ -346,6 +386,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         versions_layout.addWidget(self.version_table)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -615,20 +656,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         filters = QtWidgets.QHBoxLayout()
         self.audit_start = QtWidgets.QDateEdit()
+        self.audit_start.setCalendarPopup(True)
+        self.audit_start.setDate(QtCore.QDate(2026, 1, 1))
         self.audit_end = QtWidgets.QDateEdit()
-        self.audit_recipient = QtWidgets.QLineEdit()
-        self.audit_policy = QtWidgets.QLineEdit()
-        self.audit_status = QtWidgets.QComboBox()
-        self.audit_status.addItems(["All", "SENT", "FAILED"])
+        self.audit_end.setCalendarPopup(True)
+        self.audit_end.setDate(QtCore.QDate.currentDate())
         filters.addWidget(self.audit_start)
         filters.addWidget(self.audit_end)
-        filters.addWidget(self.audit_recipient)
-        filters.addWidget(self.audit_policy)
-        filters.addWidget(self.audit_status)
 
-        self.audit_table = QtWidgets.QTableWidget(0, 6)
+        self.audit_table = QtWidgets.QTableWidget(0, 5)
         self.audit_table.setHorizontalHeaderLabels(
-            ["Sent At", "Recipient", "Policy", "Version", "Status", "Mailbox"]
+            ["Occurred At", "Actor", "Action", "Entity", "Details"]
         )
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
@@ -650,24 +688,33 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _load_audit_log(self) -> None:
+        start_date = self.audit_start.date().toString("yyyy-MM-dd")
+        end_date = self.audit_end.date().toString("yyyy-MM-dd")
         rows = self.conn.execute(
-            "SELECT sent_at, recipient_email, policy_title, version_number, status, sender_mailbox "
-            "FROM email_log ORDER BY sent_at DESC"
+            """
+            SELECT occurred_at, actor, action, entity_type, entity_id, details
+            FROM audit_events
+            WHERE date(occurred_at) BETWEEN ? AND ?
+            ORDER BY occurred_at DESC
+            """,
+            (start_date, end_date),
         ).fetchall()
         self.audit_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
-            self.audit_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(row["sent_at"]))
-            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["recipient_email"]))
-            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["policy_title"]))
-            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(str(row["version_number"])))
-            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["status"]))
-            self.audit_table.setItem(row_index, 5, QtWidgets.QTableWidgetItem(row["sender_mailbox"] or ""))
+            entity = row["entity_type"]
+            if row["entity_id"] is not None:
+                entity = f"{entity} #{row['entity_id']}"
+            self.audit_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(row["occurred_at"]))
+            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
+            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
+            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
+            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
 
     def _export_audit_csv(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "audit_log.csv")
         if not path:
             return
-        rows = self.conn.execute("SELECT * FROM email_log ORDER BY sent_at DESC").fetchall()
+        rows = self.conn.execute("SELECT * FROM audit_events ORDER BY occurred_at DESC").fetchall()
         import csv
 
         with open(path, "w", newline="", encoding="utf-8") as handle:
@@ -678,7 +725,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 writer.writerow(list(row))
 
     def _verify_audit(self) -> None:
-        ok, message = audit.verify_audit_log(self.conn)
+        ok, message = audit.verify_event_log(self.conn)
         QtWidgets.QMessageBox.information(self, "Audit Log", message)
 
     def _build_settings(self) -> QtWidgets.QWidget:
