@@ -236,6 +236,8 @@ class PolicyDialog(QtWidgets.QDialog):
             self.review_frequency.setMinimum(1)
             if self.review_frequency.value() == 0:
                 self.review_frequency.setValue(12)
+            if self.effective_date.date() == min_date:
+                self.effective_date.setDate(QtCore.QDate.currentDate())
             self.expiry_date.setEnabled(False)
             self.effective_date.setSpecialValueText("")
             self.expiry_date.setSpecialValueText("")

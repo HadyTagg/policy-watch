@@ -676,6 +676,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_frequency.setMinimum(1)
                 if review_frequency.value() == 0:
                     review_frequency.setValue(12)
+                if effective_date.date() == min_date:
+                    effective_date.setDate(QtCore.QDate.currentDate())
                 expiry_date.setEnabled(False)
                 effective_date.setSpecialValueText("")
                 expiry_date.setSpecialValueText("")
