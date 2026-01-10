@@ -1,0 +1,43 @@
+from __future__ import annotations
+
+from PySide6 import QtCore, QtWidgets
+
+
+class LoginWindow(QtWidgets.QDialog):
+    authenticated = QtCore.Signal(str)
+
+    def __init__(self, on_authenticate, parent=None):
+        super().__init__(parent)
+        self._on_authenticate = on_authenticate
+        self.setWindowTitle("Policy Watch - Login")
+        self.setModal(True)
+
+        self.username_input = QtWidgets.QLineEdit()
+        self.password_input = QtWidgets.QLineEdit()
+        self.password_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.message_label = QtWidgets.QLabel()
+        self.message_label.setStyleSheet("color: #b00020")
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Username", self.username_input)
+        form.addRow("Password", self.password_input)
+
+        button = QtWidgets.QPushButton("Login")
+        button.clicked.connect(self._handle_login)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(button)
+        layout.addWidget(self.message_label)
+
+    def _handle_login(self):
+        username = self.username_input.text().strip()
+        password = self.password_input.text()
+        if not username or not password:
+            self.message_label.setText("Enter username and password.")
+            return
+        if self._on_authenticate(username, password):
+            self.accept()
+            self.authenticated.emit(username)
+        else:
+            self.message_label.setText("Invalid credentials.")
