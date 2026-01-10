@@ -126,6 +126,24 @@ def verify_audit_log(conn: sqlite3.Connection) -> tuple[bool, str]:
     return True, "Audit log verified"
 
 
+def verify_event_log(conn: sqlite3.Connection) -> tuple[bool, str]:
+    rows = conn.execute(
+        "SELECT * FROM audit_events ORDER BY id"
+    ).fetchall()
+    prev_hash = ""
+    for row in rows:
+        row_dict = dict(row)
+        row_content = _canonical_event_content(row_dict)
+        expected_hash = _hash_chain(prev_hash, row_content)
+        if row_dict["row_hash"] != expected_hash:
+            return False, f"Hash mismatch at id {row_dict['id']}"
+        prev_hash = row_dict["row_hash"]
+    latest_hash = get_latest_event_hash(conn)
+    if rows and latest_hash != rows[-1]["row_hash"]:
+        return False, "Latest hash mismatch"
+    return True, "Audit log verified"
+
+
 def seed_email_logs(conn: sqlite3.Connection, rows: Iterable[dict]) -> None:
     for row in rows:
         append_email_log(conn, row)

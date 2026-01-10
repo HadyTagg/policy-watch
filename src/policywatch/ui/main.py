@@ -656,20 +656,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         filters = QtWidgets.QHBoxLayout()
         self.audit_start = QtWidgets.QDateEdit()
+        self.audit_start.setCalendarPopup(True)
+        self.audit_start.setDate(QtCore.QDate(2026, 1, 1))
         self.audit_end = QtWidgets.QDateEdit()
-        self.audit_recipient = QtWidgets.QLineEdit()
-        self.audit_policy = QtWidgets.QLineEdit()
-        self.audit_status = QtWidgets.QComboBox()
-        self.audit_status.addItems(["All", "SENT", "FAILED"])
+        self.audit_end.setCalendarPopup(True)
+        self.audit_end.setDate(QtCore.QDate.currentDate())
         filters.addWidget(self.audit_start)
         filters.addWidget(self.audit_end)
-        filters.addWidget(self.audit_recipient)
-        filters.addWidget(self.audit_policy)
-        filters.addWidget(self.audit_status)
 
-        self.audit_table = QtWidgets.QTableWidget(0, 6)
+        self.audit_table = QtWidgets.QTableWidget(0, 5)
         self.audit_table.setHorizontalHeaderLabels(
-            ["Sent At", "Recipient", "Policy", "Version", "Status", "Mailbox"]
+            ["Occurred At", "Actor", "Action", "Entity", "Details"]
         )
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
@@ -691,24 +688,33 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _load_audit_log(self) -> None:
+        start_date = self.audit_start.date().toString("yyyy-MM-dd")
+        end_date = self.audit_end.date().toString("yyyy-MM-dd")
         rows = self.conn.execute(
-            "SELECT sent_at, recipient_email, policy_title, version_number, status, sender_mailbox "
-            "FROM email_log ORDER BY sent_at DESC"
+            """
+            SELECT occurred_at, actor, action, entity_type, entity_id, details
+            FROM audit_events
+            WHERE date(occurred_at) BETWEEN ? AND ?
+            ORDER BY occurred_at DESC
+            """,
+            (start_date, end_date),
         ).fetchall()
         self.audit_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
-            self.audit_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(row["sent_at"]))
-            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["recipient_email"]))
-            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["policy_title"]))
-            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(str(row["version_number"])))
-            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["status"]))
-            self.audit_table.setItem(row_index, 5, QtWidgets.QTableWidgetItem(row["sender_mailbox"] or ""))
+            entity = row["entity_type"]
+            if row["entity_id"] is not None:
+                entity = f"{entity} #{row['entity_id']}"
+            self.audit_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(row["occurred_at"]))
+            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
+            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
+            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
+            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
 
     def _export_audit_csv(self) -> None:
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "audit_log.csv")
         if not path:
             return
-        rows = self.conn.execute("SELECT * FROM email_log ORDER BY sent_at DESC").fetchall()
+        rows = self.conn.execute("SELECT * FROM audit_events ORDER BY occurred_at DESC").fetchall()
         import csv
 
         with open(path, "w", newline="", encoding="utf-8") as handle:
@@ -719,7 +725,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 writer.writerow(list(row))
 
     def _verify_audit(self) -> None:
-        ok, message = audit.verify_audit_log(self.conn)
+        ok, message = audit.verify_event_log(self.conn)
         QtWidgets.QMessageBox.information(self, "Audit Log", message)
 
     def _build_settings(self) -> QtWidgets.QWidget:
