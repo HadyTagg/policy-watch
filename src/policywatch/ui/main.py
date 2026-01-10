@@ -55,7 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.category_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.traffic_filter = QtWidgets.QComboBox()
-        self.traffic_filter.addItems(["All Traffic Lights", "Green", "Amber", "Red"])
+        self.traffic_filter.addItems(["All", "In Date", "Review Due", "Expired"])
         self.traffic_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.status_filter = QtWidgets.QComboBox()
@@ -67,7 +67,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ratified_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.show_expired = QtWidgets.QCheckBox("Show expired")
-        self.show_expired.stateChanged.connect(self._refresh_policies)
+        self.show_expired.setChecked(True)
+        self.show_expired.setVisible(False)
 
         filter_row = QtWidgets.QHBoxLayout()
         filter_row.addWidget(self.search_input, 2)
@@ -75,7 +76,6 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.traffic_filter, 1)
         filter_row.addWidget(self.status_filter, 1)
         filter_row.addWidget(self.ratified_filter, 1)
-        filter_row.addWidget(self.show_expired)
 
         self.table = QtWidgets.QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
@@ -119,10 +119,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(dashboard, "Dashboard")
-        self.tabs.addTab(policy_detail, "Policy Detail")
+        self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.tabs.addTab(email_compose, "Compose Email")
         self.tabs.addTab(audit_log, "Audit Log")
         self.tabs.addTab(settings, "Settings")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
@@ -149,15 +150,20 @@ class MainWindow(QtWidgets.QMainWindow):
         traffic = self.traffic_filter.currentText()
         status = self.status_filter.currentText()
         ratified_filter = self.ratified_filter.currentText()
-        show_expired = self.show_expired.isChecked()
+        show_expired = True
 
         for policy in policies:
             if search_text and search_text not in policy.title.lower():
                 continue
             if category != "All Categories" and policy.category != category:
                 continue
-            if traffic != "All Traffic Lights" and policy.traffic_status != traffic:
-                continue
+            if traffic != "All":
+                if traffic == "In Date" and policy.traffic_status != "Green":
+                    continue
+                if traffic == "Review Due" and policy.traffic_status != "Amber":
+                    continue
+                if traffic == "Expired" and policy.traffic_status != "Red":
+                    continue
             if status != "All Statuses" and policy.status != status:
                 continue
             if ratified_filter == "Ratified" and not policy.ratified:
@@ -203,10 +209,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
 
+    def _on_tab_changed(self, index: int) -> None:
+        if index == self.policy_detail_index and not self.current_policy_id:
+            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+            self.tabs.setCurrentIndex(0)
+
     def _open_categories(self) -> None:
         dialog = CategoryManagerDialog(self.conn, self._refresh_categories, self)
         dialog.exec()
         self._refresh_policies()
+        self._load_audit_log()
 
     def _open_new_policy(self) -> None:
         if not list_categories(self.conn):
@@ -219,6 +231,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = PolicyDialog(self.conn, self._refresh_policies, self)
         dialog.exec()
         self._load_send_policies()
+        self._load_audit_log()
 
     def _load_policy_detail(self, policy_id: int) -> None:
         policy = self.conn.execute(
@@ -258,7 +271,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 row_index, 4, QtWidgets.QTableWidgetItem(version["original_filename"])
             )
             self.version_table.setItem(
-                row_index, 5, QtWidgets.QTableWidgetItem(str(version["file_size_bytes"]))
+                row_index,
+                5,
+                QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
 
@@ -276,6 +291,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._load_policy_detail(self.current_policy_id)
         self._refresh_policies()
+        self._load_audit_log()
 
     def _mark_ratified(self) -> None:
         selection = self.version_table.selectionModel().selectedRows()
@@ -286,6 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._refresh_policies()
+            self._load_audit_log()
 
     def _set_current(self) -> None:
         if not self.current_policy_id:
@@ -303,6 +320,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         set_current_version(self.conn, self.current_policy_id, version_id)
         self._refresh_policies()
+        self._load_audit_log()
 
     def _open_file_location(self) -> None:
         selection = self.version_table.selectionModel().selectedRows()
@@ -377,6 +395,19 @@ class MainWindow(QtWidgets.QMainWindow):
             },
         )
         self._refresh_policies()
+        self._load_audit_log()
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        size_kb = size_bytes / 1024
+        if size_kb < 1024:
+            return f"{size_kb:.2f} KB"
+        size_mb = size_kb / 1024
+        if size_mb < 1024:
+            return f"{size_mb:.2f} MB"
+        size_gb = size_mb / 1024
+        return f"{size_gb:.2f} GB"
 
     def _on_status_changed(self, status: str) -> None:
         self._update_policy_field("status", status)
