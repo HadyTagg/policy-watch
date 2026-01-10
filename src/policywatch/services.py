@@ -359,9 +359,9 @@ def unset_current_version(conn, policy_id: int) -> None:
     details = None
     if current_version_id:
         if version_number is not None:
-            details = f"previous_version_id={current_version_id} (v{version_number})"
+            details = f"version_id={current_version_id} (v{version_number})"
         else:
-            details = f"previous_version_id={current_version_id}"
+            details = f"version_id={current_version_id}"
     _log_event(conn, "unset_current_version", "policy", policy_id, details)
 
 
