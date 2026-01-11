@@ -1,14 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_all, collect_submodules
+
 block_cipher = None
+
+pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all("PySide6")
+win32com_submodules = collect_submodules("win32com")
 
 
 analysis = Analysis(
     ["main.py"],
     pathex=["."],
-    binaries=[],
-    datas=[],
-    hiddenimports=["pyodbc", "win32com"],
+    binaries=pyside6_binaries,
+    datas=pyside6_datas,
+    hiddenimports=["pyodbc", *pyside6_hiddenimports, *win32com_submodules],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

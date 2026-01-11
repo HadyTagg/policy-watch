@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from datetime import datetime
+from email.utils import parseaddr
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
@@ -1185,15 +1187,39 @@ class MainWindow(QtWidgets.QMainWindow):
             if item.checkState() == QtCore.Qt.Checked:
                 selected_versions.append(item.data(QtCore.Qt.UserRole))
 
-        recipients: list[tuple[str, str]] = []
+        recipients_by_email: dict[str, tuple[str, str]] = {}
         for row in range(self.staff_table.rowCount()):
             item = self.staff_table.item(row, 0)
             if item and item.checkState() == QtCore.Qt.Checked:
-                recipients.append(
-                    (self.staff_table.item(row, 2).text(), self.staff_table.item(row, 1).text())
-                )
-        manual = [email.strip() for email in self.manual_emails.text().split(",") if email.strip()]
-        recipients.extend([(email, email) for email in manual])
+                email = self.staff_table.item(row, 2).text().strip()
+                name = self.staff_table.item(row, 1).text().strip()
+                if not email:
+                    continue
+                recipients_by_email[email.lower()] = (email, name or email)
+
+        manual_entries = re.split(r"[,\n;]+", self.manual_emails.text())
+        invalid_manual: list[str] = []
+        for entry in manual_entries:
+            cleaned = entry.strip()
+            if not cleaned:
+                continue
+            _, parsed_email = parseaddr(cleaned)
+            parsed_email = parsed_email.strip()
+            if not parsed_email or "@" not in parsed_email:
+                invalid_manual.append(cleaned)
+                continue
+            key = parsed_email.lower()
+            recipients_by_email.setdefault(key, (parsed_email, parsed_email))
+
+        if invalid_manual:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid emails",
+                "These addresses are invalid and will be skipped:\n"
+                + "\n".join(invalid_manual),
+            )
+
+        recipients = list(recipients_by_email.values())
 
         if not selected_versions or not recipients:
             QtWidgets.QMessageBox.warning(self, "Missing", "Select policies and recipients.")
@@ -1247,6 +1273,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         parts = len(attachment_chunks)
         sender_user = os.getlogin()
+        failures: list[str] = []
         for part_index, chunk in enumerate(attachment_chunks, start=1):
             subject = subject_base
             if parts > 1:
@@ -1261,6 +1288,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 entry_id = ""
                 status = "FAILED"
                 error_text = str(exc)
+                failures.append(f"{subject}: {error_text}")
 
             for row in policy_rows:
                 for recipient_email, recipient_name in recipients:
@@ -1286,7 +1314,14 @@ class MainWindow(QtWidgets.QMainWindow):
                         },
                     )
 
-        QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
+        if failures:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Send issues",
+                "Email processing completed with errors:\n" + "\n".join(failures),
+            )
+        else:
+            QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
 
     def _build_audit_log(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
