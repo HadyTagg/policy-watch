@@ -979,6 +979,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_select_all.setTristate(True)
         self.policy_send_select_all.stateChanged.connect(self._toggle_all_send_policies)
         policy_layout.addWidget(self.policy_send_select_all)
+        self.policy_send_deselect_all = QtWidgets.QCheckBox("Deselect all shown")
+        self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
+        policy_layout.addWidget(self.policy_send_deselect_all)
         self.policy_send_search = QtWidgets.QLineEdit()
         self.policy_send_search.setPlaceholderText("Search policies...")
         self.policy_send_search.textChanged.connect(self._filter_send_policies)
@@ -1100,6 +1103,14 @@ class MainWindow(QtWidgets.QMainWindow):
         for row in self._visible_policy_rows():
             item = self.policy_send_table.item(row, 0)
             item.setCheckState(check_state)
+        self.policy_send_table.blockSignals(False)
+        self._recalculate_attachments()
+
+    def _deselect_all_send_policies(self, _: bool) -> None:
+        self.policy_send_table.blockSignals(True)
+        for row in self._visible_policy_rows():
+            item = self.policy_send_table.item(row, 0)
+            item.setCheckState(QtCore.Qt.Unchecked)
         self.policy_send_table.blockSignals(False)
         self._recalculate_attachments()
 
