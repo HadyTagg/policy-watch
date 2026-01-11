@@ -1025,7 +1025,7 @@ class MainWindow(QtWidgets.QMainWindow):
             FROM policy_versions v
             JOIN policies p ON p.id = v.policy_id
             WHERE p.current_version_id = v.id
-            ORDER BY p.title, v.version_number DESC
+            ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
         self.policy_send_table.blockSignals(True)
