@@ -40,7 +40,10 @@ def preview_query_from_path(
     try:
         conn = connect_access(db_path)
     except AccessDriverError:
-        return _preview_query_via_sqlite(db_path, query, limit=limit, table=table)
+        try:
+            return _preview_query_via_python(db_path, query, limit=limit, table=table)
+        except AccessDriverError:
+            return _preview_query_via_sqlite(db_path, query, limit=limit, table=table)
     try:
         return preview_query(conn, query, limit=limit)
     finally:
@@ -72,6 +75,37 @@ def _preview_query_via_sqlite(
         cursor = conn.execute(query)
         rows = cursor.fetchmany(limit)
         return [dict(row) for row in rows]
+
+
+def _preview_query_via_python(
+    db_path: str,
+    query: str,
+    limit: int,
+    table: str | None,
+) -> list[dict]:
+    parsed = _parse_simple_select(query)
+    if parsed is None:
+        raise AccessDriverError("Unsupported Access query for python fallback.")
+    table_name, fields = parsed
+    if table:
+        table_name = table
+    columns, rows = _read_access_table(db_path, table_name)
+    if not columns:
+        raise AccessDriverError(f"No columns found for table '{table_name}'.")
+    if fields == ["*"]:
+        selected_fields = columns
+    else:
+        selected_fields = fields
+    column_map = {col.lower(): idx for idx, col in enumerate(columns)}
+    results: list[dict] = []
+    for row in rows[:limit]:
+        record: dict = {}
+        for field in selected_fields:
+            key = field
+            idx = column_map.get(field.lower())
+            record[key] = row[idx] if idx is not None else None
+        results.append(record)
+    return results
 
 
 def _export_table_to_sqlite(db_path: str, table: str, sqlite_path: Path) -> None:
@@ -235,6 +269,24 @@ def _extract_table_name(query: str) -> str:
     if match:
         return match.group(1).strip()
     return ""
+
+
+def _parse_simple_select(query: str) -> tuple[str, list[str]] | None:
+    if re.search(r"\bWHERE\b|\bJOIN\b|\bGROUP\b|\bORDER\b|\bHAVING\b", query, re.IGNORECASE):
+        return None
+    match = re.match(
+        r"^\s*SELECT\s+(?P<fields>.+?)\s+FROM\s+(?P<table>\[[^\]]+\]|[^\s;]+)\s*;?\s*$",
+        query,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    fields_text = match.group("fields")
+    table_name = match.group("table").strip().strip("[]")
+    fields = [field.strip().strip("[]") for field in fields_text.split(",") if field.strip()]
+    if not fields or not table_name:
+        return None
+    return table_name, fields
 
 
 def _sqlite_cache_path(db_path: str) -> Path:
