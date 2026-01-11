@@ -975,6 +975,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         policy_group = QtWidgets.QGroupBox("Policies to Send")
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
+        self.policy_send_select_all = QtWidgets.QCheckBox("Select all shown")
+        self.policy_send_select_all.stateChanged.connect(self._toggle_all_send_policies)
+        policy_layout.addWidget(self.policy_send_select_all)
+        self.policy_send_search = QtWidgets.QLineEdit()
+        self.policy_send_search.setPlaceholderText("Search policies...")
+        self.policy_send_search.textChanged.connect(self._filter_send_policies)
+        policy_layout.addWidget(self.policy_send_search)
         self.policy_send_table = QtWidgets.QTableWidget(0, 5)
         self.policy_send_table.setHorizontalHeaderLabels(
             ["Select", "Title", "Version", "Category", "Size"]
@@ -1025,7 +1032,7 @@ class MainWindow(QtWidgets.QMainWindow):
             FROM policy_versions v
             JOIN policies p ON p.id = v.policy_id
             WHERE p.current_version_id = v.id
-            ORDER BY p.title, v.version_number DESC
+            ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
         self.policy_send_table.blockSignals(True)
@@ -1045,6 +1052,54 @@ class MainWindow(QtWidgets.QMainWindow):
             self.policy_send_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(row["category"]))
             self.policy_send_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(str(row["file_size_bytes"])))
             self.policy_send_table.item(row_index, 0).setData(QtCore.Qt.UserRole, row["version_id"])
+        self.policy_send_table.blockSignals(False)
+        self._filter_send_policies(self.policy_send_search.text())
+        self._recalculate_attachments()
+
+    def _filter_send_policies(self, text: str) -> None:
+        text = text.lower().strip()
+        for row in range(self.policy_send_table.rowCount()):
+            title = self.policy_send_table.item(row, 1).text().lower()
+            category = self.policy_send_table.item(row, 3).text().lower()
+            match = text in title or text in category
+            self.policy_send_table.setRowHidden(row, not match if text else False)
+        self._sync_send_policy_select_all()
+
+    def _sync_send_policy_select_all(self) -> None:
+        visible_rows = [
+            row
+            for row in range(self.policy_send_table.rowCount())
+            if not self.policy_send_table.isRowHidden(row)
+        ]
+        if not visible_rows:
+            self.policy_send_select_all.blockSignals(True)
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
+            self.policy_send_select_all.blockSignals(False)
+            return
+        checked = 0
+        for row in visible_rows:
+            item = self.policy_send_table.item(row, 0)
+            if item.checkState() == QtCore.Qt.Checked:
+                checked += 1
+        self.policy_send_select_all.blockSignals(True)
+        if checked == 0:
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
+        elif checked == len(visible_rows):
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Checked)
+        else:
+            self.policy_send_select_all.setCheckState(QtCore.Qt.PartiallyChecked)
+        self.policy_send_select_all.blockSignals(False)
+
+    def _toggle_all_send_policies(self, state: int) -> None:
+        if state == QtCore.Qt.PartiallyChecked:
+            return
+        check_state = QtCore.Qt.Checked if state == QtCore.Qt.Checked else QtCore.Qt.Unchecked
+        self.policy_send_table.blockSignals(True)
+        for row in range(self.policy_send_table.rowCount()):
+            if self.policy_send_table.isRowHidden(row):
+                continue
+            item = self.policy_send_table.item(row, 0)
+            item.setCheckState(check_state)
         self.policy_send_table.blockSignals(False)
         self._recalculate_attachments()
 
@@ -1099,6 +1154,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 total_bytes += size
         total_mb = total_bytes / (1024 * 1024)
         self.total_attachment_label.setText(f"{total_mb:.2f} MB")
+        self._sync_send_policy_select_all()
 
         max_mb = float(config.get_setting(self.conn, "max_attachment_mb", 0) or 0)
         if max_mb and total_mb > max_mb:
