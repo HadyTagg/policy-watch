@@ -31,6 +31,7 @@ analysis = Analysis(
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
+    include_msvcr=True,
     cipher=block_cipher,
     noarchive=False,
 )
