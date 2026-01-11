@@ -166,7 +166,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.category_filter.addItems(categories)
         self.category_filter.blockSignals(False)
 
-    def _refresh_policies(self) -> None:
+    def _refresh_policies(self, clear_selection: bool = True) -> None:
         policies = list_policies(self.conn)
         filtered = []
         search_text = self.search_input.text().strip().lower()
@@ -175,6 +175,7 @@ class MainWindow(QtWidgets.QMainWindow):
         status = self.status_filter.currentText()
         ratified_filter = self.ratified_filter.currentText()
         show_expired = True
+        selected_policy_id = self.current_policy_id
 
         for policy in policies:
             if search_text and search_text not in policy.title.lower():
@@ -234,9 +235,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
-        self.table.clearSelection()
-        self.current_policy_id = None
-        self._selected_row = None
+        if clear_selection:
+            self.table.clearSelection()
+            self.current_policy_id = None
+            self._selected_row = None
+        elif selected_policy_id:
+            if not self._select_policy_row_by_id(selected_policy_id):
+                self.table.clearSelection()
+                self.current_policy_id = None
+                self._selected_row = None
 
     def _on_policy_selected(self) -> None:
         selected = self.table.selectionModel().selectedRows()
@@ -291,6 +298,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._highlight_version_row(row_index)
                 break
 
+    def _select_policy_row_by_id(self, policy_id: int) -> bool:
+        for row_index in range(self.table.rowCount()):
+            row_policy_id = self.table.item(row_index, 0).data(QtCore.Qt.UserRole)
+            if row_policy_id == policy_id:
+                self.table.selectRow(row_index)
+                self._highlight_selected_row(row_index)
+                return True
+        return False
+
     def _on_tab_changed(self, index: int) -> None:
         if index == self.policy_detail_index:
             selection = self.table.selectionModel().selectedRows()
@@ -317,7 +333,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dialog = CategoryManagerDialog(self.conn, _refresh_categories_and_audit, self)
         dialog.exec()
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
@@ -415,7 +431,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
             return
         self._load_policy_detail(self.current_policy_id)
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_audit_log()
 
     def _mark_ratified(self) -> None:
@@ -436,7 +452,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
-            self._refresh_policies()
+            self._refresh_policies(clear_selection=False)
             self._load_audit_log()
 
     def _mark_unratified(self) -> None:
@@ -457,7 +473,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
-            self._refresh_policies()
+            self._refresh_policies(clear_selection=False)
             self._load_audit_log()
 
     def _set_current(self) -> None:
@@ -485,7 +501,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         set_current_version(self.conn, self.current_policy_id, version_id)
         self._load_policy_detail(self.current_policy_id)
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_audit_log()
         self._load_send_policies()
 
@@ -511,7 +527,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_policy_detail(self.current_policy_id)
         if selected_version_id is not None:
             self._select_version_row_by_id(selected_version_id)
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_audit_log()
         self._load_send_policies()
 
@@ -668,7 +684,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "details": f"{field}: {current_value} -> {value}",
             },
         )
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
@@ -811,7 +827,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_policy_detail(self.current_policy_id)
             return
         update_policy_title(self.conn, self.current_policy_id, title)
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
@@ -874,7 +890,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_policy_detail(self.current_policy_id)
             return
         update_policy_category(self.conn, self.current_policy_id, category)
-        self._refresh_policies()
+        self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
