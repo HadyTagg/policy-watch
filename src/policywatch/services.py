@@ -136,7 +136,7 @@ def list_versions(conn, policy_id: int) -> list[dict]:
     rows = conn.execute(
         """
         SELECT id, version_number, created_at, sha256_hash, ratified,
-               status, original_filename, file_size_bytes
+               status, original_filename, file_path, file_size_bytes
         FROM policy_versions
         WHERE policy_id = ?
         ORDER BY version_number DESC

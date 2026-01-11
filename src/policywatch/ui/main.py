@@ -394,7 +394,12 @@ class MainWindow(QtWidgets.QMainWindow):
             ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
-            filename_item = QtWidgets.QTableWidgetItem(version["original_filename"])
+            stored_filename = ""
+            if version.get("file_path"):
+                stored_filename = Path(version["file_path"]).name
+            filename_item = QtWidgets.QTableWidgetItem(
+                stored_filename or version["original_filename"] or ""
+            )
             size_item = QtWidgets.QTableWidgetItem(
                 self._format_file_size(version["file_size_bytes"])
             )
