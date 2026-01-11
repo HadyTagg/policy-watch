@@ -16,6 +16,7 @@ from policywatch.services import (
     build_staff_query,
     export_backup,
     get_version_file,
+    resolve_version_file_path,
     list_categories,
     list_policies,
     list_versions,
@@ -1229,6 +1230,7 @@ class MainWindow(QtWidgets.QMainWindow):
         attachments: list[tuple[str, int]] = []
         policy_rows = []
         total_bytes = 0
+        missing_attachments: list[str] = []
         for version_id in selected_versions:
             row = self.conn.execute(
                 """
@@ -1242,9 +1244,28 @@ class MainWindow(QtWidgets.QMainWindow):
             ).fetchone()
             if not row:
                 continue
-            attachments.append((row["file_path"], row["file_size_bytes"]))
+            resolved_path = resolve_version_file_path(
+                self.conn,
+                row["version_id"],
+                row["file_path"],
+            )
+            if not resolved_path:
+                missing_attachments.append(
+                    f"{row['title']} (v{row['version_number']}): {row['file_path']}"
+                )
+                continue
+            attachments.append((str(resolved_path), row["file_size_bytes"]))
             policy_rows.append(row)
             total_bytes += row["file_size_bytes"]
+
+        if missing_attachments:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing files",
+                "One or more policy files could not be found:\n"
+                + "\n".join(missing_attachments),
+            )
+            return
 
         total_mb = total_bytes / (1024 * 1024)
         parts = 1
