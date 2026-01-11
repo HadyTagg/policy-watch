@@ -1273,6 +1273,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         parts = len(attachment_chunks)
         sender_user = os.getlogin()
+        failures: list[str] = []
         for part_index, chunk in enumerate(attachment_chunks, start=1):
             subject = subject_base
             if parts > 1:
@@ -1287,6 +1288,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 entry_id = ""
                 status = "FAILED"
                 error_text = str(exc)
+                failures.append(f"{subject}: {error_text}")
 
             for row in policy_rows:
                 for recipient_email, recipient_name in recipients:
@@ -1312,7 +1314,14 @@ class MainWindow(QtWidgets.QMainWindow):
                         },
                     )
 
-        QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
+        if failures:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Send issues",
+                "Email processing completed with errors:\n" + "\n".join(failures),
+            )
+        else:
+            QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
 
     def _build_audit_log(self) -> QtWidgets.QWidget:
         wrapper = QtWidgets.QWidget()
