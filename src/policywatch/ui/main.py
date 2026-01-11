@@ -57,6 +57,9 @@ class MainWindow(QtWidgets.QMainWindow):
         spacer = QtWidgets.QWidget()
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         toolbar.addWidget(spacer)
+        audit_log_action = QtGui.QAction("Audit Log", self)
+        audit_log_action.triggered.connect(self._open_audit_log)
+        toolbar.addAction(audit_log_action)
         settings_action = QtGui.QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
@@ -109,7 +112,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
@@ -138,8 +143,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(dashboard, "Dashboard")
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
-        self.tabs.addTab(audit_log, "Audit Log")
+        self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
         self.settings_index = self.tabs.addTab(settings, "Settings")
+        self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
         self.tabs.tabBar().setTabVisible(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -217,6 +223,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item,
             ]
             for column, item in enumerate(items):
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
                 self.table.setItem(row_index, column, item)
             if policy.current_version_id:
                 self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
@@ -225,6 +234,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
+        self.table.clearSelection()
+        self.current_policy_id = None
         self._selected_row = None
 
     def _on_policy_selected(self) -> None:
@@ -239,6 +250,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_settings(self) -> None:
         self.tabs.setCurrentIndex(self.settings_index)
 
+    def _open_audit_log(self) -> None:
+        self.tabs.setCurrentIndex(self.audit_log_index)
+
     def _highlight_selected_row(self, row_index: int) -> None:
         if self._selected_row is not None and self._selected_row != row_index:
             self._set_row_bold(self._selected_row, False)
@@ -251,7 +265,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if not item:
                 continue
             font = item.font()
-            font.setBold(enabled)
+            font.setBold(True)
             item.setFont(font)
 
     def _highlight_version_row(self, row_index: int) -> None:
@@ -266,7 +280,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if not item:
                 continue
             font = item.font()
-            font.setBold(enabled)
+            font.setBold(True)
             item.setFont(font)
 
     def _select_version_row_by_id(self, version_id: int) -> None:
@@ -278,13 +292,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 break
 
     def _on_tab_changed(self, index: int) -> None:
-        if index == self.policy_detail_index and not self.current_policy_id:
-            self.tabs.blockSignals(True)
-            self.tabs.setCurrentIndex(0)
-            self.tabs.blockSignals(False)
-            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+        if index == self.policy_detail_index:
+            selection = self.table.selectionModel().selectedRows()
+            if not selection:
+                self._block_policy_detail_tab()
+                return
+            selected_row = selection[0].row()
+            if self._selected_row != selected_row or not self.current_policy_id:
+                self._block_policy_detail_tab()
+                return
         if index == self.policy_distributor_index:
             self._load_send_policies()
+
+    def _block_policy_detail_tab(self) -> None:
+        self.tabs.blockSignals(True)
+        self.tabs.setCurrentIndex(0)
+        self.tabs.blockSignals(False)
+        QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
     def _open_categories(self) -> None:
         def _refresh_categories_and_audit() -> None:
@@ -343,33 +367,34 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setRowCount(len(versions))
         for row_index, version in enumerate(versions):
             is_current = policy["current_version_id"] == version["id"]
-            self.version_table.setItem(
-                row_index,
-                0,
-                QtWidgets.QTableWidgetItem(self._format_datetime_display(version["created_at"])),
+            created_item = QtWidgets.QTableWidgetItem(
+                self._format_datetime_display(version["created_at"])
             )
-            self.version_table.setItem(
-                row_index, 1, QtWidgets.QTableWidgetItem(str(version["version_number"]))
-            )
-            self.version_table.setItem(
-                row_index,
-                2,
-                QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current"),
-            )
+            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
+            current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
             ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
-            self.version_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(ratified_value))
-            self.version_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(version["status"] or ""))
-            self.version_table.setItem(
-                row_index, 5, QtWidgets.QTableWidgetItem(version["original_filename"])
+            ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
+            status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
+            filename_item = QtWidgets.QTableWidgetItem(version["original_filename"])
+            size_item = QtWidgets.QTableWidgetItem(
+                self._format_file_size(version["file_size_bytes"])
             )
-            self.version_table.setItem(
-                row_index,
-                6,
-                QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
-            )
-            self.version_table.setItem(
-                row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"])
-            )
+            hash_item = QtWidgets.QTableWidgetItem(version["sha256_hash"])
+            items = [
+                created_item,
+                version_item,
+                current_item,
+                ratified_item,
+                status_item,
+                filename_item,
+                size_item,
+                hash_item,
+            ]
+            for column, item in enumerate(items):
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+                self.version_table.setItem(row_index, column, item)
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
@@ -865,6 +890,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.version_table.setStyleSheet(
             "QTableView::item:selected { background-color: hotpink; }"
