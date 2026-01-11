@@ -1094,10 +1094,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.policy_send_select_all.setCheckState(QtCore.Qt.PartiallyChecked)
         self.policy_send_select_all.blockSignals(False)
 
-    def _toggle_all_send_policies(self, state: int) -> None:
-        if state == QtCore.Qt.PartiallyChecked:
-            return
-        check_state = QtCore.Qt.Checked if state == QtCore.Qt.Checked else QtCore.Qt.Unchecked
+    def _toggle_all_send_policies(self, _: bool) -> None:
+        check_state = QtCore.Qt.Checked
         self.policy_send_table.blockSignals(True)
         for row in self._visible_policy_rows():
             item = self.policy_send_table.item(row, 0)
