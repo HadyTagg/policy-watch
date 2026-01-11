@@ -1,3 +1,7 @@
 PyQt5>=5.15
 pyodbc>=5.0
 pywin32>=306
+pandas>=2.0
+pyarrow>=14.0
+access-parser>=0.2
+pyaccdb>=0.1
