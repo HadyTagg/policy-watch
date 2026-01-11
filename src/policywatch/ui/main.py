@@ -1093,12 +1093,12 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_send_policy_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
         if item.column() != 0:
             return
-        self._recalculate_attachments()
+        QtCore.QTimer.singleShot(0, self._recalculate_attachments)
 
     def _on_send_policy_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
         if item.column() != 0:
             return
-        self._recalculate_attachments()
+        QtCore.QTimer.singleShot(0, self._recalculate_attachments)
 
     def _deselect_all_send_policies(self, _: bool) -> None:
         self.policy_send_table.blockSignals(True)
