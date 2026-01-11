@@ -1057,7 +1057,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.policy_send_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["title"]))
             self.policy_send_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(str(row["version_number"])))
             self.policy_send_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(row["category"]))
-            self.policy_send_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(str(row["file_size_bytes"])))
+            self.policy_send_table.setItem(
+                row_index,
+                4,
+                QtWidgets.QTableWidgetItem(self._format_file_size(row["file_size_bytes"])),
+            )
             self.policy_send_table.item(row_index, 0).setData(QtCore.Qt.UserRole, row["version_id"])
         self.policy_send_table.blockSignals(False)
         self._filter_send_policies(self.policy_send_search.text())
@@ -1164,7 +1168,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 size_bytes = 0
             total_bytes += size_bytes
         total_mb = total_bytes / (1024 * 1024)
-        self.total_attachment_label.setText(f"{total_mb:.2f} MB")
+        self.total_attachment_label.setText(self._format_file_size(total_bytes))
         self._sync_send_policy_select_all()
 
         max_mb = float(config.get_setting(self.conn, "max_attachment_mb", 0) or 0)
