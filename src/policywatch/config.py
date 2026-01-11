@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
@@ -30,11 +31,10 @@ def resolve_data_dir() -> Path:
     if env_override:
         return Path(env_override).expanduser().resolve()
 
-    program_data = os.environ.get("PROGRAMDATA")
-    if program_data:
-        return Path(program_data) / "PolicyWatch"
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
 
-    return Path.cwd() / "policywatch_data"
+    return Path.cwd()
 
 
 def get_paths() -> AppPaths:

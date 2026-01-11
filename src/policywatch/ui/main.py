@@ -7,7 +7,7 @@ from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch import audit, config
 from policywatch.integrations import access, outlook
@@ -47,11 +47,11 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
 
-        new_policy_action = QtGui.QAction("New Policy", self)
+        new_policy_action = QtWidgets.QAction("New Policy", self)
         new_policy_action.triggered.connect(self._open_new_policy)
         toolbar.addAction(new_policy_action)
 
-        manage_categories_action = QtGui.QAction("Manage Categories", self)
+        manage_categories_action = QtWidgets.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
 
@@ -59,10 +59,10 @@ class MainWindow(QtWidgets.QMainWindow):
         spacer = QtWidgets.QWidget()
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         toolbar.addWidget(spacer)
-        audit_log_action = QtGui.QAction("Audit Log", self)
+        audit_log_action = QtWidgets.QAction("Audit Log", self)
         audit_log_action.triggered.connect(self._open_audit_log)
         toolbar.addAction(audit_log_action)
-        settings_action = QtGui.QAction("Settings", self)
+        settings_action = QtWidgets.QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
 
