@@ -640,7 +640,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "action": "update_policy_field",
                 "entity_type": "policy_version" if current_version_id else "policy",
                 "entity_id": current_version_id or self.current_policy_id,
-                "details": f"{field}={value}",
+                "details": f"{field}: {current_value} -> {value}",
             },
         )
         self._refresh_policies()
