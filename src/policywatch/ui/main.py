@@ -7,7 +7,7 @@ from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch import audit, config
 from policywatch.integrations import access, outlook

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 
-from PySide6 import QtWidgets
+from PyQt5 import QtWidgets
 
 from policywatch import config, db, security
 from policywatch.ui.login import LoginWindow

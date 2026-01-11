@@ -1,6 +1,6 @@
 # Policy Watch
 
-Policy Watch is a Windows desktop application for organising, versioning, and distributing policy documents. The application is built with Python 3.11 and PySide6 and stores metadata in SQLite.
+Policy Watch is a Windows desktop application for organising, versioning, and distributing policy documents. The application is built with Python 3.11 and PyQt5 and stores metadata in SQLite.
 
 ## Requirements
 
