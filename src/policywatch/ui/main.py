@@ -1052,6 +1052,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 | QtCore.Qt.ItemIsEditable
             )
             checkbox.setCheckState(QtCore.Qt.Unchecked)
+            checkbox.setData(QtCore.Qt.UserRole + 1, row["file_size_bytes"] or 0)
             self.policy_send_table.setItem(row_index, 0, checkbox)
             self.policy_send_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["title"]))
             self.policy_send_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(str(row["version_number"])))
@@ -1154,9 +1155,14 @@ class MainWindow(QtWidgets.QMainWindow):
         total_bytes = 0
         for row in range(self.policy_send_table.rowCount()):
             item = self.policy_send_table.item(row, 0)
-            if item.checkState() == QtCore.Qt.Checked:
-                size = int(self.policy_send_table.item(row, 4).text())
-                total_bytes += size
+            if not item or item.checkState() != QtCore.Qt.Checked:
+                continue
+            size = item.data(QtCore.Qt.UserRole + 1)
+            try:
+                size_bytes = int(size)
+            except (TypeError, ValueError):
+                size_bytes = 0
+            total_bytes += size_bytes
         total_mb = total_bytes / (1024 * 1024)
         self.total_attachment_label.setText(f"{total_mb:.2f} MB")
         self._sync_send_policy_select_all()
