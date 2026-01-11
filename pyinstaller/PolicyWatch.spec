@@ -13,6 +13,9 @@ pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all("PySide6")
 pyside6_dynamic_libs = collect_dynamic_libs("PySide6")
 pyside6_plugins = collect_data_files("PySide6", subdir="Qt/plugins")
 pyside6_qml = collect_data_files("PySide6", subdir="Qt/qml")
+pyside6_bins = collect_data_files("PySide6", subdir="Qt/bin")
+pyside6_translations = collect_data_files("PySide6", subdir="Qt/translations")
+pyside6_resources = collect_data_files("PySide6", subdir="Qt/resources")
 shiboken6_dynamic_libs = collect_dynamic_libs("shiboken6")
 shiboken6_datas = collect_data_files("shiboken6")
 win32com_submodules = collect_submodules("win32com")
@@ -28,6 +31,9 @@ analysis = Analysis(
         *pyside6_datas,
         *pyside6_plugins,
         *pyside6_qml,
+        *pyside6_bins,
+        *pyside6_translations,
+        *pyside6_resources,
         *shiboken6_datas,
         *policywatch_datas,
     ],
