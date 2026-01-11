@@ -1,19 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import (
+    collect_all,
+    collect_data_files,
+    collect_submodules,
+)
 
 block_cipher = None
 
 pyside6_datas, pyside6_binaries, pyside6_hiddenimports = collect_all("PySide6")
 win32com_submodules = collect_submodules("win32com")
+policywatch_hiddenimports = collect_submodules("policywatch")
+policywatch_datas = collect_data_files("policywatch")
 
 
 analysis = Analysis(
     ["main.py"],
-    pathex=["."],
+    pathex=[".", "src"],
     binaries=pyside6_binaries,
-    datas=pyside6_datas,
-    hiddenimports=["pyodbc", *pyside6_hiddenimports, *win32com_submodules],
+    datas=[*pyside6_datas, *policywatch_datas],
+    hiddenimports=[
+        "pyodbc",
+        *pyside6_hiddenimports,
+        *win32com_submodules,
+        *policywatch_hiddenimports,
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
