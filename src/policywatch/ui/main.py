@@ -975,6 +975,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         policy_group = QtWidgets.QGroupBox("Policies to Send")
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
+        self.policy_send_search = QtWidgets.QLineEdit()
+        self.policy_send_search.setPlaceholderText("Search policies...")
+        self.policy_send_search.textChanged.connect(self._filter_send_policies)
+        policy_layout.addWidget(self.policy_send_search)
         self.policy_send_table = QtWidgets.QTableWidget(0, 5)
         self.policy_send_table.setHorizontalHeaderLabels(
             ["Select", "Title", "Version", "Category", "Size"]
@@ -1025,7 +1029,7 @@ class MainWindow(QtWidgets.QMainWindow):
             FROM policy_versions v
             JOIN policies p ON p.id = v.policy_id
             WHERE p.current_version_id = v.id
-            ORDER BY p.title, v.version_number DESC
+            ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
         self.policy_send_table.blockSignals(True)
@@ -1046,7 +1050,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.policy_send_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(str(row["file_size_bytes"])))
             self.policy_send_table.item(row_index, 0).setData(QtCore.Qt.UserRole, row["version_id"])
         self.policy_send_table.blockSignals(False)
+        self._filter_send_policies(self.policy_send_search.text())
         self._recalculate_attachments()
+
+    def _filter_send_policies(self, text: str) -> None:
+        text = text.lower().strip()
+        for row in range(self.policy_send_table.rowCount()):
+            title = self.policy_send_table.item(row, 1).text().lower()
+            category = self.policy_send_table.item(row, 3).text().lower()
+            match = text in title or text in category
+            self.policy_send_table.setRowHidden(row, not match if text else False)
 
     def _load_staff(self) -> None:
         access_path = config.get_setting(self.conn, "access_db_path", "N:\\")
