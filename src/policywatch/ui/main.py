@@ -1283,6 +1283,20 @@ class MainWindow(QtWidgets.QMainWindow):
         body = "\n".join(body_lines)
 
         max_bytes = int(max_mb * 1024 * 1024) if max_mb else 0
+        oversized_attachments: list[str] = []
+        if max_bytes:
+            for path, size in attachments:
+                if size > max_bytes:
+                    oversized_attachments.append(f"{os.path.basename(path)} ({size / (1024 * 1024):.2f} MB)")
+        if oversized_attachments:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Attachment too large",
+                "These files exceed the maximum attachment size and cannot be sent:\n"
+                + "\n".join(oversized_attachments),
+            )
+            return
+
         attachment_chunks: list[list[tuple[str, int]]] = [[]]
         current_bytes = 0
         for path, size in attachments:
@@ -1299,20 +1313,22 @@ class MainWindow(QtWidgets.QMainWindow):
             subject = subject_base
             if parts > 1:
                 subject = f"{subject_base} (Part {part_index} of {parts})"
-            try:
-                entry_id = outlook.send_email(
-                    subject, body, [email for email, _ in recipients], [path for path, _ in chunk]
-                )
-                status = "SENT"
-                error_text = ""
-            except outlook.OutlookError as exc:
-                entry_id = ""
-                status = "FAILED"
-                error_text = str(exc)
-                failures.append(f"{subject}: {error_text}")
+            attachment_paths = [path for path, _ in chunk]
+            total_attachment_bytes = sum(size for _, size in chunk)
+            for recipient_email, recipient_name in recipients:
+                try:
+                    entry_id = outlook.send_email(
+                        subject, body, [recipient_email], attachment_paths
+                    )
+                    status = "SENT"
+                    error_text = ""
+                except outlook.OutlookError as exc:
+                    entry_id = ""
+                    status = "FAILED"
+                    error_text = str(exc)
+                    failures.append(f"{recipient_email}: {subject}: {error_text}")
 
-            for row in policy_rows:
-                for recipient_email, recipient_name in recipients:
+                for row in policy_rows:
                     audit.append_email_log(
                         self.conn,
                         {
@@ -1328,7 +1344,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             "email_subject": subject,
                             "email_part_index": part_index,
                             "email_part_total": parts,
-                            "total_attachment_bytes_for_part": sum(size for _, size in chunk),
+                            "total_attachment_bytes_for_part": total_attachment_bytes,
                             "outlook_entry_id": entry_id,
                             "status": status,
                             "error_text": error_text,
