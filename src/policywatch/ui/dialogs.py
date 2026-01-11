@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
-from PySide6 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 from policywatch.services import add_policy_version, create_category, create_policy
 

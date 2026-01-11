@@ -7,7 +7,7 @@ from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
 
-from PySide6 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch import audit, config
 from policywatch.integrations import access, outlook
@@ -16,6 +16,7 @@ from policywatch.services import (
     build_staff_query,
     export_backup,
     get_version_file,
+    resolve_version_file_path,
     list_categories,
     list_policies,
     list_versions,
@@ -47,11 +48,11 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
 
-        new_policy_action = QtGui.QAction("New Policy", self)
+        new_policy_action = QtWidgets.QAction("New Policy", self)
         new_policy_action.triggered.connect(self._open_new_policy)
         toolbar.addAction(new_policy_action)
 
-        manage_categories_action = QtGui.QAction("Manage Categories", self)
+        manage_categories_action = QtWidgets.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
 
@@ -59,10 +60,10 @@ class MainWindow(QtWidgets.QMainWindow):
         spacer = QtWidgets.QWidget()
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         toolbar.addWidget(spacer)
-        audit_log_action = QtGui.QAction("Audit Log", self)
+        audit_log_action = QtWidgets.QAction("Audit Log", self)
         audit_log_action.triggered.connect(self._open_audit_log)
         toolbar.addAction(audit_log_action)
-        settings_action = QtGui.QAction("Settings", self)
+        settings_action = QtWidgets.QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
 
@@ -1229,6 +1230,7 @@ class MainWindow(QtWidgets.QMainWindow):
         attachments: list[tuple[str, int]] = []
         policy_rows = []
         total_bytes = 0
+        missing_attachments: list[str] = []
         for version_id in selected_versions:
             row = self.conn.execute(
                 """
@@ -1242,9 +1244,28 @@ class MainWindow(QtWidgets.QMainWindow):
             ).fetchone()
             if not row:
                 continue
-            attachments.append((row["file_path"], row["file_size_bytes"]))
+            resolved_path = resolve_version_file_path(
+                self.conn,
+                row["version_id"],
+                row["file_path"],
+            )
+            if not resolved_path:
+                missing_attachments.append(
+                    f"{row['title']} (v{row['version_number']}): {row['file_path']}"
+                )
+                continue
+            attachments.append((str(resolved_path), row["file_size_bytes"]))
             policy_rows.append(row)
             total_bytes += row["file_size_bytes"]
+
+        if missing_attachments:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing files",
+                "One or more policy files could not be found:\n"
+                + "\n".join(missing_attachments),
+            )
+            return
 
         total_mb = total_bytes / (1024 * 1024)
         parts = 1

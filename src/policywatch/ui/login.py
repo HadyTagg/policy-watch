@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from PySide6 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtWidgets
 
 
 class LoginWindow(QtWidgets.QDialog):
-    authenticated = QtCore.Signal(str)
+    authenticated = QtCore.pyqtSignal(str)
 
     def __init__(self, on_authenticate, parent=None):
         super().__init__(parent)

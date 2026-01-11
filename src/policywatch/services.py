@@ -474,6 +474,38 @@ def get_version_file(conn, version_id: int) -> str:
     return row["file_path"]
 
 
+def resolve_version_file_path(conn, version_id: int, stored_path: str) -> Path | None:
+    path = Path(stored_path)
+    if path.exists():
+        return path
+
+    policy_root = _policy_root(conn)
+    if path.is_absolute():
+        parts = [part.lower() for part in path.parts]
+        if "policies" in parts:
+            index = parts.index("policies")
+            relative = Path(*path.parts[index + 1 :])
+            candidate = policy_root / relative
+            if candidate.exists():
+                conn.execute(
+                    "UPDATE policy_versions SET file_path = ? WHERE id = ?",
+                    (str(candidate), version_id),
+                )
+                conn.commit()
+                return candidate
+        return None
+
+    candidate = policy_root / path
+    if candidate.exists():
+        conn.execute(
+            "UPDATE policy_versions SET file_path = ? WHERE id = ?",
+            (str(candidate), version_id),
+        )
+        conn.commit()
+        return candidate
+    return None
+
+
 def list_categories(conn) -> list[str]:
     rows = conn.execute("SELECT name FROM categories ORDER BY name").fetchall()
     return [row["name"] for row in rows]
