@@ -37,6 +37,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._selected_row: int | None = None
         self._selected_version_row: int | None = None
+        self._current_policy_title = ""
+        self._current_policy_category = ""
 
         self.setWindowTitle("Policy Watch")
 
@@ -316,29 +318,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if not policy:
             return
         self._selected_version_row = None
-        version = None
-        if policy["current_version_id"]:
-            version = self.conn.execute(
-                """
-                SELECT status, expiry_date, notes
-                FROM policy_versions
-                WHERE id = ?
-                """,
-                (policy["current_version_id"],),
-            ).fetchone()
+        self._current_policy_title = policy["title"] or ""
+        self._current_policy_category = policy["category"] or ""
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
-        self.detail_title.setText(policy["title"])
-        self._populate_category_options(policy["category"])
-        status_value = version["status"] if version and version["status"] else policy["status"]
-        expiry_value = version["expiry_date"] if version and version["expiry_date"] else policy["expiry_date"]
-        notes_value = version["notes"] if version and version["notes"] else policy["notes"]
-        self.detail_status.setCurrentText(status_value)
-        self._set_date_field(self.detail_expiry, expiry_value)
-        self.detail_notes.setPlainText(notes_value or "")
+        self._populate_category_options(self._current_policy_category)
+        self._clear_policy_metadata_fields()
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -513,6 +501,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_version_selected(self) -> None:
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
+            if self._selected_version_row is not None:
+                self._set_version_row_bold(self._selected_version_row, False)
+            self._selected_version_row = None
+            self._clear_policy_metadata_fields()
             return
         self._highlight_version_row(selection[0].row())
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
@@ -531,6 +523,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self._set_policy_metadata_enabled(True)
+        self.detail_title.setText(self._current_policy_title)
+        self._populate_category_options(self._current_policy_category)
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
@@ -645,7 +640,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "action": "update_policy_field",
                 "entity_type": "policy_version" if current_version_id else "policy",
                 "entity_id": current_version_id or self.current_policy_id,
-                "details": f"{field}={value}",
+                "details": f"{field}: {current_value} -> {value}",
             },
         )
         self._refresh_policies()
@@ -795,7 +790,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
-    def _populate_category_options(self, selected: str) -> None:
+    def _populate_category_options(self, selected: str | None) -> None:
         categories = list_categories(self.conn)
         if selected and selected not in categories:
             categories.append(selected)
@@ -803,6 +798,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.addItems(categories)
         if selected:
             self.detail_category.setCurrentText(selected)
+        else:
+            self.detail_category.setCurrentIndex(-1)
+
+    def _set_policy_metadata_enabled(self, enabled: bool) -> None:
+        self.detail_title.setEnabled(enabled)
+        self.detail_category.setEnabled(enabled)
+        self.detail_status.setEnabled(enabled)
+        self.detail_expiry.setEnabled(enabled)
+        self.detail_notes.setEnabled(enabled)
+
+    def _clear_policy_metadata_fields(self) -> None:
+        self.detail_status.blockSignals(True)
+        self.detail_expiry.blockSignals(True)
+        self.detail_notes.blockSignals(True)
+        self.detail_title.blockSignals(True)
+        self.detail_category.blockSignals(True)
+        self._set_policy_metadata_enabled(False)
+        self.detail_title.setText("")
+        self.detail_status.setCurrentIndex(-1)
+        self._set_date_field(self.detail_expiry, None)
+        self.detail_notes.setPlainText("")
+        self.detail_category.setCurrentIndex(-1)
+        self.detail_status.blockSignals(False)
+        self.detail_expiry.blockSignals(False)
+        self.detail_notes.blockSignals(False)
+        self.detail_category.blockSignals(False)
+        self.detail_title.blockSignals(False)
+        self._notes_dirty = False
+        self._title_dirty = False
 
     def _on_category_changed(self, category: str) -> None:
         if not self.current_policy_id:
