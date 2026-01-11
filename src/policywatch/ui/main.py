@@ -975,13 +975,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         policy_group = QtWidgets.QGroupBox("Policies to Send")
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
-        self.policy_send_select_all = QtWidgets.QCheckBox("Select all shown")
-        self.policy_send_select_all.setTristate(True)
-        self.policy_send_select_all.stateChanged.connect(self._toggle_all_send_policies)
-        policy_layout.addWidget(self.policy_send_select_all)
-        self.policy_send_deselect_all = QtWidgets.QCheckBox("Deselect all shown")
+        select_controls = QtWidgets.QHBoxLayout()
+        self.policy_send_select_all = QtWidgets.QPushButton("Select all shown")
+        self.policy_send_select_all.clicked.connect(self._toggle_all_send_policies)
+        select_controls.addWidget(self.policy_send_select_all)
+        self.policy_send_deselect_all = QtWidgets.QPushButton("Deselect all shown")
         self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
-        policy_layout.addWidget(self.policy_send_deselect_all)
+        select_controls.addWidget(self.policy_send_deselect_all)
+        select_controls.addStretch()
+        policy_layout.addLayout(select_controls)
         self.policy_send_search = QtWidgets.QLineEdit()
         self.policy_send_search.setPlaceholderText("Search policies...")
         self.policy_send_search.textChanged.connect(self._filter_send_policies)
@@ -1077,25 +1079,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
 
     def _sync_send_policy_select_all(self) -> None:
-        visible_rows = self._visible_policy_rows()
-        if not visible_rows:
-            self.policy_send_select_all.blockSignals(True)
-            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
-            self.policy_send_select_all.blockSignals(False)
-            return
-        checked = 0
-        for row in visible_rows:
-            item = self.policy_send_table.item(row, 0)
-            if item.checkState() == QtCore.Qt.Checked:
-                checked += 1
-        self.policy_send_select_all.blockSignals(True)
-        if checked == 0:
-            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
-        elif checked == len(visible_rows):
-            self.policy_send_select_all.setCheckState(QtCore.Qt.Checked)
-        else:
-            self.policy_send_select_all.setCheckState(QtCore.Qt.PartiallyChecked)
-        self.policy_send_select_all.blockSignals(False)
+        return
 
     def _toggle_all_send_policies(self, _: bool) -> None:
         check_state = QtCore.Qt.Checked
