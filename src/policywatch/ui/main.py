@@ -57,6 +57,9 @@ class MainWindow(QtWidgets.QMainWindow):
         spacer = QtWidgets.QWidget()
         spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
         toolbar.addWidget(spacer)
+        audit_log_action = QtGui.QAction("Audit Log", self)
+        audit_log_action.triggered.connect(self._open_audit_log)
+        toolbar.addAction(audit_log_action)
         settings_action = QtGui.QAction("Settings", self)
         settings_action.triggered.connect(self._open_settings)
         toolbar.addAction(settings_action)
@@ -138,8 +141,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.addTab(dashboard, "Dashboard")
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
-        self.tabs.addTab(audit_log, "Audit Log")
+        self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
         self.settings_index = self.tabs.addTab(settings, "Settings")
+        self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
         self.tabs.tabBar().setTabVisible(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -238,6 +242,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _open_settings(self) -> None:
         self.tabs.setCurrentIndex(self.settings_index)
+
+    def _open_audit_log(self) -> None:
+        self.tabs.setCurrentIndex(self.audit_log_index)
 
     def _highlight_selected_row(self, row_index: int) -> None:
         if self._selected_row is not None and self._selected_row != row_index:
