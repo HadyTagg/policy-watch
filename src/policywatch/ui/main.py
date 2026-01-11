@@ -379,8 +379,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 6,
                 QtWidgets.QTableWidgetItem(self._format_file_size(version["file_size_bytes"])),
             )
-        self.version_table.setItem(row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"]))
-        self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
+            self.version_table.setItem(
+                row_index, 7, QtWidgets.QTableWidgetItem(version["sha256_hash"])
+            )
+            self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
 
