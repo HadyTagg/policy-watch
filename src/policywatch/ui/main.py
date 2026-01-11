@@ -1299,20 +1299,22 @@ class MainWindow(QtWidgets.QMainWindow):
             subject = subject_base
             if parts > 1:
                 subject = f"{subject_base} (Part {part_index} of {parts})"
-            try:
-                entry_id = outlook.send_email(
-                    subject, body, [email for email, _ in recipients], [path for path, _ in chunk]
-                )
-                status = "SENT"
-                error_text = ""
-            except outlook.OutlookError as exc:
-                entry_id = ""
-                status = "FAILED"
-                error_text = str(exc)
-                failures.append(f"{subject}: {error_text}")
+            attachment_paths = [path for path, _ in chunk]
+            total_attachment_bytes = sum(size for _, size in chunk)
+            for recipient_email, recipient_name in recipients:
+                try:
+                    entry_id = outlook.send_email(
+                        subject, body, [recipient_email], attachment_paths
+                    )
+                    status = "SENT"
+                    error_text = ""
+                except outlook.OutlookError as exc:
+                    entry_id = ""
+                    status = "FAILED"
+                    error_text = str(exc)
+                    failures.append(f"{recipient_email}: {subject}: {error_text}")
 
-            for row in policy_rows:
-                for recipient_email, recipient_name in recipients:
+                for row in policy_rows:
                     audit.append_email_log(
                         self.conn,
                         {
@@ -1328,7 +1330,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             "email_subject": subject,
                             "email_part_index": part_index,
                             "email_part_total": parts,
-                            "total_attachment_bytes_for_part": sum(size for _, size in chunk),
+                            "total_attachment_bytes_for_part": total_attachment_bytes,
                             "outlook_entry_id": entry_id,
                             "status": status,
                             "error_text": error_text,
