@@ -1066,6 +1066,62 @@ class MainWindow(QtWidgets.QMainWindow):
             self.policy_send_table.setRowHidden(row, not match if text else False)
         self._sync_send_policy_select_all()
 
+    def _visible_policy_rows(self) -> list[int]:
+        return [
+            row
+            for row in range(self.policy_send_table.rowCount())
+            if not self.policy_send_table.isRowHidden(row)
+        ]
+
+    def _sync_send_policy_select_all(self) -> None:
+        visible_rows = self._visible_policy_rows()
+        if not visible_rows:
+            self.policy_send_select_all.blockSignals(True)
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
+            self.policy_send_select_all.blockSignals(False)
+            return
+        checked = 0
+        for row in visible_rows:
+            item = self.policy_send_table.item(row, 0)
+            if item.checkState() == QtCore.Qt.Checked:
+                checked += 1
+        self.policy_send_select_all.blockSignals(True)
+        if checked == 0:
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Unchecked)
+        elif checked == len(visible_rows):
+            self.policy_send_select_all.setCheckState(QtCore.Qt.Checked)
+        else:
+            self.policy_send_select_all.setCheckState(QtCore.Qt.PartiallyChecked)
+        self.policy_send_select_all.blockSignals(False)
+
+    def _toggle_all_send_policies(self, _: bool) -> None:
+        visible_rows = self._visible_policy_rows()
+        if not visible_rows:
+            return
+        any_unchecked = any(
+            self.policy_send_table.item(row, 0).checkState() != QtCore.Qt.Checked
+            for row in visible_rows
+        )
+        check_state = QtCore.Qt.Checked if any_unchecked else QtCore.Qt.Unchecked
+        self.policy_send_select_all.blockSignals(True)
+        self.policy_send_select_all.setCheckState(check_state)
+        self.policy_send_select_all.blockSignals(False)
+        self.policy_send_table.blockSignals(True)
+        for row in visible_rows:
+            item = self.policy_send_table.item(row, 0)
+            item.setCheckState(check_state)
+        self.policy_send_table.blockSignals(False)
+        self._recalculate_attachments()
+
+    def _filter_send_policies(self, text: str) -> None:
+        text = text.lower().strip()
+        for row in range(self.policy_send_table.rowCount()):
+            title = self.policy_send_table.item(row, 1).text().lower()
+            category = self.policy_send_table.item(row, 3).text().lower()
+            match = text in title or text in category
+            self.policy_send_table.setRowHidden(row, not match if text else False)
+        self._sync_send_policy_select_all()
+
     def _sync_send_policy_select_all(self) -> None:
         visible_rows = [
             row
