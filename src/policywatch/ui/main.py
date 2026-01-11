@@ -143,6 +143,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
         self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
         self.settings_index = self.tabs.addTab(settings, "Settings")
+        self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
         self.tabs.tabBar().setTabVisible(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
