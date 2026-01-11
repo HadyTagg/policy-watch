@@ -25,5 +25,7 @@ def build_policy_path(
 ) -> Path:
     safe_category = slugify(category)
     safe_slug = slugify(policy_slug)
-    safe_filename = Path(original_filename).name
+    original_path = Path(original_filename)
+    suffix = "".join(original_path.suffixes)
+    safe_filename = f"{safe_slug}-v{version_number}{suffix}"
     return policy_root / safe_category / safe_slug / f"v{version_number}" / safe_filename
