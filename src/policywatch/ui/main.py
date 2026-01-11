@@ -993,8 +993,8 @@ class MainWindow(QtWidgets.QMainWindow):
             ["Select", "Title", "Version", "Category", "Size"]
         )
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
-        self.policy_send_table.itemChanged.connect(self._recalculate_attachments)
-        self.policy_send_table.itemClicked.connect(self._recalculate_attachments)
+        self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
+        self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
         policy_layout.addWidget(self.policy_send_table)
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
@@ -1088,6 +1088,16 @@ class MainWindow(QtWidgets.QMainWindow):
             item = self.policy_send_table.item(row, 0)
             item.setCheckState(check_state)
         self.policy_send_table.blockSignals(False)
+        self._recalculate_attachments()
+
+    def _on_send_policy_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if item.column() != 0:
+            return
+        self._recalculate_attachments()
+
+    def _on_send_policy_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
+        if item.column() != 0:
+            return
         self._recalculate_attachments()
 
     def _deselect_all_send_policies(self, _: bool) -> None:
