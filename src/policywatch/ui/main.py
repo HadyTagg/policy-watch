@@ -113,6 +113,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
