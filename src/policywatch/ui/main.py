@@ -1103,6 +1103,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.blockSignals(False)
         self._recalculate_attachments()
 
+    def _filter_send_policies(self, text: str) -> None:
+        text = text.lower().strip()
+        for row in range(self.policy_send_table.rowCount()):
+            title = self.policy_send_table.item(row, 1).text().lower()
+            category = self.policy_send_table.item(row, 3).text().lower()
+            match = text in title or text in category
+            self.policy_send_table.setRowHidden(row, not match if text else False)
+
     def _load_staff(self) -> None:
         access_path = config.get_setting(self.conn, "access_db_path", "N:\\")
         mode = config.get_setting(self.conn, "access_mode", "table")
