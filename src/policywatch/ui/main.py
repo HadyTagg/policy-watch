@@ -234,6 +234,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
+        self.table.clearSelection()
+        self.current_policy_id = None
         self._selected_row = None
 
     def _on_policy_selected(self) -> None:
@@ -290,13 +292,23 @@ class MainWindow(QtWidgets.QMainWindow):
                 break
 
     def _on_tab_changed(self, index: int) -> None:
-        if index == self.policy_detail_index and not self.current_policy_id:
-            self.tabs.blockSignals(True)
-            self.tabs.setCurrentIndex(0)
-            self.tabs.blockSignals(False)
-            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+        if index == self.policy_detail_index:
+            selection = self.table.selectionModel().selectedRows()
+            if not selection:
+                self._block_policy_detail_tab()
+                return
+            selected_row = selection[0].row()
+            if self._selected_row != selected_row or not self.current_policy_id:
+                self._block_policy_detail_tab()
+                return
         if index == self.policy_distributor_index:
             self._load_send_policies()
+
+    def _block_policy_detail_tab(self) -> None:
+        self.tabs.blockSignals(True)
+        self.tabs.setCurrentIndex(0)
+        self.tabs.blockSignals(False)
+        QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
     def _open_categories(self) -> None:
         def _refresh_categories_and_audit() -> None:
