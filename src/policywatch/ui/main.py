@@ -977,7 +977,7 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
         self.policy_send_select_all = QtWidgets.QCheckBox("Select all shown")
         self.policy_send_select_all.setTristate(True)
-        self.policy_send_select_all.clicked.connect(self._toggle_all_send_policies)
+        self.policy_send_select_all.stateChanged.connect(self._toggle_all_send_policies)
         policy_layout.addWidget(self.policy_send_select_all)
         self.policy_send_deselect_all = QtWidgets.QCheckBox("Deselect all shown")
         self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
