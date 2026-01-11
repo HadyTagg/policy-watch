@@ -1131,13 +1131,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if not staff_query:
             QtWidgets.QMessageBox.warning(self, "Configure", "Configure staff data source first.")
             return
+        fallback_table = table if mode == "table" else None
         try:
-            conn = access.connect_access(access_path)
+            rows = access.preview_query_from_path(
+                access_path,
+                staff_query,
+                limit=200,
+                table=fallback_table,
+            )
         except access.AccessDriverError as exc:
             QtWidgets.QMessageBox.warning(self, "Driver Missing", str(exc))
             return
-        rows = access.preview_query(conn, staff_query, limit=200)
-        conn.close()
         self.staff_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
             checkbox = QtWidgets.QTableWidgetItem()
@@ -1573,13 +1577,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if not staff_query:
             QtWidgets.QMessageBox.warning(self, "Invalid", "Provide a table and field mapping or query.")
             return
+        fallback_table = table if mode == "table" else None
         try:
-            conn = access.connect_access(access_path)
+            rows = access.preview_query_from_path(
+                access_path,
+                staff_query,
+                limit=20,
+                table=fallback_table,
+            )
         except access.AccessDriverError as exc:
             QtWidgets.QMessageBox.warning(self, "Driver Missing", str(exc))
             return
-        rows = access.preview_query(conn, staff_query, limit=20)
-        conn.close()
         preview = "\n".join([str(row) for row in rows])
         QtWidgets.QMessageBox.information(self, "Preview", preview or "No rows returned.")
 
