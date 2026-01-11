@@ -1283,6 +1283,20 @@ class MainWindow(QtWidgets.QMainWindow):
         body = "\n".join(body_lines)
 
         max_bytes = int(max_mb * 1024 * 1024) if max_mb else 0
+        oversized_attachments: list[str] = []
+        if max_bytes:
+            for path, size in attachments:
+                if size > max_bytes:
+                    oversized_attachments.append(f"{os.path.basename(path)} ({size / (1024 * 1024):.2f} MB)")
+        if oversized_attachments:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Attachment too large",
+                "These files exceed the maximum attachment size and cannot be sent:\n"
+                + "\n".join(oversized_attachments),
+            )
+            return
+
         attachment_chunks: list[list[tuple[str, int]]] = [[]]
         current_bytes = 0
         for path, size in attachments:
