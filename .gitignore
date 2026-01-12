@@ -12,3 +12,5 @@ __pycache__/
 #SQLite3
 
 *.db
+*.db-shm
+*.db-wal
