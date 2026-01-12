@@ -36,6 +36,12 @@ from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window coordinating dashboard and workflow tabs."""
 
+    TABLE_STYLE = (
+        "QTableView { color: #2f2f2f; font-size: 13px; }"
+        "QTableView::item:selected { background-color: hotpink; }"
+        "QHeaderView::section { color: #2f2f2f; font-size: 12px; font-weight: 600; }"
+    )
+
     def __init__(self, username: str, conn: sqlite3.Connection, parent=None):
         """Initialize the main window and build all primary UI sections."""
 
@@ -119,7 +125,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
+        self._apply_table_style(self.table)
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
@@ -159,6 +165,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_policies()
         self._load_settings()
         self._load_audit_log()
+
+    def _apply_table_style(self, table: QtWidgets.QTableWidget) -> None:
+        """Apply the shared table styling across the main UI tables."""
+
+        table.setStyleSheet(self.TABLE_STYLE)
 
     def _refresh_categories(self) -> None:
         """Refresh category filter options from the database."""
@@ -992,9 +1003,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.version_table.setStyleSheet(
-            "QTableView::item:selected { background-color: hotpink; }"
-        )
+        self._apply_table_style(self.version_table)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
@@ -1081,6 +1090,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
+        self._apply_table_style(self.policy_send_table)
         policy_layout.addWidget(self.policy_send_table)
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
@@ -1092,6 +1102,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self._apply_table_style(self.staff_table)
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
         load_staff_button.clicked.connect(self._load_staff)
