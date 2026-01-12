@@ -31,6 +31,7 @@ from policywatch.services import (
     update_policy_title,
 )
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
+from policywatch.ui.style import apply_table_style
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -119,7 +120,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
+        apply_table_style(self.table)
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
@@ -992,9 +993,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.version_table.setStyleSheet(
-            "QTableView::item:selected { background-color: hotpink; }"
-        )
+        apply_table_style(self.version_table)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
@@ -1081,6 +1080,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
+        apply_table_style(self.policy_send_table)
         policy_layout.addWidget(self.policy_send_table)
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
@@ -1092,6 +1092,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        apply_table_style(self.staff_table)
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
         load_staff_button.clicked.connect(self._load_staff)
@@ -1520,6 +1521,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.audit_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        apply_table_style(self.audit_table)
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export CSV")

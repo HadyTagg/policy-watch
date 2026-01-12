@@ -9,6 +9,7 @@ from typing import Callable
 from PyQt5 import QtCore, QtWidgets
 
 from policywatch.services import add_policy_version, create_category, create_policy
+from policywatch.ui.style import apply_table_style
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -43,6 +44,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        apply_table_style(self.table)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(input_row)
