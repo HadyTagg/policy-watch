@@ -630,7 +630,7 @@ class MainWindow(QtWidgets.QMainWindow):
         color_map = {
             "Green": QtGui.QColor("#9be8a6"),
             "Amber": QtGui.QColor("#ffe066"),
-            "Red": QtGui.QColor("#f2a4aa"),
+            "Red": QtGui.QColor("#e11d48"),
         }
         color = color_map.get(status)
         text_color = QtGui.QColor("#1f1f1f")
