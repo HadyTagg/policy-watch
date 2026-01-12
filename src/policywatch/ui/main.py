@@ -1,3 +1,5 @@
+"""Main window and UI logic for Policy Watch."""
+
 from __future__ import annotations
 
 import os
@@ -9,7 +11,7 @@ from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from policywatch import audit, config
+from policywatch.core import audit, config
 from policywatch.integrations import access, outlook
 from policywatch.services import (
     add_policy_version,
@@ -32,14 +34,16 @@ from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    """Main application window coordinating dashboard and workflow tabs."""
+
     def __init__(self, username: str, conn: sqlite3.Connection, parent=None):
+        """Initialize the main window and build all primary UI sections."""
+
         super().__init__(parent)
         self.conn = conn
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._title_dirty = False
-        self._selected_row: int | None = None
-        self._selected_version_row: int | None = None
         self._current_policy_title = ""
         self._current_policy_category = ""
 
@@ -90,10 +94,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ratified_filter.addItems(["All", "Ratified", "Not Ratified"])
         self.ratified_filter.currentIndexChanged.connect(self._refresh_policies)
 
-        self.show_expired = QtWidgets.QCheckBox("Show expired")
-        self.show_expired.setChecked(True)
-        self.show_expired.setVisible(False)
-
         filter_row = QtWidgets.QHBoxLayout()
         filter_row.addWidget(self.search_input, 2)
         filter_row.addWidget(self.category_filter, 1)
@@ -117,7 +117,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
+        table_font = self.table.font()
+        table_font.setPointSize(9)
+        table_font.setBold(True)
+        self.table.setFont(table_font)
+        self.table.setStyleSheet(
+            "QTableWidget::item { color: black;}"
+            "QTableWidget::item:selected { background-color: blue; color: white;}"
+        )
+
+
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
@@ -139,18 +148,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         policy_detail = self._build_policy_detail()
         email_compose = self._build_email_compose()
-        audit_log = self._build_audit_log()
-        settings = self._build_settings()
-
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(dashboard, "Dashboard")
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
-        self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
-        self.settings_index = self.tabs.addTab(settings, "Settings")
-        self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
-        self.tabs.tabBar().setTabVisible(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
+
+        self.audit_dialog = self._build_audit_dialog()
+        self.settings_dialog = self._build_settings_dialog()
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
@@ -163,6 +168,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _refresh_categories(self) -> None:
+        """Refresh category filter options from the database."""
+
         categories = ["All Categories"] + list_categories(self.conn)
         self.category_filter.blockSignals(True)
         self.category_filter.clear()
@@ -170,6 +177,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.category_filter.blockSignals(False)
 
     def _refresh_policies(self, clear_selection: bool = True) -> None:
+        """Refresh the policy table using the current filter settings."""
+
         policies = list_policies(self.conn)
         filtered = []
         search_text = self.search_input.text().strip().lower()
@@ -177,7 +186,6 @@ class MainWindow(QtWidgets.QMainWindow):
         traffic = self.traffic_filter.currentText()
         status = self.status_filter.currentText()
         ratified_filter = self.ratified_filter.currentText()
-        show_expired = True
         selected_policy_id = self.current_policy_id
 
         for policy in policies:
@@ -197,8 +205,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if ratified_filter == "Ratified" and not policy.ratified:
                 continue
             if ratified_filter == "Not Ratified" and policy.ratified:
-                continue
-            if not show_expired and policy.traffic_reason == "Expired":
                 continue
             filtered.append(policy)
 
@@ -227,9 +233,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item,
             ]
             for column, item in enumerate(items):
-                font = item.font()
-                font.setBold(True)
-                item.setFont(font)
                 self.table.setItem(row_index, column, item)
             if policy.current_version_id:
                 self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
@@ -241,95 +244,81 @@ class MainWindow(QtWidgets.QMainWindow):
         if clear_selection:
             self.table.clearSelection()
             self.current_policy_id = None
-            self._selected_row = None
         elif selected_policy_id:
             if not self._select_policy_row_by_id(selected_policy_id):
                 self.table.clearSelection()
                 self.current_policy_id = None
-                self._selected_row = None
 
     def _on_policy_selected(self) -> None:
+        """Load the policy detail panel when the table selection changes."""
+
         selected = self.table.selectionModel().selectedRows()
         if not selected:
             return
         policy_id = self.table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
-        self._highlight_selected_row(selected[0].row())
 
     def _open_settings(self) -> None:
-        self.tabs.setCurrentIndex(self.settings_index)
+        """Open the settings dialog."""
+
+        self._load_settings()
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
 
     def _open_audit_log(self) -> None:
-        self.tabs.setCurrentIndex(self.audit_log_index)
+        """Open the audit log dialog."""
 
-    def _highlight_selected_row(self, row_index: int) -> None:
-        if self._selected_row is not None and self._selected_row != row_index:
-            self._set_row_bold(self._selected_row, False)
-        self._selected_row = row_index
-        self._set_row_bold(row_index, True)
-
-    def _set_row_bold(self, row_index: int, enabled: bool) -> None:
-        for column in range(self.table.columnCount()):
-            item = self.table.item(row_index, column)
-            if not item:
-                continue
-            font = item.font()
-            font.setBold(True)
-            item.setFont(font)
-
-    def _highlight_version_row(self, row_index: int) -> None:
-        if self._selected_version_row is not None and self._selected_version_row != row_index:
-            self._set_version_row_bold(self._selected_version_row, False)
-        self._selected_version_row = row_index
-        self._set_version_row_bold(row_index, True)
-
-    def _set_version_row_bold(self, row_index: int, enabled: bool) -> None:
-        for column in range(self.version_table.columnCount()):
-            item = self.version_table.item(row_index, column)
-            if not item:
-                continue
-            font = item.font()
-            font.setBold(True)
-            item.setFont(font)
+        self._load_audit_log()
+        self.audit_dialog.show()
+        self.audit_dialog.raise_()
+        self.audit_dialog.activateWindow()
 
     def _select_version_row_by_id(self, version_id: int) -> None:
+        """Select a version row based on the version ID."""
+
         for row_index in range(self.version_table.rowCount()):
             row_version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
             if row_version_id == version_id:
                 self.version_table.selectRow(row_index)
-                self._highlight_version_row(row_index)
                 break
 
     def _select_policy_row_by_id(self, policy_id: int) -> bool:
+        """Select a policy row based on the policy ID."""
+
         for row_index in range(self.table.rowCount()):
             row_policy_id = self.table.item(row_index, 0).data(QtCore.Qt.UserRole)
             if row_policy_id == policy_id:
                 self.table.selectRow(row_index)
-                self._highlight_selected_row(row_index)
                 return True
         return False
 
     def _on_tab_changed(self, index: int) -> None:
+        """React to tab changes to enforce selection rules."""
+
         if index == self.policy_detail_index:
             selection = self.table.selectionModel().selectedRows()
             if not selection:
                 self._block_policy_detail_tab()
                 return
-            selected_row = selection[0].row()
-            if self._selected_row != selected_row or not self.current_policy_id:
+            if not self.current_policy_id:
                 self._block_policy_detail_tab()
                 return
         if index == self.policy_distributor_index:
             self._load_send_policies()
 
     def _block_policy_detail_tab(self) -> None:
+        """Return to the dashboard when a policy is not selected."""
+
         self.tabs.blockSignals(True)
         self.tabs.setCurrentIndex(0)
         self.tabs.blockSignals(False)
         QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
     def _open_categories(self) -> None:
+        """Open the category management dialog and refresh data."""
+
         def _refresh_categories_and_audit() -> None:
             self._refresh_categories()
             self._load_audit_log()
@@ -341,6 +330,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _open_new_policy(self) -> None:
+        """Open the new policy dialog and refresh data."""
+
         if not list_categories(self.conn):
             QtWidgets.QMessageBox.warning(
                 self,
@@ -354,13 +345,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _load_policy_detail(self, policy_id: int) -> None:
+        """Load policy details and version history for the selected policy."""
+
         policy = self.conn.execute(
             "SELECT * FROM policies WHERE id = ?",
             (policy_id,),
         ).fetchone()
         if not policy:
             return
-        self._selected_version_row = None
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
         self.detail_status.blockSignals(True)
@@ -415,15 +407,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 hash_item,
             ]
             for column, item in enumerate(items):
-                font = item.font()
-                font.setBold(True)
-                item.setFont(font)
                 self.version_table.setItem(row_index, column, item)
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
 
     def _upload_version(self) -> None:
+        """Prompt for a file and add a policy version."""
+
         if not self.current_policy_id:
             QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
             return
@@ -443,6 +434,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _mark_ratified(self) -> None:
+        """Mark the selected version as ratified."""
+
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
@@ -464,6 +457,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_audit_log()
 
     def _mark_unratified(self) -> None:
+        """Mark the selected version as not ratified."""
+
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
@@ -485,6 +480,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_audit_log()
 
     def _set_current(self) -> None:
+        """Set the selected version as the current policy version."""
+
         if not self.current_policy_id:
             return
         selection = self.version_table.selectionModel().selectedRows()
@@ -514,6 +511,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_send_policies()
 
     def _set_not_current(self) -> None:
+        """Unset the current policy version."""
+
         if not self.current_policy_id:
             return
         selection = self.version_table.selectionModel().selectedRows()
@@ -540,6 +539,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_send_policies()
 
     def _open_file_location(self) -> None:
+        """Open the current version file in the OS file manager."""
+
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
@@ -548,14 +549,12 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
 
     def _on_version_selected(self) -> None:
+        """Populate metadata controls for the selected version."""
+
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
-            if self._selected_version_row is not None:
-                self._set_version_row_bold(self._selected_version_row, False)
-            self._selected_version_row = None
             self._clear_policy_metadata_fields()
             return
-        self._highlight_version_row(selection[0].row())
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
@@ -587,10 +586,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
+        """Apply traffic-light color coding to a policy row."""
+
         color_map = {
-            "Green": QtGui.QColor("#9be8a6"),
-            "Amber": QtGui.QColor("#ffe066"),
-            "Red": QtGui.QColor("#f2a4aa"),
+            "Green": QtGui.QColor("#27f149"),
+            "Amber": QtGui.QColor("#ffff1a"),
+            "Red": QtGui.QColor("#e11d48"),
         }
         color = color_map.get(status)
         text_color = QtGui.QColor("#1f1f1f")
@@ -604,6 +605,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 item.setToolTip(reason)
 
     def _apply_no_current_row_color(self, row_index: int) -> None:
+        """Apply a distinct color for policies without a current version."""
+
         text_color = QtGui.QColor("#1f1f1f")
         for column in range(self.table.columnCount()):
             item = self.table.item(row_index, column)
@@ -613,6 +616,8 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setForeground(text_color)
 
     def _update_policy_field(self, field: str, value: str) -> None:
+        """Update a policy/version field with confirmation and audit logging."""
+
         if not self.current_policy_id:
             return
         selected = self.version_table.selectionModel().selectedRows()
@@ -697,6 +702,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _format_file_size(self, size_bytes: int) -> str:
+        """Format bytes into a human-readable size string."""
+
         if size_bytes < 1024:
             return f"{size_bytes} B"
         size_kb = size_bytes / 1024
@@ -709,6 +716,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return f"{size_gb:.2f} GB"
 
     def _format_date_display(self, value: str) -> str:
+        """Format an ISO date string for UI display."""
+
         if not value:
             return ""
         date_value = QtCore.QDate.fromString(value, "yyyy-MM-dd")
@@ -717,6 +726,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return date_value.toString("dd/MM/yyyy")
 
     def _format_datetime_display(self, value: str) -> str:
+        """Format an ISO datetime string for UI display."""
+
         if not value:
             return ""
         date_value = QtCore.QDateTime.fromString(value, QtCore.Qt.ISODate)
@@ -725,6 +736,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return date_value.date().toString("dd/MM/yyyy")
 
     def _set_date_field(self, widget: QtWidgets.QDateEdit, value: str | None) -> None:
+        """Configure a date widget with a stored date or blank state."""
+
         min_date = QtCore.QDate(1900, 1, 1)
         widget.setMinimumDate(min_date)
         if value:
@@ -736,6 +749,8 @@ class MainWindow(QtWidgets.QMainWindow):
             widget.setDisplayFormat(" ")
 
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        """Commit metadata edits when focus leaves editable widgets."""
+
         if obj is self.detail_notes and event.type() == QtCore.QEvent.FocusOut and self._notes_dirty:
             text_value = self.detail_notes.toPlainText().strip()
             self._notes_dirty = False
@@ -748,6 +763,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return super().eventFilter(obj, event)
 
     def _prompt_version_metadata(self) -> dict | None:
+        """Prompt for status, expiry, and notes when adding a version."""
+
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Version Metadata")
         layout = QtWidgets.QVBoxLayout(dialog)
@@ -803,18 +820,28 @@ class MainWindow(QtWidgets.QMainWindow):
         }
 
     def _on_status_changed(self, status: str) -> None:
+        """Handle status updates from the metadata form."""
+
         self._update_policy_field("status", status)
 
     def _on_expiry_changed(self, value: QtCore.QDate) -> None:
+        """Handle expiry date updates from the metadata form."""
+
         self._update_policy_field("expiry_date", value.toString("yyyy-MM-dd"))
 
     def _mark_notes_dirty(self) -> None:
+        """Track when notes are edited so updates can be saved on blur."""
+
         self._notes_dirty = True
 
     def _mark_title_dirty(self) -> None:
+        """Track when the title is edited so updates can be saved on blur."""
+
         self._title_dirty = True
 
     def _update_policy_title(self, title: str) -> None:
+        """Persist a policy title update with confirmation."""
+
         if not self.current_policy_id:
             return
         policy_row = self.conn.execute(
@@ -840,6 +867,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _populate_category_options(self, selected: str | None) -> None:
+        """Populate category options for the detail panel."""
+
         categories = list_categories(self.conn)
         if selected and selected not in categories:
             categories.append(selected)
@@ -851,6 +880,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.detail_category.setCurrentIndex(-1)
 
     def _set_policy_metadata_enabled(self, enabled: bool) -> None:
+        """Enable or disable policy metadata fields."""
+
         self.detail_title.setEnabled(enabled)
         self.detail_category.setEnabled(enabled)
         self.detail_status.setEnabled(enabled)
@@ -858,6 +889,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.setEnabled(enabled)
 
     def _clear_policy_metadata_fields(self) -> None:
+        """Reset policy metadata fields when no version is selected."""
+
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
@@ -878,6 +911,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
 
     def _on_category_changed(self, category: str) -> None:
+        """Handle category updates from the metadata form."""
+
         if not self.current_policy_id:
             return
         policy_row = self.conn.execute(
@@ -903,6 +938,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_audit_log()
 
     def _build_policy_detail(self) -> QtWidgets.QWidget:
+        """Build the policy detail tab UI."""
+
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
 
@@ -916,8 +953,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        version_font = self.version_table.font()
+        version_font.setPointSize(9)
+        version_font.setBold(True)
+        self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableView::item:selected { background-color: hotpink; }"
+            "QTableWidget::item { color: white;}"
+            "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -978,6 +1020,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _build_email_compose(self) -> QtWidgets.QWidget:
+        """Build the policy distributor tab UI."""
+
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
 
@@ -1001,6 +1045,20 @@ class MainWindow(QtWidgets.QMainWindow):
             ["Select", "Title", "Version", "Category", "Size"]
         )
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        self.policy_send_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.policy_send_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+
+        send_font = self.policy_send_table.font()
+        send_font.setPointSize(9)
+        send_font.setBold(True)
+        self.policy_send_table.setFont(send_font)
+        self.policy_send_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
         policy_layout.addWidget(self.policy_send_table)
@@ -1040,6 +1098,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _load_send_policies(self) -> None:
+        """Load current policy versions into the send table."""
+
         rows = self.conn.execute(
             """
             SELECT p.title, p.category, v.id AS version_id, v.version_number, v.file_size_bytes
@@ -1076,6 +1136,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recalculate_attachments()
 
     def _filter_send_policies(self, text: str) -> None:
+        """Filter visible policies in the send table."""
+
         text = text.lower().strip()
         for row in range(self.policy_send_table.rowCount()):
             title = self.policy_send_table.item(row, 1).text().lower()
@@ -1085,6 +1147,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_send_policy_select_all()
 
     def _visible_policy_rows(self) -> list[int]:
+        """Return row indices for visible policy send rows."""
+
         return [
             row
             for row in range(self.policy_send_table.rowCount())
@@ -1092,9 +1156,28 @@ class MainWindow(QtWidgets.QMainWindow):
         ]
 
     def _sync_send_policy_select_all(self) -> None:
-        return
+        """Sync select/deselect buttons with the current selection state."""
+
+        visible_rows = self._visible_policy_rows()
+        if not visible_rows:
+            self.policy_send_select_all.setEnabled(False)
+            self.policy_send_deselect_all.setEnabled(False)
+            return
+        self.policy_send_select_all.setEnabled(True)
+        any_checked = False
+        all_checked = True
+        for row in visible_rows:
+            item = self.policy_send_table.item(row, 0)
+            if not item or item.checkState() != QtCore.Qt.Checked:
+                all_checked = False
+            else:
+                any_checked = True
+        self.policy_send_select_all.setEnabled(not all_checked)
+        self.policy_send_deselect_all.setEnabled(any_checked)
 
     def _toggle_all_send_policies(self, _: bool) -> None:
+        """Select all visible policies in the send table."""
+
         check_state = QtCore.Qt.Checked
         self.policy_send_table.blockSignals(True)
         for row in self._visible_policy_rows():
@@ -1104,16 +1187,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recalculate_attachments()
 
     def _on_send_policy_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        """Recalculate attachment totals when a checkbox changes."""
+
         if item.column() != 0:
             return
         QtCore.QTimer.singleShot(0, self._recalculate_attachments)
 
     def _on_send_policy_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
+        """Recalculate attachment totals when a checkbox is clicked."""
+
         if item.column() != 0:
             return
         QtCore.QTimer.singleShot(0, self._recalculate_attachments)
 
     def _deselect_all_send_policies(self, _: bool) -> None:
+        """Deselect all visible policies in the send table."""
+
         self.policy_send_table.blockSignals(True)
         for row in self._visible_policy_rows():
             item = self.policy_send_table.item(row, 0)
@@ -1122,6 +1211,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recalculate_attachments()
 
     def _load_staff(self) -> None:
+        """Load staff records from Access based on the configured query."""
+
         access_path = config.get_setting(self.conn, "access_db_path", "N:\\")
         mode = config.get_setting(self.conn, "access_mode", "table")
         table = config.get_setting(self.conn, "access_table", "")
@@ -1160,6 +1251,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.resizeColumnsToContents()
 
     def _filter_staff(self, text: str) -> None:
+        """Filter staff recipients by name or email."""
+
         text = text.lower().strip()
         for row in range(self.staff_table.rowCount()):
             name = self.staff_table.item(row, 1).text().lower()
@@ -1168,6 +1261,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.staff_table.setRowHidden(row, not match if text else False)
 
     def _recalculate_attachments(self) -> None:
+        """Update total size and split plan based on selected policies."""
+
         total_bytes = 0
         for row in range(self.policy_send_table.rowCount()):
             item = self.policy_send_table.item(row, 0)
@@ -1191,6 +1286,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.split_plan_label.setText("Single email")
 
     def _send_email(self) -> None:
+        """Send selected policies to selected recipients via Outlook."""
+
         selected_versions: list[int] = []
         for row in range(self.policy_send_table.rowCount()):
             item = self.policy_send_table.item(row, 0)
@@ -1369,7 +1466,19 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
 
+    def _build_audit_dialog(self) -> QtWidgets.QDialog:
+        """Build the audit log dialog window."""
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Audit Log")
+        dialog_layout = QtWidgets.QVBoxLayout(dialog)
+        dialog_layout.addWidget(self._build_audit_log())
+        dialog.resize(900, 600)
+        return dialog
+
     def _build_audit_log(self) -> QtWidgets.QWidget:
+        """Build the audit log tab UI."""
+
         wrapper = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(wrapper)
 
@@ -1392,6 +1501,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.audit_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
+        self.audit_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.audit_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+        audit_font = self.audit_table.font()
+        audit_font.setPointSize(9)
+        audit_font.setBold(False)
+        self.audit_table.setFont(audit_font)
+
+        self.audit_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export CSV")
         export_button.clicked.connect(self._export_audit_csv)
@@ -1410,6 +1532,8 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _load_audit_log(self) -> None:
+        """Load audit events into the audit log table."""
+
         start_date = self.audit_start.date().toString("yyyy-MM-dd")
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
         rows = self.conn.execute(
@@ -1454,6 +1578,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
 
     def _export_audit_csv(self) -> None:
+        """Export the audit log table to CSV."""
+
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "audit_log.csv")
         if not path:
             return
@@ -1468,10 +1594,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 writer.writerow(list(row))
 
     def _verify_audit(self) -> None:
-        ok, message = audit.verify_event_log(self.conn)
+        """Verify audit log integrity and show the result."""
+
+        _, message = audit.verify_event_log(self.conn)
         QtWidgets.QMessageBox.information(self, "Audit Log", message)
 
+    def _build_settings_dialog(self) -> QtWidgets.QDialog:
+        """Build the settings dialog window."""
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog_layout = QtWidgets.QVBoxLayout(dialog)
+        dialog_layout.addWidget(self._build_settings())
+        dialog.resize(720, 620)
+        return dialog
+
     def _build_settings(self) -> QtWidgets.QWidget:
+        """Build the settings tab UI."""
+
         wrapper = QtWidgets.QWidget()
         wrapper_layout = QtWidgets.QVBoxLayout(wrapper)
 
@@ -1540,11 +1680,15 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _browse_policy_root(self) -> None:
+        """Open a folder selector for the policy root."""
+
         directory = QtWidgets.QFileDialog.getExistingDirectory(self, "Policy Root")
         if directory:
             self.policy_root_input.setText(directory)
 
     def _save_settings(self) -> None:
+        """Persist settings from the UI to the config table."""
+
         config.set_setting(self.conn, "policy_root", self.policy_root_input.text().strip())
         config.set_setting(self.conn, "amber_months", self.amber_months_input.value())
         config.set_setting(self.conn, "overdue_grace_days", self.overdue_days_input.value())
@@ -1557,6 +1701,8 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, "Saved", "Settings updated.")
 
     def _load_settings(self) -> None:
+        """Load saved settings into the UI fields."""
+
         self.policy_root_input.setText(config.get_setting(self.conn, "policy_root", ""))
         self.amber_months_input.setValue(int(config.get_setting(self.conn, "amber_months", 2) or 2))
         self.overdue_days_input.setValue(int(config.get_setting(self.conn, "overdue_grace_days", 0) or 0))
@@ -1568,6 +1714,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.access_fields.setPlainText(config.get_setting(self.conn, "access_fields", "{}"))
 
     def _test_access(self) -> None:
+        """Test the Access connection and show a preview of results."""
+
         access_path = self.access_path.text().strip()
         mapping = parse_mapping_json(self.access_fields.toPlainText().strip())
         query = self.access_query.toPlainText().strip()
@@ -1592,10 +1740,14 @@ class MainWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, "Preview", preview or "No rows returned.")
 
     def _open_data_folder(self) -> None:
+        """Open the application's data directory."""
+
         data_dir = config.get_paths().data_dir
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(data_dir)))
 
     def _backup_export(self) -> None:
+        """Create a backup zip containing the database and optional files."""
+
         path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Backup", "policywatch_backup.zip")
         if not path:
             return

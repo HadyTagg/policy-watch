@@ -1,3 +1,5 @@
+"""Database connection and schema management helpers."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -6,10 +8,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable
 
-SCHEMA_VERSION = 1
-
 
 def connect(db_path: Path) -> sqlite3.Connection:
+    """Open a SQLite connection with sensible defaults for this app."""
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -19,6 +21,8 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def apply_schema(conn: sqlite3.Connection) -> None:
+    """Create or migrate tables, triggers, and metadata columns."""
+
     with conn:
         conn.executescript(
             """
@@ -156,6 +160,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
+    """Add policy version metadata columns when upgrading older databases."""
+
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(policy_versions)").fetchall()}
     additions = [
         ("status", "TEXT"),
@@ -171,6 +177,8 @@ def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_policy_metadata(conn: sqlite3.Connection) -> None:
+    """Add policy metadata columns when upgrading older databases."""
+
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(policies)").fetchall()}
     if "review_frequency_months" not in columns:
         conn.execute("ALTER TABLE policies ADD COLUMN review_frequency_months INTEGER")
@@ -178,6 +186,8 @@ def _ensure_policy_metadata(conn: sqlite3.Connection) -> None:
 
 @contextmanager
 def transactional(conn: sqlite3.Connection):
+    """Context manager to wrap operations in a manual transaction."""
+
     try:
         conn.execute("BEGIN")
         yield
@@ -194,6 +204,8 @@ def execute_with_retry(
     retries: int = 3,
     delay: float = 0.1,
 ) -> sqlite3.Cursor:
+    """Execute a statement with retry on SQLite 'database is locked' errors."""
+
     params = params or []
     for attempt in range(retries):
         try:

@@ -1,9 +1,12 @@
+"""Append-only audit logging with hash chaining for integrity verification."""
+
 from __future__ import annotations
 
 import hashlib
 import sqlite3
 from typing import Iterable
 
+# Canonical field ordering for email logs to keep hash generation stable.
 EMAIL_LOG_FIELDS = [
     "sent_at",
     "sender_windows_user",
@@ -23,6 +26,7 @@ EMAIL_LOG_FIELDS = [
     "error_text",
 ]
 
+# Canonical field ordering for event logs to keep hash generation stable.
 EVENT_LOG_FIELDS = [
     "occurred_at",
     "actor",
@@ -34,6 +38,8 @@ EVENT_LOG_FIELDS = [
 
 
 def _canonical_row_content(row: dict) -> str:
+    """Create a deterministic string representation of an email log entry."""
+
     parts = []
     for field in EMAIL_LOG_FIELDS:
         value = row.get(field, "")
@@ -42,6 +48,8 @@ def _canonical_row_content(row: dict) -> str:
 
 
 def _canonical_event_content(row: dict) -> str:
+    """Create a deterministic string representation of an event log entry."""
+
     parts = []
     for field in EVENT_LOG_FIELDS:
         value = row.get(field, "")
@@ -50,11 +58,15 @@ def _canonical_event_content(row: dict) -> str:
 
 
 def _hash_chain(prev_hash: str, row_content: str) -> str:
+    """Chain hashes to make the audit logs tamper-evident."""
+
     payload = (prev_hash + row_content).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
 def get_latest_hash(conn: sqlite3.Connection) -> str:
+    """Return the latest email log hash from the audit state table."""
+
     row = conn.execute("SELECT latest_row_hash FROM audit_state WHERE singleton_id = 1").fetchone()
     if row:
         return row["latest_row_hash"]
@@ -62,6 +74,8 @@ def get_latest_hash(conn: sqlite3.Connection) -> str:
 
 
 def get_latest_event_hash(conn: sqlite3.Connection) -> str:
+    """Return the latest event log hash from the audit event state table."""
+
     row = conn.execute("SELECT latest_row_hash FROM audit_event_state WHERE singleton_id = 1").fetchone()
     if row:
         return row["latest_row_hash"]
@@ -69,6 +83,8 @@ def get_latest_event_hash(conn: sqlite3.Connection) -> str:
 
 
 def append_email_log(conn: sqlite3.Connection, row: dict) -> None:
+    """Append an email log row and update the hash chain."""
+
     prev_hash = get_latest_hash(conn)
     row_content = _canonical_row_content(row)
     row_hash = _hash_chain(prev_hash, row_content)
@@ -89,6 +105,8 @@ def append_email_log(conn: sqlite3.Connection, row: dict) -> None:
 
 
 def append_event_log(conn: sqlite3.Connection, row: dict) -> None:
+    """Append an audit event row and update the hash chain."""
+
     prev_hash = get_latest_event_hash(conn)
     row_content = _canonical_event_content(row)
     row_hash = _hash_chain(prev_hash, row_content)
@@ -109,6 +127,8 @@ def append_event_log(conn: sqlite3.Connection, row: dict) -> None:
 
 
 def verify_audit_log(conn: sqlite3.Connection) -> tuple[bool, str]:
+    """Verify the email log hash chain integrity."""
+
     rows = conn.execute(
         "SELECT * FROM email_log ORDER BY id"
     ).fetchall()
@@ -127,6 +147,8 @@ def verify_audit_log(conn: sqlite3.Connection) -> tuple[bool, str]:
 
 
 def verify_event_log(conn: sqlite3.Connection) -> tuple[bool, str]:
+    """Verify the audit event hash chain integrity."""
+
     rows = conn.execute(
         "SELECT * FROM audit_events ORDER BY id"
     ).fetchall()
@@ -145,5 +167,7 @@ def verify_event_log(conn: sqlite3.Connection) -> tuple[bool, str]:
 
 
 def seed_email_logs(conn: sqlite3.Connection, rows: Iterable[dict]) -> None:
+    """Bulk append seed data into the email log."""
+
     for row in rows:
         append_email_log(conn, row)

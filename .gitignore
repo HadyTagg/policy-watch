@@ -5,3 +5,15 @@ env/
 ENV/
 __pycache__/
 *.pyc
+
+# Pycharm
+.idea/
+
+# SQLite3
+
+*.db
+*.db-shm
+*.db-wal
+
+# Misc
+policies/

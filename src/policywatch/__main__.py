@@ -1,16 +1,28 @@
+"""Application entry point for Policy Watch."""
+
 from __future__ import annotations
 
 import datetime
+import os
+
+qt_platform = os.environ.get("POLICYWATCH_QT_PLATFORM")
+if qt_platform and "QT_QPA_PLATFORM" not in os.environ:
+    os.environ["QT_QPA_PLATFORM"] = qt_platform
 
 from PyQt5 import QtGui, QtWidgets
 
-from policywatch import config, db, security
+from policywatch.core import config, security
+from policywatch.data import db
 from policywatch.ui.login import LoginWindow
 from policywatch.ui.main import MainWindow
 
 
 class PolicyWatchApp:
+    """Main application wrapper for initialization and authentication."""
+
     def __init__(self) -> None:
+        """Prepare application state, database connections, and styles."""
+
         self.paths = config.get_paths()
         self.conn = db.connect(self.paths.db_path)
         db.apply_schema(self.conn)
@@ -86,6 +98,8 @@ class PolicyWatchApp:
         """
 
     def _apply_dark_mode(self, app: QtWidgets.QApplication) -> None:
+        """Apply the dark theme palette and stylesheet."""
+
         app.setStyle("Fusion")
         palette = app.palette()
         palette.setColor(palette.Window, QtGui.QColor("#2b2b2b"))
@@ -101,6 +115,8 @@ class PolicyWatchApp:
         app.setStyleSheet(self._dark_stylesheet)
 
     def _ensure_admin(self) -> None:
+        """Ensure a default admin user exists on first run."""
+
         row = self.conn.execute("SELECT COUNT(*) as count FROM users").fetchone()
         if row["count"] > 0:
             return
@@ -121,6 +137,8 @@ class PolicyWatchApp:
             )
 
     def authenticate(self, username: str, password: str) -> bool:
+        """Authenticate a user against stored credentials."""
+
         row = self.conn.execute(
             "SELECT password_hash, salt, disabled FROM users WHERE username = ?",
             (username,),
@@ -130,6 +148,8 @@ class PolicyWatchApp:
         return security.verify_password(password, row["password_hash"], row["salt"])
 
     def run(self) -> None:
+        """Run the Qt application loop with login gating."""
+
         app = QtWidgets.QApplication([])
         self._app = app
         self._apply_dark_mode(app)
@@ -143,6 +163,8 @@ class PolicyWatchApp:
 
 
 def main() -> None:
+    """Launch the Policy Watch application."""
+
     PolicyWatchApp().run()
 
 
