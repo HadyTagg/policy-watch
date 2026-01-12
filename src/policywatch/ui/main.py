@@ -262,11 +262,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_settings(self) -> None:
         """Open the settings tab."""
 
+        self.tabs.tabBar().setTabVisible(self.settings_index, True)
         self.tabs.setCurrentIndex(self.settings_index)
 
     def _open_audit_log(self) -> None:
         """Open the audit log tab."""
 
+        self.tabs.tabBar().setTabVisible(self.audit_log_index, True)
         self.tabs.setCurrentIndex(self.audit_log_index)
 
     def _highlight_selected_row(self, row_index: int) -> None:
@@ -325,6 +327,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tab_changed(self, index: int) -> None:
         """React to tab changes to enforce selection rules."""
 
+        if index != self.audit_log_index:
+            self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
+        if index != self.settings_index:
+            self.tabs.tabBar().setTabVisible(self.settings_index, False)
         if index == self.policy_detail_index:
             selection = self.table.selectionModel().selectedRows()
             if not selection:
