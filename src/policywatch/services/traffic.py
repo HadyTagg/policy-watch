@@ -1,3 +1,5 @@
+"""Traffic-light calculations for policy expiry status."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -6,11 +8,15 @@ from datetime import date
 
 @dataclass(frozen=True)
 class TrafficResult:
+    """Result for the traffic-light calculation."""
+
     status: str
     reason: str
 
 
 def _add_months(source: date, months: int) -> date:
+    """Add months to a date while keeping the day within month bounds."""
+
     month = source.month - 1 + months
     year = source.year + month // 12
     month = month % 12 + 1
@@ -23,6 +29,8 @@ def traffic_light_status(
     expiry_date: date,
     amber_months: int,
 ) -> TrafficResult:
+    """Return traffic-light status for a policy expiry date."""
+
     if today > expiry_date:
         return TrafficResult(status="Red", reason="Expired")
 

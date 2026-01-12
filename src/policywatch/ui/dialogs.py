@@ -1,3 +1,5 @@
+"""Dialog windows used throughout the Policy Watch UI."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -10,7 +12,11 @@ from policywatch.services import add_policy_version, create_category, create_pol
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
+    """Dialog for creating and deleting policy categories."""
+
     def __init__(self, conn: sqlite3.Connection, on_updated: Callable[[], None], parent=None):
+        """Initialize the category management dialog UI."""
+
         super().__init__(parent)
         self.conn = conn
         self.on_updated = on_updated
@@ -45,6 +51,8 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self._load_categories()
 
     def _load_categories(self) -> None:
+        """Populate the category table with current values."""
+
         rows = self.conn.execute("SELECT id, name FROM categories ORDER BY name").fetchall()
         self.table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
@@ -52,6 +60,8 @@ class CategoryManagerDialog(QtWidgets.QDialog):
             self.table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["name"]))
 
     def _add_category(self) -> None:
+        """Add a new category and refresh the view."""
+
         name = self.category_input.text().strip()
         if not name:
             return
@@ -65,6 +75,8 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.on_updated()
 
     def _delete_selected(self) -> None:
+        """Delete the selected category after validating usage."""
+
         selection = self.table.selectionModel().selectedRows()
         if not selection:
             return
@@ -84,7 +96,11 @@ class CategoryManagerDialog(QtWidgets.QDialog):
 
 
 class PolicyDialog(QtWidgets.QDialog):
+    """Dialog for creating a policy and uploading its initial file."""
+
     def __init__(self, conn: sqlite3.Connection, on_saved: Callable[[], None], parent=None):
+        """Initialize the new policy dialog UI."""
+
         super().__init__(parent)
         self.conn = conn
         self.on_saved = on_saved
@@ -140,6 +156,8 @@ class PolicyDialog(QtWidgets.QDialog):
         self._update_metadata_state(self.status_combo.currentText())
 
     def _load_categories(self) -> None:
+        """Load categories into the dropdown and toggle save availability."""
+
         rows = self.conn.execute("SELECT name FROM categories ORDER BY name").fetchall()
         self.category_combo.clear()
         self.category_combo.addItems([row["name"] for row in rows])
@@ -153,6 +171,8 @@ class PolicyDialog(QtWidgets.QDialog):
             )
 
     def _save(self) -> None:
+        """Persist the policy and its initial version."""
+
         title = self.title_input.text().strip()
         category = self.category_combo.currentText().strip()
         if not title or not category:
@@ -190,11 +210,15 @@ class PolicyDialog(QtWidgets.QDialog):
         self.accept()
 
     def _browse_file(self) -> None:
+        """Open a file chooser for the policy document."""
+
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select Policy Document")
         if file_path:
             self.file_path_input.setText(file_path)
 
     def _update_metadata_state(self, status: str) -> None:
+        """Enable or disable expiry date based on the selected status."""
+
         is_draft = status == "Draft"
         min_date = QtCore.QDate(1900, 1, 1)
         self.expiry_date.setMinimumDate(min_date)
@@ -211,6 +235,8 @@ class PolicyDialog(QtWidgets.QDialog):
                 self.expiry_date.setDate(QtCore.QDate.currentDate())
 
     def _expiry_value(self) -> str:
+        """Return the expiry date value or empty string for draft policies."""
+
         if not self.expiry_date.isEnabled():
             return ""
         return self.expiry_date.date().toString("yyyy-MM-dd")

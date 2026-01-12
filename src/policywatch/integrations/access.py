@@ -1,3 +1,5 @@
+"""Access database integration helpers with a SQLite fallback."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,10 +12,14 @@ from policywatch.core import config
 
 
 class AccessDriverError(RuntimeError):
+    """Raised when Access drivers or fallbacks are unavailable."""
+
     pass
 
 
 def connect_access(db_path: str) -> pyodbc.Connection:
+    """Connect to an Access database using the newest available driver."""
+
     drivers = [driver for driver in pyodbc.drivers() if "Access" in driver]
     if not drivers:
         raise AccessDriverError("Microsoft Access Database Engine driver not found.")
@@ -23,6 +29,8 @@ def connect_access(db_path: str) -> pyodbc.Connection:
 
 
 def preview_query(conn: pyodbc.Connection, query: str, limit: int = 20) -> list[dict]:
+    """Run a query against an Access connection and return up to ``limit`` rows."""
+
     cursor = conn.cursor()
     cursor.execute(query)
     columns = [col[0] for col in cursor.description]
@@ -36,6 +44,8 @@ def preview_query_from_path(
     limit: int = 20,
     table: str | None = None,
 ) -> list[dict]:
+    """Preview a query from a DB path, falling back to a SQLite export."""
+
     try:
         conn = connect_access(db_path)
     except AccessDriverError:
@@ -52,6 +62,8 @@ def _preview_query_via_sqlite(
     limit: int,
     table: str | None,
 ) -> list[dict]:
+    """Export the Access table to SQLite and run the query for previewing."""
+
     table_name = table or _extract_table_name(query)
     if not table_name:
         raise AccessDriverError("Unable to identify the Access table to export.")
@@ -65,6 +77,8 @@ def _preview_query_via_sqlite(
 
 
 def _export_table_to_sqlite(db_path: str, table: str, sqlite_path: Path) -> None:
+    """Export an Access table into a SQLite file for fallback queries."""
+
     columns, rows = _read_access_table(db_path, table)
     if not columns:
         raise AccessDriverError(f"No columns found for table '{table}'.")
@@ -84,6 +98,8 @@ def _export_table_to_sqlite(db_path: str, table: str, sqlite_path: Path) -> None
 
 
 def _read_access_table(db_path: str, table: str) -> tuple[list[str], list[list]]:
+    """Read an Access table via OLEDB and return columns and rows."""
+
     try:
         import win32com.client  # type: ignore[import-untyped]
     except ImportError as exc:
@@ -110,6 +126,8 @@ def _read_access_table(db_path: str, table: str) -> tuple[list[str], list[list]]
 
 
 def _extract_table_name(query: str) -> str:
+    """Extract a table name from a SELECT query for fallback usage."""
+
     match = re.search(r"\\bFROM\\s+\\[([^\\]]+)\\]", query, re.IGNORECASE)
     if match:
         return match.group(1)
@@ -120,6 +138,8 @@ def _extract_table_name(query: str) -> str:
 
 
 def _sqlite_cache_path(db_path: str) -> Path:
+    """Return the cache path for the SQLite-exported Access data."""
+
     data_dir = config.get_paths().data_dir
     name = Path(db_path).stem or "access"
     return data_dir / f"{name}_cache.sqlite"
