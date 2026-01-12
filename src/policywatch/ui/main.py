@@ -141,22 +141,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         policy_detail = self._build_policy_detail()
         email_compose = self._build_email_compose()
-        audit_log = self._build_audit_log()
-        settings = self._build_settings()
-
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.addTab(dashboard, "Dashboard")
         self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
-        self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
-        self.settings_index = self.tabs.addTab(settings, "Settings")
-        self._tab_titles = {
-            self.audit_log_index: self.tabs.tabText(self.audit_log_index),
-            self.settings_index: self.tabs.tabText(self.settings_index),
-        }
-        self._set_tab_visibility(self.audit_log_index, False)
-        self._set_tab_visibility(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
+
+        self.audit_dialog = self._build_audit_dialog()
+        self.settings_dialog = self._build_settings_dialog()
 
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
@@ -264,16 +256,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self._highlight_selected_row(selected[0].row())
 
     def _open_settings(self) -> None:
-        """Open the settings tab."""
+        """Open the settings dialog."""
 
-        self._set_tab_visibility(self.settings_index, True)
-        self.tabs.setCurrentIndex(self.settings_index)
+        self._load_settings()
+        self.settings_dialog.show()
+        self.settings_dialog.raise_()
+        self.settings_dialog.activateWindow()
 
     def _open_audit_log(self) -> None:
-        """Open the audit log tab."""
+        """Open the audit log dialog."""
 
-        self._set_tab_visibility(self.audit_log_index, True)
-        self.tabs.setCurrentIndex(self.audit_log_index)
+        self._load_audit_log()
+        self.audit_dialog.show()
+        self.audit_dialog.raise_()
+        self.audit_dialog.activateWindow()
 
     def _highlight_selected_row(self, row_index: int) -> None:
         """Highlight the selected policy row."""
@@ -331,10 +327,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tab_changed(self, index: int) -> None:
         """React to tab changes to enforce selection rules."""
 
-        if index != self.audit_log_index:
-            self._set_tab_visibility(self.audit_log_index, False)
-        if index != self.settings_index:
-            self._set_tab_visibility(self.settings_index, False)
         if index == self.policy_detail_index:
             selection = self.table.selectionModel().selectedRows()
             if not selection:
@@ -346,16 +338,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         if index == self.policy_distributor_index:
             self._load_send_policies()
-
-    def _set_tab_visibility(self, index: int, visible: bool) -> None:
-        """Show or hide a tab while preventing label artifacts."""
-
-        if visible:
-            self.tabs.tabBar().setTabText(index, self._tab_titles.get(index, ""))
-            self.tabs.tabBar().setTabVisible(index, True)
-        else:
-            self.tabs.tabBar().setTabVisible(index, False)
-            self.tabs.tabBar().setTabText(index, "")
 
     def _block_policy_detail_tab(self) -> None:
         """Return to the dashboard when a policy is not selected."""
@@ -648,7 +630,7 @@ class MainWindow(QtWidgets.QMainWindow):
         color_map = {
             "Green": QtGui.QColor("#9be8a6"),
             "Amber": QtGui.QColor("#ffe066"),
-            "Red": QtGui.QColor("#f2a4aa"),
+            "Red": QtGui.QColor("#e11d48"),
         }
         color = color_map.get(status)
         text_color = QtGui.QColor("#1f1f1f")
@@ -1504,6 +1486,16 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.information(self, "Sent", "Email processing completed.")
 
+    def _build_audit_dialog(self) -> QtWidgets.QDialog:
+        """Build the audit log dialog window."""
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Audit Log")
+        dialog_layout = QtWidgets.QVBoxLayout(dialog)
+        dialog_layout.addWidget(self._build_audit_log())
+        dialog.resize(900, 600)
+        return dialog
+
     def _build_audit_log(self) -> QtWidgets.QWidget:
         """Build the audit log tab UI."""
 
@@ -1613,6 +1605,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         _, message = audit.verify_event_log(self.conn)
         QtWidgets.QMessageBox.information(self, "Audit Log", message)
+
+    def _build_settings_dialog(self) -> QtWidgets.QDialog:
+        """Build the settings dialog window."""
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog_layout = QtWidgets.QVBoxLayout(dialog)
+        dialog_layout.addWidget(self._build_settings())
+        dialog.resize(720, 620)
+        return dialog
 
     def _build_settings(self) -> QtWidgets.QWidget:
         """Build the settings tab UI."""
