@@ -9,8 +9,11 @@ __pycache__/
 # Pycharm
 .idea/
 
-#SQLite3
+# SQLite3
 
 *.db
 *.db-shm
 *.db-wal
+
+# Misc
+policies/
