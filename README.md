@@ -35,7 +35,7 @@ The executable will be created in `dist/PolicyWatch/PolicyWatch.exe`.
 
 ## Notes
 
-- Application data is stored in `%PROGRAMDATA%\PolicyWatch` by default. Override with `POLICYWATCH_DATA_DIR`.
+- Application data is stored in root dir by default. Override with `POLICYWATCH_DATA_DIR`.
 - SQLite uses WAL mode and a busy timeout for concurrent access.
 - Access integration requires the Microsoft Access Database Engine driver.
 - Outlook integration uses COM automation.
