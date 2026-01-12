@@ -90,10 +90,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ratified_filter.addItems(["All", "Ratified", "Not Ratified"])
         self.ratified_filter.currentIndexChanged.connect(self._refresh_policies)
 
-        self.show_expired = QtWidgets.QCheckBox("Show expired")
-        self.show_expired.setChecked(True)
-        self.show_expired.setVisible(False)
-
         filter_row = QtWidgets.QHBoxLayout()
         filter_row.addWidget(self.search_input, 2)
         filter_row.addWidget(self.category_filter, 1)
@@ -177,7 +173,6 @@ class MainWindow(QtWidgets.QMainWindow):
         traffic = self.traffic_filter.currentText()
         status = self.status_filter.currentText()
         ratified_filter = self.ratified_filter.currentText()
-        show_expired = True
         selected_policy_id = self.current_policy_id
 
         for policy in policies:
@@ -197,8 +192,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if ratified_filter == "Ratified" and not policy.ratified:
                 continue
             if ratified_filter == "Not Ratified" and policy.ratified:
-                continue
-            if not show_expired and policy.traffic_reason == "Expired":
                 continue
             filtered.append(policy)
 
@@ -227,9 +220,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item,
             ]
             for column, item in enumerate(items):
-                font = item.font()
-                font.setBold(True)
-                item.setFont(font)
                 self.table.setItem(row_index, column, item)
             if policy.current_version_id:
                 self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
@@ -265,32 +255,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _highlight_selected_row(self, row_index: int) -> None:
         if self._selected_row is not None and self._selected_row != row_index:
-            self._set_row_bold(self._selected_row, False)
+            self._set_table_row_bold(self.table, self._selected_row, False)
         self._selected_row = row_index
-        self._set_row_bold(row_index, True)
-
-    def _set_row_bold(self, row_index: int, enabled: bool) -> None:
-        for column in range(self.table.columnCount()):
-            item = self.table.item(row_index, column)
-            if not item:
-                continue
-            font = item.font()
-            font.setBold(True)
-            item.setFont(font)
+        self._set_table_row_bold(self.table, row_index, True)
 
     def _highlight_version_row(self, row_index: int) -> None:
         if self._selected_version_row is not None and self._selected_version_row != row_index:
-            self._set_version_row_bold(self._selected_version_row, False)
+            self._set_table_row_bold(self.version_table, self._selected_version_row, False)
         self._selected_version_row = row_index
-        self._set_version_row_bold(row_index, True)
+        self._set_table_row_bold(self.version_table, row_index, True)
 
-    def _set_version_row_bold(self, row_index: int, enabled: bool) -> None:
-        for column in range(self.version_table.columnCount()):
-            item = self.version_table.item(row_index, column)
+    def _set_table_row_bold(
+        self,
+        table: QtWidgets.QTableWidget,
+        row_index: int,
+        enabled: bool,
+    ) -> None:
+        for column in range(table.columnCount()):
+            item = table.item(row_index, column)
             if not item:
                 continue
             font = item.font()
-            font.setBold(True)
+            font.setBold(enabled)
             item.setFont(font)
 
     def _select_version_row_by_id(self, version_id: int) -> None:
