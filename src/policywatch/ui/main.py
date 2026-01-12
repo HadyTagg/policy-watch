@@ -150,8 +150,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
         self.audit_log_index = self.tabs.addTab(audit_log, "Audit Log")
         self.settings_index = self.tabs.addTab(settings, "Settings")
-        self.tabs.tabBar().setTabVisible(self.audit_log_index, False)
-        self.tabs.tabBar().setTabVisible(self.settings_index, False)
+        self._tab_titles = {
+            self.audit_log_index: self.tabs.tabText(self.audit_log_index),
+            self.settings_index: self.tabs.tabText(self.settings_index),
+        }
+        self._set_tab_visibility(self.audit_log_index, False)
+        self._set_tab_visibility(self.settings_index, False)
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         container = QtWidgets.QWidget()
@@ -262,11 +266,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_settings(self) -> None:
         """Open the settings tab."""
 
+        self._set_tab_visibility(self.settings_index, True)
         self.tabs.setCurrentIndex(self.settings_index)
 
     def _open_audit_log(self) -> None:
         """Open the audit log tab."""
 
+        self._set_tab_visibility(self.audit_log_index, True)
         self.tabs.setCurrentIndex(self.audit_log_index)
 
     def _highlight_selected_row(self, row_index: int) -> None:
@@ -325,6 +331,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_tab_changed(self, index: int) -> None:
         """React to tab changes to enforce selection rules."""
 
+        if index != self.audit_log_index:
+            self._set_tab_visibility(self.audit_log_index, False)
+        if index != self.settings_index:
+            self._set_tab_visibility(self.settings_index, False)
         if index == self.policy_detail_index:
             selection = self.table.selectionModel().selectedRows()
             if not selection:
@@ -336,6 +346,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         if index == self.policy_distributor_index:
             self._load_send_policies()
+
+    def _set_tab_visibility(self, index: int, visible: bool) -> None:
+        """Show or hide a tab while preventing label artifacts."""
+
+        if visible:
+            self.tabs.tabBar().setTabText(index, self._tab_titles.get(index, ""))
+            self.tabs.tabBar().setTabVisible(index, True)
+        else:
+            self.tabs.tabBar().setTabVisible(index, False)
+            self.tabs.tabBar().setTabText(index, "")
 
     def _block_policy_detail_tab(self) -> None:
         """Return to the dashboard when a policy is not selected."""
