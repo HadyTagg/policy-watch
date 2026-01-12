@@ -120,12 +120,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table_font = self.table.font()
+        table_font.setPointSize(9)
         table_font.setBold(True)
         self.table.setFont(table_font)
         self.table.setStyleSheet(
-            "QTableWidget::item { color: black; font-weight: 700; font-size: 12pt; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; font-weight: 700; font-size: 12pt; }"
+            "QTableWidget::item { color: black;}"
+            "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
+
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
@@ -1000,10 +1002,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         version_font = self.version_table.font()
+        version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableView::item:selected { background-color: blue; }"
+            "QTableWidget::item { color: white;}"
+            "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -1089,6 +1093,20 @@ class MainWindow(QtWidgets.QMainWindow):
             ["Select", "Title", "Version", "Category", "Size"]
         )
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+
+        self.policy_send_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.policy_send_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+
+        send_font = self.policy_send_table.font()
+        send_font.setPointSize(9)
+        send_font.setBold(True)
+        self.policy_send_table.setFont(send_font)
+        self.policy_send_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
         policy_layout.addWidget(self.policy_send_table)
@@ -1530,6 +1548,19 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.audit_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.audit_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        self.audit_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.audit_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+        audit_font = self.audit_table.font()
+        audit_font.setPointSize(9)
+        audit_font.setBold(False)
+        self.audit_table.setFont(audit_font)
+
+        self.audit_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export CSV")
