@@ -119,7 +119,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.table.setStyleSheet("QTableView::item:selected { background-color: hotpink; }")
+        table_font = self.table.font()
+        table_font.setBold(True)
+        self.table.setFont(table_font)
+        self.table.setStyleSheet(
+            "QTableWidget::item { color: black; font-weight: 700; font-size: 12pt; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; font-weight: 700; font-size: 12pt; }"
+        )
+
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
         self.empty_state = QtWidgets.QLabel(
@@ -275,7 +282,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Highlight the selected policy row."""
 
         if self._selected_row is not None and self._selected_row != row_index:
-            self._set_table_row_bold(self.table, self._selected_row, False)
+            self._set_table_row_bold(self.table, self._selected_row, True)
         self._selected_row = row_index
         self._set_table_row_bold(self.table, row_index, True)
 
@@ -283,7 +290,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Highlight the selected version row."""
 
         if self._selected_version_row is not None and self._selected_version_row != row_index:
-            self._set_table_row_bold(self.version_table, self._selected_version_row, False)
+            self._set_table_row_bold(self.version_table, self._selected_version_row, True)
         self._selected_version_row = row_index
         self._set_table_row_bold(self.version_table, row_index, True)
 
@@ -628,8 +635,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Apply traffic-light color coding to a policy row."""
 
         color_map = {
-            "Green": QtGui.QColor("#9be8a6"),
-            "Amber": QtGui.QColor("#ffe066"),
+            "Green": QtGui.QColor("#27f149"),
+            "Amber": QtGui.QColor("#ffff1a"),
             "Red": QtGui.QColor("#e11d48"),
         }
         color = color_map.get(status)
@@ -992,8 +999,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        version_font = self.version_table.font()
+        version_font.setBold(True)
+        self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableView::item:selected { background-color: hotpink; }"
+            "QTableView::item:selected { background-color: blue; }"
         )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
