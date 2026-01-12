@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from policywatch import audit
-from policywatch import config
-from policywatch.policies import build_policy_path, next_version_number, slugify
-from policywatch.traffic import traffic_light_status
+from policywatch.core import audit, config
+from policywatch.services.policies import build_policy_path, next_version_number, slugify
+from policywatch.services.traffic import traffic_light_status
 
 
 def _resolve_london_tz() -> datetime.tzinfo:

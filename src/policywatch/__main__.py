@@ -2,13 +2,6 @@ from __future__ import annotations
 
 import datetime
 import os
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parent
-SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
 
 qt_platform = os.environ.get("POLICYWATCH_QT_PLATFORM")
 if qt_platform and "QT_QPA_PLATFORM" not in os.environ:
@@ -16,7 +9,8 @@ if qt_platform and "QT_QPA_PLATFORM" not in os.environ:
 
 from PyQt5 import QtGui, QtWidgets
 
-from policywatch import config, db, security
+from policywatch.core import config, security
+from policywatch.data import db
 from policywatch.ui.login import LoginWindow
 from policywatch.ui.main import MainWindow
 

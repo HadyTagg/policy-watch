@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from policywatch import audit, config
+from policywatch.core import audit, config
 from policywatch.integrations import access, outlook
 from policywatch.services import (
     add_policy_version,

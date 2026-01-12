@@ -20,7 +20,7 @@ pip install -r requirements.txt
 ## Run
 
 ```bash
-python main.py
+PYTHONPATH=src python -m policywatch
 ```
 
 On first run, you will be prompted to create the default admin password.
@@ -28,7 +28,7 @@ On first run, you will be prompted to create the default admin password.
 ## Build (PyInstaller)
 
 ```bash
-pyinstaller pyinstaller/PolicyWatch.spec
+pyinstaller PolicyWatch.spec
 ```
 
 The executable will be created in `dist/PolicyWatch/PolicyWatch.exe`.
