@@ -22,7 +22,6 @@ class LoginWindow(QtWidgets.QDialog):
         self.password_input = QtWidgets.QLineEdit()
         self.password_input.setEchoMode(QtWidgets.QLineEdit.Password)
         self.message_label = QtWidgets.QLabel()
-        self.message_label.setStyleSheet("color: #b00020")
 
         form = QtWidgets.QFormLayout()
         form.addRow("Username", self.username_input)

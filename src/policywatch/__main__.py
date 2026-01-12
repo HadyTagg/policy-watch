@@ -32,6 +32,8 @@ class PolicyWatchApp:
             QWidget {
                 background-color: #2b2b2b;
                 color: #f0f0f0;
+                font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+                font-size: 13px;
             }
             QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QComboBox {
                 background-color: #3a3a3a;

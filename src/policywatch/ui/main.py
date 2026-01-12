@@ -74,7 +74,7 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar.addAction(settings_action)
 
         header = QtWidgets.QLabel(f"Welcome, {username}.")
-        header.setStyleSheet("font-size: 16px; font-weight: 600;")
+        header.setStyleSheet("font-weight: 600;")
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setPlaceholderText("Search policies...")
@@ -126,7 +126,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "No policies yet. Use the toolbar to add policies, then upload versions from Policy Detail."
         )
         self.empty_state.setAlignment(QtCore.Qt.AlignCenter)
-        self.empty_state.setStyleSheet("color: #666; padding: 12px;")
+        self.empty_state.setStyleSheet("padding: 12px;")
 
         self.table_stack = QtWidgets.QStackedWidget()
         self.table_stack.addWidget(self.empty_state)
