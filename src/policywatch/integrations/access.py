@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import csv
 import re
 import sqlite3
-
-import pyodbc
 
 from policywatch.core import config
 
@@ -17,24 +16,28 @@ class AccessDriverError(RuntimeError):
     pass
 
 
-def connect_access(db_path: str) -> pyodbc.Connection:
-    """Connect to an Access database using the newest available driver."""
+def connect_access(db_path: str):
+    """Connect to an Access database using ACE OLEDB via COM."""
 
-    drivers = [driver for driver in pyodbc.drivers() if "Access" in driver]
-    if not drivers:
-        raise AccessDriverError("Microsoft Access Database Engine driver not found.")
-    driver = drivers[-1]
-    conn_str = f"DRIVER={{{driver}}};DBQ={db_path};"
-    return pyodbc.connect(conn_str)
+    try:
+        import win32com.client  # type: ignore[import-untyped]
+    except ImportError as exc:
+        raise AccessDriverError("pywin32 is required for Access ADO connections.") from exc
+
+    try:
+        connection = win32com.client.Dispatch("ADODB.Connection")
+        connection.Open(f"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={db_path};")
+    except Exception as exc:
+        raise AccessDriverError(
+            "Access OLEDB provider not available. Install 32-bit Access Runtime/ACE and use a matching Python build."
+        ) from exc
+    return connection
 
 
-def preview_query(conn: pyodbc.Connection, query: str, limit: int = 20) -> list[dict]:
+def preview_query(conn, query: str, limit: int = 20) -> list[dict]:
     """Run a query against an Access connection and return up to ``limit`` rows."""
 
-    cursor = conn.cursor()
-    cursor.execute(query)
-    columns = [col[0] for col in cursor.description]
-    rows = cursor.fetchmany(limit)
+    columns, rows = _execute_ado_query(conn, query, limit=limit)
     return [dict(zip(columns, row)) for row in rows]
 
 
@@ -53,7 +56,24 @@ def preview_query_from_path(
     try:
         return preview_query(conn, query, limit=limit)
     finally:
-        conn.close()
+        _close_access_connection(conn)
+
+
+def export_query_to_csv(db_path: str, query: str, destination: Path) -> Path:
+    """Export an Access query result to a CSV file."""
+
+    conn = connect_access(db_path)
+    try:
+        columns, rows = _execute_ado_query(conn, query)
+    finally:
+        _close_access_connection(conn)
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(columns)
+        writer.writerows(rows)
+    return destination
 
 
 def _preview_query_via_sqlite(
@@ -100,29 +120,36 @@ def _export_table_to_sqlite(db_path: str, table: str, sqlite_path: Path) -> None
 def _read_access_table(db_path: str, table: str) -> tuple[list[str], list[list]]:
     """Read an Access table via OLEDB and return columns and rows."""
 
+    conn = connect_access(db_path)
     try:
-        import win32com.client  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise AccessDriverError("pywin32 is required for Access fallback.") from exc
+        return _execute_ado_query(conn, f"SELECT * FROM [{table}]")
+    finally:
+        _close_access_connection(conn)
 
-    try:
-        connection = win32com.client.Dispatch("ADODB.Connection")
-        connection.Open(f"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={db_path};")
-    except Exception as exc:
-        raise AccessDriverError(
-            "Access OLEDB provider not available. Install Microsoft Access Database Engine or Access Runtime."
-        ) from exc
+
+def _execute_ado_query(conn, query: str, limit: int | None = None) -> tuple[list[str], list[list]]:
+    """Execute a query via an existing ADO connection."""
+
+    import win32com.client  # type: ignore[import-untyped]
 
     recordset = win32com.client.Dispatch("ADODB.Recordset")
-    recordset.Open(f"SELECT * FROM [{table}]", connection)
+    recordset.Open(query, conn)
     columns = [recordset.Fields.Item(i).Name for i in range(recordset.Fields.Count)]
-    rows = []
+    rows: list[list] = []
     while not recordset.EOF:
         rows.append([recordset.Fields.Item(i).Value for i in range(recordset.Fields.Count)])
+        if limit is not None and len(rows) >= limit:
+            break
         recordset.MoveNext()
     recordset.Close()
-    connection.Close()
     return columns, rows
+
+
+def _close_access_connection(conn) -> None:
+    """Close an ADO connection safely."""
+
+    if hasattr(conn, "Close"):
+        conn.Close()
 
 
 def _extract_table_name(query: str) -> str:

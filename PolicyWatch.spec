@@ -35,7 +35,6 @@ analysis = Analysis(
         *policywatch_datas,
     ],
     hiddenimports=[
-        "pyodbc",
         *pyqt5_hiddenimports,
         *win32com_submodules,
         *policywatch_hiddenimports,
