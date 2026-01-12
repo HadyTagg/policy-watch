@@ -44,8 +44,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._title_dirty = False
-        self._selected_row: int | None = None
-        self._selected_version_row: int | None = None
         self._current_policy_title = ""
         self._current_policy_category = ""
 
@@ -246,12 +244,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if clear_selection:
             self.table.clearSelection()
             self.current_policy_id = None
-            self._selected_row = None
         elif selected_policy_id:
             if not self._select_policy_row_by_id(selected_policy_id):
                 self.table.clearSelection()
                 self.current_policy_id = None
-                self._selected_row = None
 
     def _on_policy_selected(self) -> None:
         """Load the policy detail panel when the table selection changes."""
@@ -262,7 +258,6 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_id = self.table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
-        self._highlight_selected_row(selected[0].row())
 
     def _open_settings(self) -> None:
         """Open the settings dialog."""
@@ -280,38 +275,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_dialog.raise_()
         self.audit_dialog.activateWindow()
 
-    def _highlight_selected_row(self, row_index: int) -> None:
-        """Highlight the selected policy row."""
-
-        if self._selected_row is not None and self._selected_row != row_index:
-            self._set_table_row_bold(self.table, self._selected_row, True)
-        self._selected_row = row_index
-        self._set_table_row_bold(self.table, row_index, True)
-
-    def _highlight_version_row(self, row_index: int) -> None:
-        """Highlight the selected version row."""
-
-        if self._selected_version_row is not None and self._selected_version_row != row_index:
-            self._set_table_row_bold(self.version_table, self._selected_version_row, True)
-        self._selected_version_row = row_index
-        self._set_table_row_bold(self.version_table, row_index, True)
-
-    def _set_table_row_bold(
-        self,
-        table: QtWidgets.QTableWidget,
-        row_index: int,
-        enabled: bool,
-    ) -> None:
-        """Toggle bold styling for a row in a table widget."""
-
-        for column in range(table.columnCount()):
-            item = table.item(row_index, column)
-            if not item:
-                continue
-            font = item.font()
-            font.setBold(enabled)
-            item.setFont(font)
-
     def _select_version_row_by_id(self, version_id: int) -> None:
         """Select a version row based on the version ID."""
 
@@ -319,7 +282,6 @@ class MainWindow(QtWidgets.QMainWindow):
             row_version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
             if row_version_id == version_id:
                 self.version_table.selectRow(row_index)
-                self._highlight_version_row(row_index)
                 break
 
     def _select_policy_row_by_id(self, policy_id: int) -> bool:
@@ -329,7 +291,6 @@ class MainWindow(QtWidgets.QMainWindow):
             row_policy_id = self.table.item(row_index, 0).data(QtCore.Qt.UserRole)
             if row_policy_id == policy_id:
                 self.table.selectRow(row_index)
-                self._highlight_selected_row(row_index)
                 return True
         return False
 
@@ -341,8 +302,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if not selection:
                 self._block_policy_detail_tab()
                 return
-            selected_row = selection[0].row()
-            if self._selected_row != selected_row or not self.current_policy_id:
+            if not self.current_policy_id:
                 self._block_policy_detail_tab()
                 return
         if index == self.policy_distributor_index:
@@ -393,7 +353,6 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not policy:
             return
-        self._selected_version_row = None
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
         self.detail_status.blockSignals(True)
@@ -448,9 +407,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 hash_item,
             ]
             for column, item in enumerate(items):
-                font = item.font()
-                font.setBold(True)
-                item.setFont(font)
                 self.version_table.setItem(row_index, column, item)
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
@@ -597,12 +553,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
-            if self._selected_version_row is not None:
-                self._set_table_row_bold(self.version_table, self._selected_version_row, False)
-            self._selected_version_row = None
             self._clear_policy_metadata_fields()
             return
-        self._highlight_version_row(selection[0].row())
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
