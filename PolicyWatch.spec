@@ -22,7 +22,7 @@ policywatch_datas = collect_data_files("policywatch")
 
 
 analysis = Analysis(
-    ["main.py"],
+    ["src/policywatch/__main__.py"],
     pathex=[".", "src"],
     binaries=[*pyqt5_binaries, *pyqt5_dynamic_libs],
     datas=[

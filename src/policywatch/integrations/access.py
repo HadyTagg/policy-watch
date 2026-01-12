@@ -6,7 +6,7 @@ import sqlite3
 
 import pyodbc
 
-from policywatch import config
+from policywatch.core import config
 
 
 class AccessDriverError(RuntimeError):
