@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import sqlite3
+from typing import Any
 
-import pyodbc
+import win32com.client
 
 from policywatch.core import config
 
@@ -17,25 +18,32 @@ class AccessDriverError(RuntimeError):
     pass
 
 
-def connect_access(db_path: str) -> pyodbc.Connection:
-    """Connect to an Access database using the newest available driver."""
+def connect_access(db_path: str) -> Any:
+    """Connect to an Access database using the ACE OLEDB provider."""
 
-    drivers = [driver for driver in pyodbc.drivers() if "Access" in driver]
-    if not drivers:
-        raise AccessDriverError("Microsoft Access Database Engine driver not found.")
-    driver = drivers[-1]
-    conn_str = f"DRIVER={{{driver}}};DBQ={db_path};"
-    return pyodbc.connect(conn_str)
+    try:
+        connection = win32com.client.Dispatch("ADODB.Connection")
+        connection.Open(f"Provider=Microsoft.ACE.OLEDB.12.0;Data Source={db_path};")
+        return connection
+    except Exception as exc:
+        raise AccessDriverError(
+            "Access OLEDB provider not available. Install Microsoft Access Database Engine or Access Runtime."
+        ) from exc
 
 
-def preview_query(conn: pyodbc.Connection, query: str, limit: int = 20) -> list[dict]:
+def preview_query(conn: Any, query: str, limit: int = 20) -> list[dict]:
     """Run a query against an Access connection and return up to ``limit`` rows."""
 
-    cursor = conn.cursor()
-    cursor.execute(query)
-    columns = [col[0] for col in cursor.description]
-    rows = cursor.fetchmany(limit)
-    return [dict(zip(columns, row)) for row in rows]
+    recordset = win32com.client.Dispatch("ADODB.Recordset")
+    recordset.Open(query, conn)
+    columns = [recordset.Fields.Item(i).Name for i in range(recordset.Fields.Count)]
+    rows: list[dict] = []
+    while not recordset.EOF and len(rows) < limit:
+        row = {columns[i]: recordset.Fields.Item(i).Value for i in range(len(columns))}
+        rows.append(row)
+        recordset.MoveNext()
+    recordset.Close()
+    return rows
 
 
 def preview_query_from_path(
@@ -46,14 +54,13 @@ def preview_query_from_path(
 ) -> list[dict]:
     """Preview a query from a DB path, falling back to a SQLite export."""
 
-    try:
-        conn = connect_access(db_path)
-    except AccessDriverError:
-        return _preview_query_via_sqlite(db_path, query, limit=limit, table=table)
+    conn = connect_access(db_path)
     try:
         return preview_query(conn, query, limit=limit)
+    except AccessDriverError:
+        return _preview_query_via_sqlite(db_path, query, limit=limit, table=table)
     finally:
-        conn.close()
+        conn.Close()
 
 
 def _preview_query_via_sqlite(
@@ -99,11 +106,6 @@ def _export_table_to_sqlite(db_path: str, table: str, sqlite_path: Path) -> None
 
 def _read_access_table(db_path: str, table: str) -> tuple[list[str], list[list]]:
     """Read an Access table via OLEDB and return columns and rows."""
-
-    try:
-        import win32com.client  # type: ignore[import-untyped]
-    except ImportError as exc:
-        raise AccessDriverError("pywin32 is required for Access fallback.") from exc
 
     try:
         connection = win32com.client.Dispatch("ADODB.Connection")
