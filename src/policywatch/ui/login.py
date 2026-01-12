@@ -1,12 +1,18 @@
+"""Login dialog for Policy Watch."""
+
 from __future__ import annotations
 
 from PyQt5 import QtCore, QtWidgets
 
 
 class LoginWindow(QtWidgets.QDialog):
+    """Simple login dialog with username/password inputs."""
+
     authenticated = QtCore.pyqtSignal(str)
 
     def __init__(self, on_authenticate, parent=None):
+        """Initialize the login dialog layout and handlers."""
+
         super().__init__(parent)
         self._on_authenticate = on_authenticate
         self.setWindowTitle("Policy Watch - Login")
@@ -31,6 +37,8 @@ class LoginWindow(QtWidgets.QDialog):
         layout.addWidget(self.message_label)
 
     def _handle_login(self):
+        """Validate credentials and emit the authenticated signal."""
+
         username = self.username_input.text().strip()
         password = self.password_input.text()
         if not username or not password:

@@ -1,12 +1,15 @@
+"""Configuration helpers and defaults for Policy Watch."""
+
 from __future__ import annotations
 
 import json
 import os
 import sys
 from dataclasses import dataclass
-from typing import Any
 from pathlib import Path
+from typing import Any
 
+# Default configuration values stored in the settings table.
 DEFAULT_SETTINGS = {
     "policy_root": "",
     "amber_months": 2,
@@ -22,11 +25,15 @@ DEFAULT_SETTINGS = {
 
 @dataclass(frozen=True)
 class AppPaths:
+    """Resolved filesystem locations used by the application."""
+
     data_dir: Path
     db_path: Path
 
 
 def resolve_data_dir() -> Path:
+    """Resolve the data directory, honoring environment overrides and frozen builds."""
+
     env_override = os.environ.get("POLICYWATCH_DATA_DIR")
     if env_override:
         return Path(env_override).expanduser().resolve()
@@ -38,12 +45,16 @@ def resolve_data_dir() -> Path:
 
 
 def get_paths() -> AppPaths:
+    """Create and return the canonical data directory and database path."""
+
     data_dir = resolve_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     return AppPaths(data_dir=data_dir, db_path=data_dir / "policywatch.db")
 
 
 def ensure_defaults(conn) -> None:
+    """Seed the config table with defaults if values are missing."""
+
     for key, value in DEFAULT_SETTINGS.items():
         conn.execute(
             "INSERT INTO config (key, value) VALUES (?, ?) "
@@ -54,6 +65,8 @@ def ensure_defaults(conn) -> None:
 
 
 def get_setting(conn, key: str, default: Any | None = None) -> str:
+    """Fetch a config value, returning a string (or stringified default)."""
+
     row = conn.execute("SELECT value FROM config WHERE key = ?", (key,)).fetchone()
     if row:
         return row["value"]
@@ -61,6 +74,8 @@ def get_setting(conn, key: str, default: Any | None = None) -> str:
 
 
 def set_setting(conn, key: str, value: Any) -> None:
+    """Upsert a config value, serializing complex values to JSON."""
+
     stored = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
     conn.execute(
         "INSERT INTO config (key, value) VALUES (?, ?) "

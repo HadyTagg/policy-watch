@@ -1,13 +1,19 @@
+"""Outlook integration for sending policy emails."""
+
 from __future__ import annotations
 
 import win32com.client
 
 
 class OutlookError(RuntimeError):
+    """Raised when Outlook is unavailable or email sending fails."""
+
     pass
 
 
 def send_email(subject: str, body: str, recipients: list[str], attachments: list[str]) -> str:
+    """Send an email via Outlook and return the EntryID when available."""
+
     try:
         if not recipients:
             raise OutlookError("No recipients supplied.")

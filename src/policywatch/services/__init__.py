@@ -1,3 +1,5 @@
+"""Service-layer operations for policies, categories, and exports."""
+
 from __future__ import annotations
 
 import datetime
@@ -13,6 +15,8 @@ from policywatch.services.traffic import traffic_light_status
 
 
 def _resolve_london_tz() -> datetime.tzinfo:
+    """Resolve the London time zone, falling back gracefully when unavailable."""
+
     try:
         return ZoneInfo("Europe/London")
     except ZoneInfoNotFoundError:
@@ -23,6 +27,8 @@ LONDON_TZ = _resolve_london_tz()
 
 
 def _resolve_actor() -> str | None:
+    """Resolve the current OS login name if available."""
+
     try:
         return os.getlogin()
     except OSError:
@@ -36,6 +42,8 @@ def _log_event(
     entity_id: int | None,
     details: str | None = None,
 ) -> None:
+    """Write an audit event for service-layer actions."""
+
     audit.append_event_log(
         conn,
         {
@@ -51,6 +59,8 @@ def _log_event(
 
 @dataclass(frozen=True)
 class PolicyRow:
+    """Presentation model for policy listing rows."""
+
     id: int
     title: str
     category: str
@@ -65,6 +75,8 @@ class PolicyRow:
 
 
 def _policy_root(conn) -> Path:
+    """Return the policy root directory, using config defaults when missing."""
+
     root = config.get_setting(conn, "policy_root", "")
     if root:
         return Path(root)
@@ -73,6 +85,8 @@ def _policy_root(conn) -> Path:
 
 
 def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
+    """Remove empty directories up to the configured root."""
+
     current = path
     stop_at = stop_at.resolve()
     while True:
@@ -86,6 +100,8 @@ def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
 
 
 def list_policies(conn) -> list[PolicyRow]:
+    """Return policies with derived traffic status information."""
+
     rows = conn.execute(
         """
         SELECT p.id, p.title, p.category,
@@ -132,6 +148,8 @@ def list_policies(conn) -> list[PolicyRow]:
 
 
 def list_versions(conn, policy_id: int) -> list[dict]:
+    """Return policy version rows for a policy."""
+
     rows = conn.execute(
         """
         SELECT id, version_number, created_at, sha256_hash, ratified,
@@ -154,6 +172,8 @@ def create_policy(
     notes: str | None,
     created_by_user_id: int | None,
 ) -> int:
+    """Create a policy and return its database ID."""
+
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
     effective_date = expiry or ""
@@ -193,6 +213,8 @@ def add_policy_version(
     created_by_user_id: int | None,
     metadata: dict | None = None,
 ) -> int:
+    """Store a new policy version and return its database ID."""
+
     existing = conn.execute(
         "SELECT version_number FROM policy_versions WHERE policy_id = ?",
         (policy_id,),
@@ -292,6 +314,8 @@ def add_policy_version(
 
 
 def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
+    """Mark a policy version as ratified and log the event."""
+
     ratified_at = datetime.datetime.utcnow().isoformat()
     version_row = conn.execute(
         "SELECT version_number FROM policy_versions WHERE id = ?",
@@ -307,6 +331,8 @@ def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
 
 
 def unmark_version_ratified(conn, version_id: int) -> None:
+    """Clear the ratified status for a policy version."""
+
     version_row = conn.execute(
         "SELECT version_number FROM policy_versions WHERE id = ?",
         (version_id,),
@@ -321,6 +347,8 @@ def unmark_version_ratified(conn, version_id: int) -> None:
 
 
 def set_current_version(conn, policy_id: int, version_id: int) -> None:
+    """Set the current version for a policy and log the change."""
+
     version_number = None
     version_row = conn.execute(
         "SELECT version_number FROM policy_versions WHERE id = ?",
@@ -340,6 +368,8 @@ def set_current_version(conn, policy_id: int, version_id: int) -> None:
 
 
 def unset_current_version(conn, policy_id: int) -> None:
+    """Clear the current version for a policy."""
+
     policy_row = conn.execute(
         "SELECT current_version_id FROM policies WHERE id = ?",
         (policy_id,),
@@ -365,6 +395,8 @@ def unset_current_version(conn, policy_id: int) -> None:
 
 
 def update_policy_title(conn, policy_id: int, title: str) -> None:
+    """Rename a policy and move stored files to the new slug path."""
+
     policy_row = conn.execute(
         "SELECT title, category FROM policies WHERE id = ?",
         (policy_id,),
@@ -416,6 +448,8 @@ def update_policy_title(conn, policy_id: int, title: str) -> None:
 
 
 def update_policy_category(conn, policy_id: int, category: str) -> None:
+    """Move policy versions to a new category folder."""
+
     policy_row = conn.execute(
         "SELECT title, category FROM policies WHERE id = ?",
         (policy_id,),
@@ -467,6 +501,8 @@ def update_policy_category(conn, policy_id: int, category: str) -> None:
 
 
 def get_version_file(conn, version_id: int) -> str:
+    """Return the stored file path for a policy version."""
+
     row = conn.execute("SELECT file_path FROM policy_versions WHERE id = ?", (version_id,)).fetchone()
     if not row:
         raise ValueError("Version not found")
@@ -474,6 +510,8 @@ def get_version_file(conn, version_id: int) -> str:
 
 
 def resolve_version_file_path(conn, version_id: int, stored_path: str) -> Path | None:
+    """Resolve a version file path, repairing stale locations if needed."""
+
     path = Path(stored_path)
     if path.exists():
         return path
@@ -506,11 +544,15 @@ def resolve_version_file_path(conn, version_id: int, stored_path: str) -> Path |
 
 
 def list_categories(conn) -> list[str]:
+    """Return available category names."""
+
     rows = conn.execute("SELECT name FROM categories ORDER BY name").fetchall()
     return [row["name"] for row in rows]
 
 
 def create_category(conn, name: str) -> None:
+    """Create a category record and log the event."""
+
     created_at = datetime.datetime.utcnow().isoformat()
     cursor = conn.execute("INSERT INTO categories (name, created_at) VALUES (?, ?)", (name, created_at))
     conn.commit()
@@ -518,12 +560,16 @@ def create_category(conn, name: str) -> None:
 
 
 def delete_category(conn, category_id: int) -> None:
+    """Delete a category record and log the event."""
+
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
     _log_event(conn, "delete_category", "category", category_id, None)
 
 
 def export_backup(conn, destination: Path, include_files: bool) -> None:
+    """Export the database and optionally policy files to a zip archive."""
+
     data_dir = config.get_paths().data_dir
     destination.parent.mkdir(parents=True, exist_ok=True)
     import zipfile
@@ -543,6 +589,8 @@ def export_backup(conn, destination: Path, include_files: bool) -> None:
 
 
 def parse_mapping_json(mapping_text: str) -> dict:
+    """Parse mapping JSON safely, returning an empty dict on failure."""
+
     if not mapping_text:
         return {}
     import json
@@ -554,6 +602,8 @@ def parse_mapping_json(mapping_text: str) -> dict:
 
 
 def build_staff_query(mode: str, table: str, mapping: dict, custom_query: str) -> str:
+    """Build a staff query from a mapping or return the custom query."""
+
     if mode == "query" and custom_query.strip():
         return custom_query
 
