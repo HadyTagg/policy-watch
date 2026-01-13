@@ -33,6 +33,7 @@ analysis = Analysis(
         *pyqt5_translations,
         *pyqt5_resources,
         *policywatch_datas,
+        ("src/policywatch/integrations/staff_details_extractor.accdb", "."),
         ("policywatch.ico", "."),
     ],
     hiddenimports=[
