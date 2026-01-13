@@ -1067,10 +1067,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         recipient_group = QtWidgets.QGroupBox("Recipients")
         recipient_layout = QtWidgets.QVBoxLayout(recipient_group)
-        staff_search = QtWidgets.QLineEdit()
-        staff_search.setPlaceholderText("Search staff...")
-        staff_search.textChanged.connect(self._filter_staff)
-        recipient_layout.addWidget(staff_search)
+        recipient_controls = QtWidgets.QHBoxLayout()
+        self.staff_select_all = QtWidgets.QPushButton("Select all shown")
+        self.staff_select_all.clicked.connect(self._select_all_staff)
+        recipient_controls.addWidget(self.staff_select_all)
+        self.staff_deselect_all = QtWidgets.QPushButton("Deselect all shown")
+        self.staff_deselect_all.clicked.connect(self._deselect_all_staff)
+        recipient_controls.addWidget(self.staff_deselect_all)
+        recipient_controls.addStretch()
+        recipient_layout.addLayout(recipient_controls)
+        self.staff_search = QtWidgets.QLineEdit()
+        self.staff_search.setPlaceholderText("Search staff...")
+        self.staff_search.textChanged.connect(self._filter_staff)
+        recipient_layout.addWidget(self.staff_search)
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
@@ -1212,6 +1221,57 @@ class MainWindow(QtWidgets.QMainWindow):
         self.policy_send_table.blockSignals(False)
         self._recalculate_attachments()
 
+    def _visible_staff_rows(self) -> list[int]:
+        """Return row indices for visible staff rows."""
+
+        return [
+            row
+            for row in range(self.staff_table.rowCount())
+            if not self.staff_table.isRowHidden(row)
+        ]
+
+    def _sync_staff_select_all(self) -> None:
+        """Sync staff select/deselect buttons with the current selection state."""
+
+        visible_rows = self._visible_staff_rows()
+        if not visible_rows:
+            self.staff_select_all.setEnabled(False)
+            self.staff_deselect_all.setEnabled(False)
+            return
+        self.staff_select_all.setEnabled(True)
+        any_checked = False
+        all_checked = True
+        for row in visible_rows:
+            item = self.staff_table.item(row, 0)
+            if not item or item.checkState() != QtCore.Qt.Checked:
+                all_checked = False
+            else:
+                any_checked = True
+        self.staff_select_all.setEnabled(not all_checked)
+        self.staff_deselect_all.setEnabled(any_checked)
+
+    def _select_all_staff(self, _: bool) -> None:
+        """Select all visible staff rows."""
+
+        self.staff_table.blockSignals(True)
+        for row in self._visible_staff_rows():
+            item = self.staff_table.item(row, 0)
+            if item:
+                item.setCheckState(QtCore.Qt.Checked)
+        self.staff_table.blockSignals(False)
+        self._sync_staff_select_all()
+
+    def _deselect_all_staff(self, _: bool) -> None:
+        """Deselect all visible staff rows."""
+
+        self.staff_table.blockSignals(True)
+        for row in self._visible_staff_rows():
+            item = self.staff_table.item(row, 0)
+            if item:
+                item.setCheckState(QtCore.Qt.Unchecked)
+        self.staff_table.blockSignals(False)
+        self._sync_staff_select_all()
+
     def _load_staff(self) -> None:
         """Load staff records by running the Access extractor and parsing its CSV."""
 
@@ -1262,6 +1322,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setRowCount(len(self._staff_records))
         for row_index, row in enumerate(self._staff_records):
             checkbox = QtWidgets.QTableWidgetItem()
+            checkbox.setFlags(
+                QtCore.Qt.ItemIsUserCheckable
+                | QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsEditable
+            )
             checkbox.setCheckState(QtCore.Qt.Unchecked)
             name = row.get("name", "")
             email = row.get("email", "")
@@ -1271,6 +1337,43 @@ class MainWindow(QtWidgets.QMainWindow):
             self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
             self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
         self.staff_table.resizeColumnsToContents()
+        self._filter_staff(self.staff_search.text())
+
+    def _run_staff_extractor(self, access_path: Path) -> None:
+        """Run the Access staff extractor frontend."""
+
+        if os.name != "nt":
+            raise RuntimeError("Staff extractor requires Microsoft Access on Windows.")
+        subprocess.run(["cmd", "/c", "start", "/wait", "", str(access_path)], check=False)
+
+    def _wait_for_staff_csv(self, csv_path: Path, timeout_seconds: int = 60) -> bool:
+        """Wait for the staff CSV export to appear."""
+
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            QtCore.QCoreApplication.processEvents()
+            if csv_path.exists() and csv_path.stat().st_size > 0:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def _read_staff_csv(self, csv_path: Path) -> list[dict[str, str]]:
+        """Read staff details from the CSV exported by Access."""
+
+        records: list[dict[str, str]] = []
+        with csv_path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                first_name = (row.get("FirstName") or "").strip()
+                last_name = (row.get("LastName") or "").strip()
+                email = (row.get("EmailAddress") or "").strip()
+                team = (row.get("DepartmentID") or "").strip()
+                name_parts = [part for part in [first_name, last_name] if part]
+                name = " ".join(name_parts).strip()
+                if not (name or email or team):
+                    continue
+                records.append({"name": name, "email": email, "team": team})
+        return records
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1317,6 +1420,29 @@ class MainWindow(QtWidgets.QMainWindow):
             email = self.staff_table.item(row, 2).text().lower()
             match = text in name or text in email
             self.staff_table.setRowHidden(row, not match if text else False)
+        self._sync_staff_select_all()
+
+    def _confirm_recipients(self, recipients: list[tuple[str, str]]) -> bool:
+        """Confirm the final recipient list before sending."""
+
+        count = len(recipients)
+        preview_limit = 25
+        lines = []
+        for email, name in recipients[:preview_limit]:
+            label = f"{name} <{email}>" if name and name != email else email
+            lines.append(label)
+        if count > preview_limit:
+            lines.append(f"...and {count - preview_limit} more")
+        message = "Send to the following recipients?\n\n"
+        message += f"Total recipients: {count}\n\n"
+        message += "\n".join(lines) if lines else "(No recipients)"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Recipients",
+            message,
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        return response == QtWidgets.QMessageBox.Yes
 
     def _recalculate_attachments(self) -> None:
         """Update total size and split plan based on selected policies."""
@@ -1388,6 +1514,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not selected_versions or not recipients:
             QtWidgets.QMessageBox.warning(self, "Missing", "Select policies and recipients.")
+            return
+        if not self._confirm_recipients(recipients):
             return
 
         max_mb = float(config.get_setting(self.conn, "max_attachment_mb", 0) or 0)
