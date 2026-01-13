@@ -60,7 +60,7 @@ exe = EXE(
     analysis.zipfiles,
     analysis.datas,
     [],
-    name="PolicyWatch",
+    name="Policy Watch",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
