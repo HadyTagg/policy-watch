@@ -1030,10 +1030,10 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_group = QtWidgets.QGroupBox("Policies to Send")
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
         select_controls = QtWidgets.QHBoxLayout()
-        self.policy_send_select_all = QtWidgets.QPushButton("Select all shown")
+        self.policy_send_select_all = QtWidgets.QPushButton("Select All Shown")
         self.policy_send_select_all.clicked.connect(self._toggle_all_send_policies)
         select_controls.addWidget(self.policy_send_select_all)
-        self.policy_send_deselect_all = QtWidgets.QPushButton("Deselect all shown")
+        self.policy_send_deselect_all = QtWidgets.QPushButton("Deselect All Shown")
         self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
         select_controls.addWidget(self.policy_send_deselect_all)
         select_controls.addStretch()
@@ -1068,10 +1068,10 @@ class MainWindow(QtWidgets.QMainWindow):
         recipient_group = QtWidgets.QGroupBox("Recipients")
         recipient_layout = QtWidgets.QVBoxLayout(recipient_group)
         recipient_controls = QtWidgets.QHBoxLayout()
-        self.staff_select_all = QtWidgets.QPushButton("Select all shown")
+        self.staff_select_all = QtWidgets.QPushButton("Select All Shown")
         self.staff_select_all.clicked.connect(self._select_all_staff)
         recipient_controls.addWidget(self.staff_select_all)
-        self.staff_deselect_all = QtWidgets.QPushButton("Deselect all shown")
+        self.staff_deselect_all = QtWidgets.QPushButton("Deselect All shown")
         self.staff_deselect_all.clicked.connect(self._deselect_all_staff)
         recipient_controls.addWidget(self.staff_deselect_all)
         recipient_controls.addStretch()
@@ -1084,6 +1084,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.staff_table.itemChanged.connect(self._on_staff_item_changed)
+
+        self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.staff_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+        audit_font = self.staff_table.font()
+        audit_font.setPointSize(9)
+        audit_font.setBold(True)
+        self.staff_table.setFont(audit_font)
+
+        self.staff_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
         load_staff_button.clicked.connect(self._load_staff)
@@ -1352,6 +1366,7 @@ class MainWindow(QtWidgets.QMainWindow):
             None,
             f"records={len(self._staff_records)}",
         )
+        self.conn.commit()
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1575,15 +1590,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if max_mb and total_mb > max_mb:
             parts = int(total_mb // max_mb) + 1
 
-        subject_base = "Policy/Policies"
-        body_lines = [
-            "Please find the following policy/policies attached. Please ensure you read the policy. "
-            "If you have any questions, please contact us.",
-            "",
-        ]
-        for row in policy_rows:
-            body_lines.append(f"- {row['title']} (v{row['version_number']})")
-        body = "\n".join(body_lines)
+        subject_base = "Policy/Policies Enclosed"
+        policy_lines = [f"- {row['title']} (v{row['version_number']})" for row in policy_rows]
 
         max_bytes = int(max_mb * 1024 * 1024) if max_mb else 0
         oversized_attachments: list[str] = []
@@ -1619,6 +1627,25 @@ class MainWindow(QtWidgets.QMainWindow):
             attachment_paths = [path for path, _ in chunk]
             total_attachment_bytes = sum(size for _, size in chunk)
             for recipient_email, recipient_name in recipients:
+                raw_name = (recipient_name or recipient_email).strip()
+                if "@" in raw_name:
+                    first_name = raw_name.split("@")[0].split(".")[0].split(" ")[0]
+                else:
+                    first_name = raw_name.split(" ")[0]
+                body_lines = [
+                    f"Dear {first_name},",
+                    "",
+                    "Please find the following policy/policies attached.",
+                    "",
+                    *policy_lines,
+                    "",
+                    "Please ensure you read the policy/policies carefully.",
+                    "",
+                    "Kind regards",
+                    "",
+                    "Martha Trust",
+                ]
+                body = "\n".join(body_lines)
                 try:
                     entry_id = outlook.send_email(
                         subject, body, [recipient_email], attachment_paths
@@ -1663,6 +1690,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             f"subject={subject}; status={status}; part={part_index}/{parts}"
                         ),
                     )
+        self.conn.commit()
 
         if failures:
             QtWidgets.QMessageBox.warning(
@@ -1678,6 +1706,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Audit Log")
+        dialog.setWindowFlags(
+            dialog.windowFlags()
+            | QtCore.Qt.WindowMaximizeButtonHint
+            | QtCore.Qt.WindowMinimizeButtonHint
+        )
         dialog_layout = QtWidgets.QVBoxLayout(dialog)
         dialog_layout.addWidget(self._build_audit_log())
         dialog.resize(900, 600)
@@ -1726,13 +1759,16 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         button_row = QtWidgets.QHBoxLayout()
-        export_button = QtWidgets.QPushButton("Export CSV")
+        export_button = QtWidgets.QPushButton("Export All Logs")
         export_button.clicked.connect(self._export_audit_csv)
-        verify_button = QtWidgets.QPushButton("Verify Integrity")
+        export_visible_button = QtWidgets.QPushButton("Export Logs Shown")
+        export_visible_button.clicked.connect(self._export_audit_csv_shown)
+        verify_button = QtWidgets.QPushButton("Verify Log Integrity")
         verify_button.clicked.connect(self._verify_audit)
-        refresh_button = QtWidgets.QPushButton("Refresh")
+        refresh_button = QtWidgets.QPushButton("Refresh Logs")
         refresh_button.clicked.connect(self._load_audit_log)
         button_row.addWidget(export_button)
+        button_row.addWidget(export_visible_button)
         button_row.addWidget(verify_button)
         button_row.addWidget(refresh_button)
         button_row.addStretch(1)
@@ -1744,6 +1780,29 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_audit_log(self) -> None:
         """Load audit events into the audit log table."""
+
+        rows = self._fetch_audit_rows()
+        self.audit_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            entity = row["entity_type"]
+            if row["policy_title"]:
+                entity = row["policy_title"]
+                if row["version_number"] is not None:
+                    entity = f"{entity} (v{row['version_number']})"
+            elif row["entity_id"] is not None:
+                entity = f"{entity} #{row['entity_id']}"
+            self.audit_table.setItem(
+                row_index,
+                0,
+                QtWidgets.QTableWidgetItem(self._format_datetime_display(row["occurred_at"])),
+            )
+            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
+            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
+            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
+            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
+
+    def _fetch_audit_rows(self) -> list[sqlite3.Row]:
+        """Fetch audit rows using the current filters."""
 
         start_date = self.audit_start.date().toString("yyyy-MM-dd")
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
@@ -1764,7 +1823,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """
             like_value = f"%{search_text}%"
             params.extend([like_value] * 7)
-        rows = self.conn.execute(
+        return self.conn.execute(
             f"""
             SELECT ae.occurred_at,
                    ae.actor,
@@ -1787,24 +1846,6 @@ class MainWindow(QtWidgets.QMainWindow):
             """,
             params,
         ).fetchall()
-        self.audit_table.setRowCount(len(rows))
-        for row_index, row in enumerate(rows):
-            entity = row["entity_type"]
-            if row["policy_title"]:
-                entity = row["policy_title"]
-                if row["version_number"] is not None:
-                    entity = f"{entity} (v{row['version_number']})"
-            elif row["entity_id"] is not None:
-                entity = f"{entity} #{row['entity_id']}"
-            self.audit_table.setItem(
-                row_index,
-                0,
-                QtWidgets.QTableWidgetItem(self._format_datetime_display(row["occurred_at"])),
-            )
-            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
-            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
-            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
-            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
 
     def _export_audit_csv(self) -> None:
         """Export the audit log table to CSV."""
@@ -1821,6 +1862,29 @@ class MainWindow(QtWidgets.QMainWindow):
                 writer.writerow(rows[0].keys())
             for row in rows:
                 writer.writerow(list(row))
+
+    def _export_audit_csv_shown(self) -> None:
+        """Export the currently shown audit rows to CSV."""
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "audit_log_filtered.csv")
+        if not path:
+            return
+        import csv
+
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            headers = [
+                self.audit_table.horizontalHeaderItem(col).text()
+                for col in range(self.audit_table.columnCount())
+            ]
+            writer.writerow(headers)
+            for row in range(self.audit_table.rowCount()):
+                writer.writerow(
+                    [
+                        self.audit_table.item(row, col).text() if self.audit_table.item(row, col) else ""
+                        for col in range(self.audit_table.columnCount())
+                    ]
+                )
 
     def _verify_audit(self) -> None:
         """Verify audit log integrity and show the result."""

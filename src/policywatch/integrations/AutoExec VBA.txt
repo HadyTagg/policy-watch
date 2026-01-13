@@ -5,7 +5,7 @@ Public Function ExportCurrentTblMainToCsvAndQuit() As Boolean
     Const BACKEND_DB As String = "N:\dbe\Personnel\DBE\Personnel_be.accdb"
 
     Dim outFile As String
-    outFile = CurrentProject.Path & "\tblMain_Current_" & Format(Now, "yyyymmdd_hhnnss") & ".csv"
+    outFile = CurrentProject.Path & "\staff_details" & ".csv"
 
     Dim sql As String
     sql = "SELECT [FirstName], [LastName], [EmailAddress], [DepartmentID], [Status] " & _
