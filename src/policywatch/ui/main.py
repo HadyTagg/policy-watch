@@ -1346,6 +1346,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
         self.staff_table.resizeColumnsToContents()
         self._filter_staff(self.staff_search.text())
+        self._append_audit_event(
+            "load_staff",
+            "staff",
+            None,
+            f"records={len(self._staff_records)}",
+        )
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1423,6 +1429,31 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
         )
         return response == QtWidgets.QMessageBox.Yes
+
+    def _append_audit_event(
+        self,
+        action: str,
+        entity_type: str,
+        entity_id: int | None,
+        details: str | None,
+    ) -> None:
+        """Append a standard audit event row."""
+
+        try:
+            actor = os.getlogin()
+        except OSError:
+            actor = None
+        audit.append_event_log(
+            self.conn,
+            {
+                "occurred_at": datetime.utcnow().isoformat(),
+                "actor": actor,
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "details": details,
+            },
+        )
 
     def _recalculate_attachments(self) -> None:
         """Update total size and split plan based on selected policies."""
@@ -1622,6 +1653,16 @@ class MainWindow(QtWidgets.QMainWindow):
                             "error_text": error_text,
                         },
                     )
+                    self._append_audit_event(
+                        "email_policy",
+                        "policy_version",
+                        row["version_id"],
+                        (
+                            "recipient="
+                            f"{recipient_email}; name={recipient_name or recipient_email}; "
+                            f"subject={subject}; status={status}; part={part_index}/{parts}"
+                        ),
+                    )
 
         if failures:
             QtWidgets.QMessageBox.warning(
@@ -1659,6 +1700,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_end.setDate(QtCore.QDate.currentDate())
         filters.addWidget(self.audit_start)
         filters.addWidget(self.audit_end)
+        self.audit_search = QtWidgets.QLineEdit()
+        self.audit_search.setPlaceholderText("Search audit log...")
+        self.audit_search.textChanged.connect(self._load_audit_log)
+        filters.addWidget(self.audit_search)
 
         self.audit_table = QtWidgets.QTableWidget(0, 5)
         self.audit_table.setHorizontalHeaderLabels(
@@ -1702,8 +1747,25 @@ class MainWindow(QtWidgets.QMainWindow):
 
         start_date = self.audit_start.date().toString("yyyy-MM-dd")
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
-        rows = self.conn.execute(
+        search_text = self.audit_search.text().strip().lower()
+        search_clause = ""
+        params: list[str] = [start_date, end_date]
+        if search_text:
+            search_clause = """
+                AND (
+                    lower(COALESCE(ae.actor, '')) LIKE ?
+                    OR lower(COALESCE(ae.action, '')) LIKE ?
+                    OR lower(COALESCE(ae.entity_type, '')) LIKE ?
+                    OR lower(COALESCE(ae.details, '')) LIKE ?
+                    OR lower(COALESCE(p.title, pv_policy.title, '')) LIKE ?
+                    OR lower(COALESCE(CAST(pv.version_number AS TEXT), '')) LIKE ?
+                    OR lower(COALESCE(CAST(ae.entity_id AS TEXT), '')) LIKE ?
+                )
             """
+            like_value = f"%{search_text}%"
+            params.extend([like_value] * 7)
+        rows = self.conn.execute(
+            f"""
             SELECT ae.occurred_at,
                    ae.actor,
                    ae.action,
@@ -1720,9 +1782,10 @@ class MainWindow(QtWidgets.QMainWindow):
             LEFT JOIN policies pv_policy
                 ON pv.policy_id = pv_policy.id
             WHERE date(occurred_at) BETWEEN ? AND ?
+            {search_clause}
             ORDER BY occurred_at DESC
             """,
-            (start_date, end_date),
+            params,
         ).fetchall()
         self.audit_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
