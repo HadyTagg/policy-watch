@@ -543,6 +543,76 @@ def resolve_version_file_path(conn, version_id: int, stored_path: str) -> Path |
     return None
 
 
+def _hash_file(path: Path) -> str:
+    """Return the SHA-256 hash for a file on disk."""
+
+    sha256 = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(8192)
+            if not chunk:
+                break
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Repair stored paths and detect missing or altered policy files."""
+
+    rows = conn.execute(
+        """
+        SELECT v.id AS version_id,
+               v.file_path,
+               v.sha256_hash,
+               v.version_number,
+               p.id AS policy_id,
+               p.title AS policy_title
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        ORDER BY p.title, v.version_number
+        """
+    ).fetchall()
+    missing: list[dict[str, str]] = []
+    altered: list[dict[str, str]] = []
+    for row in rows:
+        resolved = resolve_version_file_path(conn, row["version_id"], row["file_path"])
+        if not resolved:
+            details = (
+                f"title={row['policy_title']} "
+                f"version={row['version_number']} "
+                f"path={row['file_path']}"
+            )
+            _log_event(conn, "policy_file_missing", "policy_version", row["version_id"], details)
+            missing.append(
+                {
+                    "title": row["policy_title"],
+                    "version": str(row["version_number"]),
+                    "path": row["file_path"],
+                }
+            )
+            continue
+        current_hash = _hash_file(resolved)
+        if current_hash != row["sha256_hash"]:
+            details = (
+                f"title={row['policy_title']} "
+                f"version={row['version_number']} "
+                f"path={resolved} "
+                f"expected_hash={row['sha256_hash']} "
+                f"actual_hash={current_hash}"
+            )
+            _log_event(conn, "policy_file_integrity_mismatch", "policy_version", row["version_id"], details)
+            altered.append(
+                {
+                    "title": row["policy_title"],
+                    "version": str(row["version_number"]),
+                    "path": str(resolved),
+                }
+            )
+    if missing or altered:
+        conn.commit()
+    return missing, altered
+
+
 def list_categories(conn) -> list[str]:
     """Return available category names."""
 
@@ -586,4 +656,3 @@ def export_backup(conn, destination: Path, include_files: bool) -> None:
                         file_path = Path(root) / file
                         arcname = file_path.relative_to(policies_root)
                         archive.write(file_path, arcname=Path("policies") / arcname)
-

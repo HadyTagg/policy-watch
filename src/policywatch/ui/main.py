@@ -23,6 +23,7 @@ from policywatch.services import (
     export_backup,
     get_version_file,
     resolve_version_file_path,
+    scan_policy_file_integrity,
     list_categories,
     list_policies,
     list_versions,
@@ -187,6 +188,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_categories()
         self._refresh_policies()
         self._load_settings()
+        self._load_audit_log()
+        self._run_startup_policy_checks()
+
+    def _run_startup_policy_checks(self) -> None:
+        """Repair paths and flag missing or altered policy files on launch."""
+
+        missing, altered = scan_policy_file_integrity(self.conn)
+        if not missing and not altered:
+            return
+        message_lines = [
+            "Policy file checks found issues. See the audit log for details.",
+            "",
+        ]
+        if missing:
+            message_lines.append("Missing policy files:")
+            message_lines.extend(
+                f"- {item['title']} (v{item['version']}): {item['path']}" for item in missing
+            )
+            message_lines.append("")
+        if altered:
+            message_lines.append("Modified policy files detected (hash mismatch):")
+            message_lines.extend(
+                f"- {item['title']} (v{item['version']}): {item['path']}" for item in altered
+            )
+        QtWidgets.QMessageBox.warning(self, "Policy File Issues", "\n".join(message_lines))
         self._load_audit_log()
 
     def _refresh_categories(self) -> None:
@@ -568,7 +594,42 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         file_path = get_version_file(self.conn, version_id)
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(file_path))
+        resolved_path = resolve_version_file_path(self.conn, version_id, file_path)
+        if not resolved_path:
+            row = self.conn.execute(
+                """
+                SELECT p.title, v.version_number, v.file_path
+                FROM policy_versions v
+                JOIN policies p ON p.id = v.policy_id
+                WHERE v.id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+            if row:
+                audit.append_event_log(
+                    self.conn,
+                    {
+                        "occurred_at": datetime.utcnow().isoformat(),
+                        "actor": None,
+                        "action": "policy_file_missing",
+                        "entity_type": "policy_version",
+                        "entity_id": version_id,
+                        "details": (
+                            f"title={row['title']} "
+                            f"version={row['version_number']} "
+                            f"path={row['file_path']}"
+                        ),
+                    },
+                )
+                self.conn.commit()
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing File",
+                "The policy file could not be found. Please confirm the policy root folder.",
+            )
+            self._load_audit_log()
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(resolved_path)))
 
     def _on_version_selected(self) -> None:
         """Populate metadata controls for the selected version."""
