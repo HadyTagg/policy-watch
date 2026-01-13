@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 import os
+import sys
+from pathlib import Path
 
 qt_platform = os.environ.get("POLICYWATCH_QT_PLATFORM")
 if qt_platform and "QT_QPA_PLATFORM" not in os.environ:
@@ -114,6 +116,26 @@ class PolicyWatchApp:
         app.setPalette(palette)
         app.setStyleSheet(self._dark_stylesheet)
 
+    def _resolve_icon_path(self) -> Path | None:
+        """Resolve the application icon path for local and frozen builds."""
+
+        repo_icon = Path(__file__).resolve().parents[2] / "policywatch.ico"
+        candidates = [repo_icon]
+        if getattr(sys, "frozen", False):
+            candidates.append(Path(sys.executable).resolve().parent / "policywatch.ico")
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _load_app_icon(self) -> QtGui.QIcon | None:
+        """Load the application icon if available."""
+
+        icon_path = self._resolve_icon_path()
+        if not icon_path:
+            return None
+        return QtGui.QIcon(str(icon_path))
+
     def _ensure_admin(self) -> None:
         """Ensure a default admin user exists on first run."""
 
@@ -153,10 +175,13 @@ class PolicyWatchApp:
         app = QtWidgets.QApplication([])
         self._app = app
         self._apply_dark_mode(app)
+        icon = self._load_app_icon()
+        if icon and not icon.isNull():
+            app.setWindowIcon(icon)
         self._ensure_admin()
-        login = LoginWindow(self.authenticate)
+        login = LoginWindow(self.authenticate, icon=icon)
         if login.exec() == QtWidgets.QDialog.Accepted:
-            main = MainWindow(login.username_input.text(), self.conn)
+            main = MainWindow(login.username_input.text(), self.conn, icon=icon)
             main.resize(800, 600)
             main.show()
             app.exec()
