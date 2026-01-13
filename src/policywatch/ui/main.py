@@ -294,9 +294,10 @@ class MainWindow(QtWidgets.QMainWindow):
                         continue
                     replacement_path = Path(file_path)
                 try:
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
                     replacement_notes = (
                         f"Accepted as replacement for version {item['version']} "
-                        "after integrity mismatch."
+                        f"after integrity mismatch on {timestamp}."
                     )
                     new_version_id = add_policy_version(
                         self.conn,
