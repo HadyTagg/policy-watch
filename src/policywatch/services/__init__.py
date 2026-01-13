@@ -789,10 +789,24 @@ def mark_policy_version_missing(
                 "UPDATE policies SET current_version_id = ? WHERE id = ?",
                 (replacement_version_id, row["policy_id"]),
             )
+            _log_event(
+                conn,
+                "current_version_replaced",
+                "policy",
+                row["policy_id"],
+                f"previous_version_id={version_id} new_version_id={replacement_version_id}",
+            )
         else:
             conn.execute(
                 "UPDATE policies SET current_version_id = NULL WHERE id = ?",
                 (row["policy_id"],),
+            )
+            _log_event(
+                conn,
+                "current_version_cleared",
+                "policy",
+                row["policy_id"],
+                f"previous_version_id={version_id}",
             )
     _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
     conn.commit()
