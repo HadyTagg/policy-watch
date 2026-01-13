@@ -38,6 +38,9 @@ class LoginWindow(QtWidgets.QDialog):
         layout.addWidget(button)
         layout.addWidget(self.message_label)
 
+        self.adjustSize()
+        self.setMinimumWidth(self.sizeHint().width() + 40)
+
     def _handle_login(self):
         """Validate credentials and emit the authenticated signal."""
 
