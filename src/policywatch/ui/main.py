@@ -1084,6 +1084,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.staff_table.itemChanged.connect(self._on_staff_item_changed)
+
+        self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.staff_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+        audit_font = self.staff_table.font()
+        audit_font.setPointSize(9)
+        audit_font.setBold(True)
+        self.staff_table.setFont(audit_font)
+
+        self.staff_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
         load_staff_button.clicked.connect(self._load_staff)
@@ -1746,13 +1760,13 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
         button_row = QtWidgets.QHBoxLayout()
-        export_button = QtWidgets.QPushButton("Export CSV")
+        export_button = QtWidgets.QPushButton("Export all Logs")
         export_button.clicked.connect(self._export_audit_csv)
-        export_visible_button = QtWidgets.QPushButton("Export shown rows")
+        export_visible_button = QtWidgets.QPushButton("Export logs shown")
         export_visible_button.clicked.connect(self._export_audit_csv_shown)
-        verify_button = QtWidgets.QPushButton("Verify Integrity")
+        verify_button = QtWidgets.QPushButton("Verify Log Integrity")
         verify_button.clicked.connect(self._verify_audit)
-        refresh_button = QtWidgets.QPushButton("Refresh")
+        refresh_button = QtWidgets.QPushButton("Refresh Logs")
         refresh_button.clicked.connect(self._load_audit_log)
         button_row.addWidget(export_button)
         button_row.addWidget(export_visible_button)
