@@ -1,0 +1,40 @@
+Option Compare Database
+Option Explicit
+
+Public Function ExportCurrentTblMainToCsvAndQuit() As Boolean
+    Const BACKEND_DB As String = "N:\dbe\Personnel\DBE\Personnel_be.accdb"
+
+    Dim outFile As String
+    outFile = CurrentProject.Path & "\tblMain_Current_" & Format(Now, "yyyymmdd_hhnnss") & ".csv"
+
+    Dim sql As String
+    sql = "SELECT [FirstName], [LastName], [EmailAddress], [DepartmentID], [Status] " & _
+          "FROM [tblMain] IN '" & BACKEND_DB & "' " & _
+          "WHERE [Status] = 'Current';"
+
+    On Error GoTo EH
+
+    On Error Resume Next
+    CurrentDb.QueryDefs.Delete "qryExport_tblMain_Current"
+    On Error GoTo EH
+
+    CurrentDb.CreateQueryDef "qryExport_tblMain_Current", sql
+
+    DoCmd.TransferText TransferType:=acExportDelim, _
+                      SpecificationName:="", _
+                      TableName:="qryExport_tblMain_Current", _
+                      FileName:=outFile, _
+                      HasFieldNames:=True
+
+    CurrentDb.QueryDefs.Delete "qryExport_tblMain_Current"
+
+    ExportCurrentTblMainToCsvAndQuit = True
+    Application.Quit acQuitSaveNone
+    Exit Function
+
+EH:
+    MsgBox "Export failed: " & Err.Number & " - " & Err.Description, vbExclamation
+    On Error Resume Next
+    CurrentDb.QueryDefs.Delete "qryExport_tblMain_Current"
+    ExportCurrentTblMainToCsvAndQuit = False
+End Function
