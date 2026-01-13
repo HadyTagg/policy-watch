@@ -49,7 +49,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_category = ""
         self._staff_records: list[dict[str, str]] = []
 
-        self.setWindowTitle("Policy Watch")
+        self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
@@ -1082,7 +1082,11 @@ class MainWindow(QtWidgets.QMainWindow):
         recipient_layout.addWidget(self.staff_search)
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
-        self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        staff_header = self.staff_table.horizontalHeader()
+        staff_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        for col in range(1, 4):
+            staff_header.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
+        staff_header.setStretchLastSection(True)
         self.staff_table.itemChanged.connect(self._on_staff_item_changed)
 
         self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -1094,7 +1098,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: white; font-weight: bold; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -1342,6 +1346,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
 
         self.staff_table.setRowCount(len(self._staff_records))
+        item_font = self.staff_table.font()
+        item_font.setBold(True)
         for row_index, row in enumerate(self._staff_records):
             checkbox = QtWidgets.QTableWidgetItem()
             checkbox.setFlags(
@@ -1354,11 +1360,17 @@ class MainWindow(QtWidgets.QMainWindow):
             name = row.get("name", "")
             email = row.get("email", "")
             team = row.get("team", "")
+            checkbox.setFont(item_font)
+            name_item = QtWidgets.QTableWidgetItem(name or "")
+            name_item.setFont(item_font)
+            email_item = QtWidgets.QTableWidgetItem(email or "")
+            email_item.setFont(item_font)
+            team_item = QtWidgets.QTableWidgetItem(team or "")
+            team_item.setFont(item_font)
             self.staff_table.setItem(row_index, 0, checkbox)
-            self.staff_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(name or ""))
-            self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
-            self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
-        self.staff_table.resizeColumnsToContents()
+            self.staff_table.setItem(row_index, 1, name_item)
+            self.staff_table.setItem(row_index, 2, email_item)
+            self.staff_table.setItem(row_index, 3, team_item)
         self._filter_staff(self.staff_search.text())
         self._append_audit_event(
             "load_staff",
@@ -1737,6 +1749,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_search.setPlaceholderText("Search audit log...")
         self.audit_search.textChanged.connect(self._load_audit_log)
         filters.addWidget(self.audit_search)
+        self.audit_hide_email_policy = QtWidgets.QCheckBox("Hide Email Logs")
+        self.audit_hide_email_policy.toggled.connect(self._load_audit_log)
+        filters.addWidget(self.audit_hide_email_policy)
 
         self.audit_table = QtWidgets.QTableWidget(0, 5)
         self.audit_table.setHorizontalHeaderLabels(
@@ -1754,7 +1769,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: white;}"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -1808,7 +1823,11 @@ class MainWindow(QtWidgets.QMainWindow):
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
         search_text = self.audit_search.text().strip().lower()
         search_clause = ""
+        action_clause = ""
         params: list[str] = [start_date, end_date]
+        if self.audit_hide_email_policy.isChecked():
+            action_clause = "AND ae.action != ?"
+            params.append("email_policy")
         if search_text:
             search_clause = """
                 AND (
@@ -1841,6 +1860,7 @@ class MainWindow(QtWidgets.QMainWindow):
             LEFT JOIN policies pv_policy
                 ON pv.policy_id = pv_policy.id
             WHERE date(occurred_at) BETWEEN ? AND ?
+            {action_clause}
             {search_clause}
             ORDER BY occurred_at DESC
             """,
