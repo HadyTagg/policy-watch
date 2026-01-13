@@ -1082,7 +1082,11 @@ class MainWindow(QtWidgets.QMainWindow):
         recipient_layout.addWidget(self.staff_search)
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
-        self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        staff_header = self.staff_table.horizontalHeader()
+        staff_header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        for col in range(1, 4):
+            staff_header.setSectionResizeMode(col, QtWidgets.QHeaderView.Stretch)
+        staff_header.setStretchLastSection(True)
         self.staff_table.itemChanged.connect(self._on_staff_item_changed)
 
         self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
