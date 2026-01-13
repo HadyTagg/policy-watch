@@ -1098,7 +1098,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; font-weight: bold;}"
+            "QTableWidget::item { color: white; font-weight: bold; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -1346,6 +1346,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
 
         self.staff_table.setRowCount(len(self._staff_records))
+        item_font = self.staff_table.font()
+        item_font.setBold(True)
         for row_index, row in enumerate(self._staff_records):
             checkbox = QtWidgets.QTableWidgetItem()
             checkbox.setFlags(
@@ -1358,10 +1360,17 @@ class MainWindow(QtWidgets.QMainWindow):
             name = row.get("name", "")
             email = row.get("email", "")
             team = row.get("team", "")
+            checkbox.setFont(item_font)
+            name_item = QtWidgets.QTableWidgetItem(name or "")
+            name_item.setFont(item_font)
+            email_item = QtWidgets.QTableWidgetItem(email or "")
+            email_item.setFont(item_font)
+            team_item = QtWidgets.QTableWidgetItem(team or "")
+            team_item.setFont(item_font)
             self.staff_table.setItem(row_index, 0, checkbox)
-            self.staff_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(name or ""))
-            self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
-            self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
+            self.staff_table.setItem(row_index, 1, name_item)
+            self.staff_table.setItem(row_index, 2, email_item)
+            self.staff_table.setItem(row_index, 3, team_item)
         self._filter_staff(self.staff_search.text())
         self._append_audit_event(
             "load_staff",
