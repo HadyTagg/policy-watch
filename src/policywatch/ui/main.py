@@ -1083,6 +1083,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table = QtWidgets.QTableWidget(0, 4)
         self.staff_table.setHorizontalHeaderLabels(["Select", "Name", "Email", "Team"])
         self.staff_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.staff_table.itemChanged.connect(self._on_staff_item_changed)
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
         load_staff_button.clicked.connect(self._load_staff)
@@ -1253,22 +1254,29 @@ class MainWindow(QtWidgets.QMainWindow):
     def _select_all_staff(self, _: bool) -> None:
         """Select all visible staff rows."""
 
-        self.staff_table.blockSignals(True)
-        for row in self._visible_staff_rows():
-            item = self.staff_table.item(row, 0)
-            if item:
-                item.setCheckState(QtCore.Qt.Checked)
-        self.staff_table.blockSignals(False)
-        self._sync_staff_select_all()
+        self._set_staff_check_state(QtCore.Qt.Checked)
 
     def _deselect_all_staff(self, _: bool) -> None:
         """Deselect all visible staff rows."""
 
+        self._set_staff_check_state(QtCore.Qt.Unchecked)
+
+    def _set_staff_check_state(self, check_state: QtCore.Qt.CheckState) -> None:
+        """Set the check state for all visible staff rows."""
+
         self.staff_table.blockSignals(True)
         for row in self._visible_staff_rows():
             item = self.staff_table.item(row, 0)
-            if item:
-                item.setCheckState(QtCore.Qt.Unchecked)
+            if not item:
+                item = QtWidgets.QTableWidgetItem()
+                item.setFlags(
+                    QtCore.Qt.ItemIsUserCheckable
+                    | QtCore.Qt.ItemIsEnabled
+                    | QtCore.Qt.ItemIsSelectable
+                    | QtCore.Qt.ItemIsEditable
+                )
+                self.staff_table.setItem(row, 0, item)
+            item.setCheckState(check_state)
         self.staff_table.blockSignals(False)
         self._sync_staff_select_all()
 
@@ -1375,42 +1383,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 records.append({"name": name, "email": email, "team": team})
         return records
 
-    def _run_staff_extractor(self, access_path: Path) -> None:
-        """Run the Access staff extractor frontend."""
-
-        if os.name != "nt":
-            raise RuntimeError("Staff extractor requires Microsoft Access on Windows.")
-        subprocess.run(["cmd", "/c", "start", "/wait", "", str(access_path)], check=False)
-
-    def _wait_for_staff_csv(self, csv_path: Path, timeout_seconds: int = 60) -> bool:
-        """Wait for the staff CSV export to appear."""
-
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            QtCore.QCoreApplication.processEvents()
-            if csv_path.exists() and csv_path.stat().st_size > 0:
-                return True
-            time.sleep(0.2)
-        return False
-
-    def _read_staff_csv(self, csv_path: Path) -> list[dict[str, str]]:
-        """Read staff details from the CSV exported by Access."""
-
-        records: list[dict[str, str]] = []
-        with csv_path.open(newline="", encoding="utf-8-sig") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                first_name = (row.get("FirstName") or "").strip()
-                last_name = (row.get("LastName") or "").strip()
-                email = (row.get("EmailAddress") or "").strip()
-                team = (row.get("DepartmentID") or "").strip()
-                name_parts = [part for part in [first_name, last_name] if part]
-                name = " ".join(name_parts).strip()
-                if not (name or email or team):
-                    continue
-                records.append({"name": name, "email": email, "team": team})
-        return records
-
     def _filter_staff(self, text: str) -> None:
         """Filter staff recipients by name or email."""
 
@@ -1418,9 +1390,17 @@ class MainWindow(QtWidgets.QMainWindow):
         for row in range(self.staff_table.rowCount()):
             name = self.staff_table.item(row, 1).text().lower()
             email = self.staff_table.item(row, 2).text().lower()
-            match = text in name or text in email
+            team = self.staff_table.item(row, 3).text().lower()
+            match = text in name or text in email or text in team
             self.staff_table.setRowHidden(row, not match if text else False)
         self._sync_staff_select_all()
+
+    def _on_staff_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        """Sync staff selection controls when a checkbox changes."""
+
+        if item.column() != 0:
+            return
+        QtCore.QTimer.singleShot(0, self._sync_staff_select_all)
 
     def _confirm_recipients(self, recipients: list[tuple[str, str]]) -> bool:
         """Confirm the final recipient list before sending."""
