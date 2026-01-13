@@ -557,6 +557,22 @@ def _hash_file(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def format_replacement_note(
+    replaced_version_number: int,
+    replacement_version_number: int | None,
+    timestamp: str,
+) -> str:
+    """Format a consistent replacement note for policy versions."""
+
+    replacement_label = "unknown"
+    if replacement_version_number is not None:
+        replacement_label = f"v{replacement_version_number}"
+    return (
+        "Replacement accepted: replaced v"
+        f"{replaced_version_number} with {replacement_label} on {timestamp}."
+    )
+
+
 def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Repair stored paths and detect missing or altered policy files."""
 
@@ -685,11 +701,29 @@ def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> Non
     conn.commit()
 
 
+def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
+    """Update notes for a policy version and log the change."""
+
+    conn.execute(
+        "UPDATE policy_versions SET notes = ? WHERE id = ?",
+        (notes, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_version_notes_updated",
+        "policy_version",
+        version_id,
+        "replacement_notes_applied",
+    )
+    conn.commit()
+
+
 def mark_policy_version_missing(
     conn,
     version_id: int,
     details: str,
     replacement_version_number: int | None = None,
+    replacement_note: str | None = None,
 ) -> None:
     """Record that a policy version file is missing or replaced."""
 
@@ -708,11 +742,10 @@ def mark_policy_version_missing(
     if not row:
         raise ValueError("Version not found")
     timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-    replacement_text = "Replacement version unknown"
-    if replacement_version_number is not None:
-        replacement_text = f"Replacement version v{replacement_version_number}"
-    note_line = (
-        f"{replacement_text} accepted on {timestamp} after integrity mismatch."
+    note_line = replacement_note or format_replacement_note(
+        row["version_number"],
+        replacement_version_number,
+        timestamp,
     )
     existing_notes = (row["notes"] or "").rstrip()
     updated_notes = f"{existing_notes}\n{note_line}".strip()

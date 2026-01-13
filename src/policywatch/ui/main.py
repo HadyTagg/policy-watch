@@ -23,9 +23,11 @@ from policywatch.services import (
     export_backup,
     get_version_file,
     mark_policy_version_missing,
+    format_replacement_note,
     resolve_version_file_path,
     restore_policy_version_file,
     restore_missing_policy_file,
+    update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
     list_policies,
@@ -295,10 +297,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     replacement_path = Path(file_path)
                 try:
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
-                    replacement_notes = (
-                        f"Accepted as replacement for version {item['version']} "
-                        f"after integrity mismatch on {timestamp}."
-                    )
                     original_status_row = self.conn.execute(
                         "SELECT status FROM policy_versions WHERE id = ?",
                         (int(item["version_id"]),),
@@ -309,7 +307,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         int(item["policy_id"]),
                         replacement_path,
                         None,
-                        {"notes": replacement_notes, "status": original_status},
+                        {"notes": "", "status": original_status},
                     )
                     new_version_row = self.conn.execute(
                         "SELECT version_number FROM policy_versions WHERE id = ?",
@@ -318,6 +316,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     replacement_number = (
                         int(new_version_row["version_number"]) if new_version_row else None
                     )
+                    replacement_note = format_replacement_note(
+                        int(item["version"]),
+                        replacement_number,
+                        timestamp,
+                    )
+                    update_policy_version_notes(self.conn, new_version_id, replacement_note)
                     details = (
                         f"title={item['title']} "
                         f"version={item['version']} "
@@ -328,6 +332,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         int(item["version_id"]),
                         details,
                         replacement_version_number=replacement_number,
+                        replacement_note=replacement_note,
                     )
                 except ValueError as exc:
                     QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
