@@ -49,7 +49,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_category = ""
         self._staff_records: list[dict[str, str]] = []
 
-        self.setWindowTitle("Policy Watch")
+        self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
