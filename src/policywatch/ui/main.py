@@ -885,11 +885,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if integrity_issue:
             reason = self._selected_version_integrity_issue_reason()
-            QtWidgets.QMessageBox.information(
-                self,
-                "Integrity Issue",
-                f"This version has an integrity issue: {reason}. Resolve it before editing.",
-            )
+            if (version["status"] or "").lower() == "missing":
+                message = "This policy is missing and its details can no longer be edited."
+            else:
+                message = (
+                    f"This version has an integrity issue: {reason}. Resolve it before editing."
+                )
+            QtWidgets.QMessageBox.information(self, "Integrity Issue", message)
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         """Apply traffic-light color coding to a policy row."""
