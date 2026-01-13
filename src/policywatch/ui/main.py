@@ -1358,7 +1358,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.staff_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(name or ""))
             self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
             self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
-        self.staff_table.resizeColumnsToContents()
         self._filter_staff(self.staff_search.text())
         self._append_audit_event(
             "load_staff",
@@ -1737,6 +1736,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_search.setPlaceholderText("Search audit log...")
         self.audit_search.textChanged.connect(self._load_audit_log)
         filters.addWidget(self.audit_search)
+        self.audit_hide_email_policy = QtWidgets.QCheckBox("Hide email_policy")
+        self.audit_hide_email_policy.toggled.connect(self._load_audit_log)
+        filters.addWidget(self.audit_hide_email_policy)
 
         self.audit_table = QtWidgets.QTableWidget(0, 5)
         self.audit_table.setHorizontalHeaderLabels(
@@ -1808,7 +1810,11 @@ class MainWindow(QtWidgets.QMainWindow):
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
         search_text = self.audit_search.text().strip().lower()
         search_clause = ""
+        action_clause = ""
         params: list[str] = [start_date, end_date]
+        if self.audit_hide_email_policy.isChecked():
+            action_clause = "AND ae.action != ?"
+            params.append("email_policy")
         if search_text:
             search_clause = """
                 AND (
@@ -1841,6 +1847,7 @@ class MainWindow(QtWidgets.QMainWindow):
             LEFT JOIN policies pv_policy
                 ON pv.policy_id = pv_policy.id
             WHERE date(occurred_at) BETWEEN ? AND ?
+            {action_clause}
             {search_clause}
             ORDER BY occurred_at DESC
             """,
