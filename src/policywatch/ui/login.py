@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 
 class LoginWindow(QtWidgets.QDialog):
@@ -10,13 +10,15 @@ class LoginWindow(QtWidgets.QDialog):
 
     authenticated = QtCore.pyqtSignal(str)
 
-    def __init__(self, on_authenticate, parent=None):
+    def __init__(self, on_authenticate, parent=None, icon: QtGui.QIcon | None = None):
         """Initialize the login dialog layout and handlers."""
 
         super().__init__(parent)
         self._on_authenticate = on_authenticate
         self.setWindowTitle("Policy Watch - Login")
         self.setModal(True)
+        if icon and not icon.isNull():
+            self.setWindowIcon(icon)
 
         self.username_input = QtWidgets.QLineEdit()
         self.password_input = QtWidgets.QLineEdit()

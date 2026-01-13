@@ -6,7 +6,9 @@ import csv
 import os
 import re
 import sqlite3
+import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime
 from email.utils import parseaddr
@@ -47,7 +49,13 @@ class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window coordinating dashboard and workflow tabs."""
 
-    def __init__(self, username: str, conn: sqlite3.Connection, parent=None):
+    def __init__(
+        self,
+        username: str,
+        conn: sqlite3.Connection,
+        parent=None,
+        icon: QtGui.QIcon | None = None,
+    ):
         """Initialize the main window and build all primary UI sections."""
 
         super().__init__(parent)
@@ -60,6 +68,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._staff_records: list[dict[str, str]] = []
 
         self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
+        if icon and not icon.isNull():
+            self.setWindowIcon(icon)
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
@@ -1314,6 +1324,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         base_dir = config.get_paths().data_dir
         access_path = base_dir / "staff_details_extractor.accdb"
+        if not access_path.exists():
+            packaged_path = None
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                packaged_path = Path(sys._MEIPASS) / "staff_details_extractor.accdb"
+            else:
+                packaged_path = Path(sys.executable).resolve().parent / "staff_details_extractor.accdb"
+            if packaged_path and packaged_path.exists():
+                try:
+                    shutil.copy2(packaged_path, access_path)
+                except OSError:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Missing Extractor",
+                        f"Unable to copy staff extractor to {access_path}.",
+                    )
+                    return
         csv_path = base_dir / "staff_details.csv"
         if not access_path.exists():
             QtWidgets.QMessageBox.warning(
