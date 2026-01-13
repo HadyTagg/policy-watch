@@ -22,7 +22,12 @@ from policywatch.services import (
     add_policy_version,
     export_backup,
     get_version_file,
+    mark_policy_version_missing,
+    format_replacement_note,
     resolve_version_file_path,
+    restore_policy_version_file,
+    restore_missing_policy_file,
+    update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
     list_policies,
@@ -213,6 +218,156 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"- {item['title']} (v{item['version']}): {item['path']}" for item in altered
             )
         QtWidgets.QMessageBox.warning(self, "Policy File Issues", "\n".join(message_lines))
+        for item in missing:
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("Policy File Missing")
+            dialog.setText(
+                "A policy file could not be found.\n\n"
+                f"{item['title']} (v{item['version']})\n"
+                f"Stored path: {item['path']}\n\n"
+                "Locate the original file to restore it and verify the checksum."
+            )
+            locate_button = dialog.addButton("Locate Missing File", QtWidgets.QMessageBox.AcceptRole)
+            skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
+            dialog.exec()
+            clicked = dialog.clickedButton()
+            if clicked == locate_button:
+                file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                    self,
+                    "Select Missing Policy File",
+                )
+                if file_path:
+                    try:
+                        restore_missing_policy_file(
+                            self.conn,
+                            int(item["version_id"]),
+                            Path(file_path),
+                        )
+                    except ValueError as exc:
+                        QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
+            elif clicked == skip_button:
+                continue
+        for item in altered:
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("Policy Integrity Mismatch")
+            dialog.setText(
+                "A policy file has changed since it was recorded.\n\n"
+                f"{item['title']} (v{item['version']})\n"
+                f"Stored path: {item['path']}\n\n"
+                "Choose how to resolve this mismatch."
+            )
+            locate_button = dialog.addButton("Locate Original File", QtWidgets.QMessageBox.AcceptRole)
+            replace_button = dialog.addButton(
+                "Create Replacement Version", QtWidgets.QMessageBox.DestructiveRole
+            )
+            skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
+            dialog.exec()
+            clicked = dialog.clickedButton()
+            if clicked == locate_button:
+                file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                    self,
+                    "Select Original Policy File",
+                )
+                if file_path:
+                    try:
+                        restore_policy_version_file(
+                            self.conn,
+                            int(item["version_id"]),
+                            Path(file_path),
+                        )
+                    except ValueError as exc:
+                        QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
+            elif clicked == replace_button:
+                response = QtWidgets.QMessageBox.question(
+                    self,
+                    "Create Replacement Version",
+                    "This will mark the original version as missing and create a new version "
+                    "from the current file on disk. Continue?",
+                )
+                if response != QtWidgets.QMessageBox.Yes:
+                    continue
+                replacement_path = Path(item["path"])
+                if not replacement_path.exists():
+                    file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                        self,
+                        "Select Replacement Policy File",
+                    )
+                    if not file_path:
+                        continue
+                    replacement_path = Path(file_path)
+                try:
+                    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+                    original_status_row = self.conn.execute(
+                        """
+                        SELECT status, ratified, ratified_at, ratified_by_user_id
+                        FROM policy_versions
+                        WHERE id = ?
+                        """,
+                        (int(item["version_id"]),),
+                    ).fetchone()
+                    original_status = (original_status_row["status"] if original_status_row else None) or "Draft"
+                    new_version_id = add_policy_version(
+                        self.conn,
+                        int(item["policy_id"]),
+                        replacement_path,
+                        None,
+                        {"notes": "", "status": original_status},
+                    )
+                    if original_status_row and original_status_row["ratified"]:
+                        self.conn.execute(
+                            """
+                            UPDATE policy_versions
+                            SET ratified = 1, ratified_at = ?, ratified_by_user_id = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                original_status_row["ratified_at"],
+                                original_status_row["ratified_by_user_id"],
+                                new_version_id,
+                            ),
+                        )
+                        self.conn.commit()
+                        audit.append_event_log(
+                            self.conn,
+                            {
+                                "occurred_at": datetime.utcnow().isoformat(),
+                                "actor": None,
+                                "action": "policy_version_ratification_copied",
+                                "entity_type": "policy_version",
+                                "entity_id": new_version_id,
+                                "details": f"copied_from_version={item['version_id']}",
+                            },
+                        )
+                    new_version_row = self.conn.execute(
+                        "SELECT version_number FROM policy_versions WHERE id = ?",
+                        (new_version_id,),
+                    ).fetchone()
+                    replacement_number = (
+                        int(new_version_row["version_number"]) if new_version_row else None
+                    )
+                    replacement_note = format_replacement_note(
+                        int(item["version"]),
+                        replacement_number,
+                        timestamp,
+                    )
+                    update_policy_version_notes(self.conn, new_version_id, replacement_note)
+                    details = (
+                        f"title={item['title']} "
+                        f"version={item['version']} "
+                        f"path={item['path']}"
+                    )
+                    mark_policy_version_missing(
+                        self.conn,
+                        int(item["version_id"]),
+                        details,
+                        replacement_version_number=replacement_number,
+                        replacement_note=replacement_note,
+                        replacement_version_id=new_version_id,
+                    )
+                except ValueError as exc:
+                    QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
+            elif clicked == skip_button:
+                continue
         self._load_audit_log()
 
     def _refresh_categories(self) -> None:
