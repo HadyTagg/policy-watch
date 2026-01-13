@@ -1352,6 +1352,7 @@ class MainWindow(QtWidgets.QMainWindow):
             None,
             f"records={len(self._staff_records)}",
         )
+        self.conn.commit()
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1575,15 +1576,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if max_mb and total_mb > max_mb:
             parts = int(total_mb // max_mb) + 1
 
-        subject_base = "Policy/Policies"
-        body_lines = [
-            "Please find the following policy/policies attached. Please ensure you read the policy. "
-            "If you have any questions, please contact us.",
-            "",
-        ]
-        for row in policy_rows:
-            body_lines.append(f"- {row['title']} (v{row['version_number']})")
-        body = "\n".join(body_lines)
+        subject_base = "Policy/Policies Enclosed"
+        policy_lines = [f"- {row['title']} (v{row['version_number']})" for row in policy_rows]
 
         max_bytes = int(max_mb * 1024 * 1024) if max_mb else 0
         oversized_attachments: list[str] = []
@@ -1619,6 +1613,26 @@ class MainWindow(QtWidgets.QMainWindow):
             attachment_paths = [path for path, _ in chunk]
             total_attachment_bytes = sum(size for _, size in chunk)
             for recipient_email, recipient_name in recipients:
+                raw_name = (recipient_name or recipient_email).strip()
+                if "@" in raw_name:
+                    first_name = raw_name.split("@")[0].split(".")[0].split(" ")[0]
+                else:
+                    first_name = raw_name.split(" ")[0]
+                body_lines = [
+                    f"Dear {first_name},",
+                    "",
+                    "Please find the following policy/policies attached.",
+                    "",
+                    "LIST OF POLICIES",
+                    *policy_lines,
+                    "",
+                    "Please ensure you read them carefully.",
+                    "",
+                    "Kind regards",
+                    "",
+                    "Martha Trust",
+                ]
+                body = "\n".join(body_lines)
                 try:
                     entry_id = outlook.send_email(
                         subject, body, [recipient_email], attachment_paths
@@ -1663,6 +1677,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             f"subject={subject}; status={status}; part={part_index}/{parts}"
                         ),
                     )
+        self.conn.commit()
 
         if failures:
             QtWidgets.QMessageBox.warning(
