@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 import os
 import re
 import sqlite3
+import subprocess
+import time
 from datetime import datetime
 from email.utils import parseaddr
 from pathlib import Path
@@ -12,10 +15,9 @@ from pathlib import Path
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch.core import audit, config
-from policywatch.integrations import access, outlook
+from policywatch.integrations import outlook
 from policywatch.services import (
     add_policy_version,
-    build_staff_query,
     export_backup,
     get_version_file,
     resolve_version_file_path,
@@ -24,7 +26,6 @@ from policywatch.services import (
     list_versions,
     mark_version_ratified,
     unmark_version_ratified,
-    parse_mapping_json,
     set_current_version,
     unset_current_version,
     update_policy_category,
@@ -46,6 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._current_policy_title = ""
         self._current_policy_category = ""
+        self._staff_records: list[dict[str, str]] = []
 
         self.setWindowTitle("Policy Watch")
 
@@ -1211,44 +1213,100 @@ class MainWindow(QtWidgets.QMainWindow):
         self._recalculate_attachments()
 
     def _load_staff(self) -> None:
-        """Load staff records from Access based on the configured query."""
+        """Load staff records by running the Access extractor and parsing its CSV."""
 
-        access_path = config.get_setting(self.conn, "access_db_path", "N:\\")
-        mode = config.get_setting(self.conn, "access_mode", "table")
-        table = config.get_setting(self.conn, "access_table", "")
-        mapping = parse_mapping_json(config.get_setting(self.conn, "access_fields", "{}"))
-        query = config.get_setting(self.conn, "access_query", "")
-        staff_query = build_staff_query(mode, table, mapping, query)
-        if not staff_query:
-            QtWidgets.QMessageBox.warning(self, "Configure", "Configure staff data source first.")
-            return
-        fallback_table = table if mode == "table" else None
-        try:
-            rows = access.preview_query_from_path(
-                access_path,
-                staff_query,
-                limit=200,
-                table=fallback_table,
+        base_dir = config.get_paths().data_dir
+        access_path = base_dir / "staff_details_extractor.accdb"
+        csv_path = base_dir / "staff_details.csv"
+        if not access_path.exists():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Extractor",
+                f"Expected staff extractor at {access_path}.",
             )
-        except access.AccessDriverError as exc:
-            QtWidgets.QMessageBox.warning(self, "Driver Missing", str(exc))
             return
-        self.staff_table.setRowCount(len(rows))
-        for row_index, row in enumerate(rows):
+
+        if csv_path.exists():
+            try:
+                csv_path.unlink()
+            except OSError:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "CSV Locked",
+                    f"Unable to remove existing CSV at {csv_path}. Close it and try again.",
+                )
+                return
+
+        try:
+            self._run_staff_extractor(access_path)
+        except RuntimeError as exc:
+            QtWidgets.QMessageBox.warning(self, "Extractor Error", str(exc))
+            return
+
+        if not self._wait_for_staff_csv(csv_path):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "CSV Not Found",
+                f"staff_details.csv was not generated in {base_dir}.",
+            )
+            return
+
+        try:
+            self._staff_records = self._read_staff_csv(csv_path)
+        finally:
+            try:
+                csv_path.unlink()
+            except OSError:
+                pass
+
+        self.staff_table.setRowCount(len(self._staff_records))
+        for row_index, row in enumerate(self._staff_records):
             checkbox = QtWidgets.QTableWidgetItem()
             checkbox.setCheckState(QtCore.Qt.Unchecked)
-            name = row.get(mapping.get("display_name")) if mapping.get("display_name") else None
-            if not name:
-                first = row.get(mapping.get("first_name"), "")
-                last = row.get(mapping.get("last_name"), "")
-                name = f"{first} {last}".strip()
-            email = row.get(mapping.get("email"), "")
-            team = row.get(mapping.get("role_team"), "")
+            name = row.get("name", "")
+            email = row.get("email", "")
+            team = row.get("team", "")
             self.staff_table.setItem(row_index, 0, checkbox)
             self.staff_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(name or ""))
             self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
             self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
         self.staff_table.resizeColumnsToContents()
+
+    def _run_staff_extractor(self, access_path: Path) -> None:
+        """Run the Access staff extractor frontend."""
+
+        if os.name != "nt":
+            raise RuntimeError("Staff extractor requires Microsoft Access on Windows.")
+        subprocess.run(["cmd", "/c", "start", "/wait", "", str(access_path)], check=False)
+
+    def _wait_for_staff_csv(self, csv_path: Path, timeout_seconds: int = 60) -> bool:
+        """Wait for the staff CSV export to appear."""
+
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            QtCore.QCoreApplication.processEvents()
+            if csv_path.exists() and csv_path.stat().st_size > 0:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def _read_staff_csv(self, csv_path: Path) -> list[dict[str, str]]:
+        """Read staff details from the CSV exported by Access."""
+
+        records: list[dict[str, str]] = []
+        with csv_path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                first_name = (row.get("FirstName") or "").strip()
+                last_name = (row.get("LastName") or "").strip()
+                email = (row.get("EmailAddress") or "").strip()
+                team = (row.get("DepartmentID") or "").strip()
+                name_parts = [part for part in [first_name, last_name] if part]
+                name = " ".join(name_parts).strip()
+                if not (name or email or team):
+                    continue
+                records.append({"name": name, "email": email, "team": team})
+        return records
 
     def _filter_staff(self, text: str) -> None:
         """Filter staff recipients by name or email."""
@@ -1639,29 +1697,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_form.addRow("Overdue grace days", self.overdue_days_input)
         self.settings_form.addRow("Max attachment MB", self.max_attachment_input)
 
-        access_group = QtWidgets.QGroupBox("Staff Data Source", form_container)
-        access_layout = QtWidgets.QFormLayout(access_group)
-        self.access_path = QtWidgets.QLineEdit(access_group)
-        self.access_mode = QtWidgets.QComboBox(access_group)
-        self.access_mode.addItems(["table", "query"])
-        self.access_table = QtWidgets.QLineEdit(access_group)
-        self.access_query = QtWidgets.QPlainTextEdit(access_group)
-        self.access_fields = QtWidgets.QPlainTextEdit(access_group)
-        self.access_fields.setPlaceholderText(
-            '{"staff_id": "ID", "first_name": "FirstName", "last_name": "LastName", "email": "Email"}'
-        )
-        test_button = QtWidgets.QPushButton("Test Connection", access_group)
-        test_button.clicked.connect(self._test_access)
-
-        access_layout.addRow("Access .accdb path", self.access_path)
-        access_layout.addRow("Mode", self.access_mode)
-        access_layout.addRow("Table", self.access_table)
-        access_layout.addRow("Query", self.access_query)
-        access_layout.addRow("Field mapping (JSON)", self.access_fields)
-        access_layout.addRow("", test_button)
-
-        self.settings_form.addRow(access_group)
-
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
         save_button.clicked.connect(self._save_settings)
 
@@ -1693,11 +1728,6 @@ class MainWindow(QtWidgets.QMainWindow):
         config.set_setting(self.conn, "amber_months", self.amber_months_input.value())
         config.set_setting(self.conn, "overdue_grace_days", self.overdue_days_input.value())
         config.set_setting(self.conn, "max_attachment_mb", self.max_attachment_input.value())
-        config.set_setting(self.conn, "access_db_path", self.access_path.text().strip())
-        config.set_setting(self.conn, "access_mode", self.access_mode.currentText())
-        config.set_setting(self.conn, "access_table", self.access_table.text().strip())
-        config.set_setting(self.conn, "access_query", self.access_query.toPlainText().strip())
-        config.set_setting(self.conn, "access_fields", self.access_fields.toPlainText().strip())
         QtWidgets.QMessageBox.information(self, "Saved", "Settings updated.")
 
     def _load_settings(self) -> None:
@@ -1707,37 +1737,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.amber_months_input.setValue(int(config.get_setting(self.conn, "amber_months", 2) or 2))
         self.overdue_days_input.setValue(int(config.get_setting(self.conn, "overdue_grace_days", 0) or 0))
         self.max_attachment_input.setValue(int(config.get_setting(self.conn, "max_attachment_mb", 0) or 0))
-        self.access_path.setText(config.get_setting(self.conn, "access_db_path", "N:\\"))
-        self.access_mode.setCurrentText(config.get_setting(self.conn, "access_mode", "table"))
-        self.access_table.setText(config.get_setting(self.conn, "access_table", ""))
-        self.access_query.setPlainText(config.get_setting(self.conn, "access_query", ""))
-        self.access_fields.setPlainText(config.get_setting(self.conn, "access_fields", "{}"))
-
-    def _test_access(self) -> None:
-        """Test the Access connection and show a preview of results."""
-
-        access_path = self.access_path.text().strip()
-        mapping = parse_mapping_json(self.access_fields.toPlainText().strip())
-        query = self.access_query.toPlainText().strip()
-        table = self.access_table.text().strip()
-        mode = self.access_mode.currentText()
-        staff_query = build_staff_query(mode, table, mapping, query)
-        if not staff_query:
-            QtWidgets.QMessageBox.warning(self, "Invalid", "Provide a table and field mapping or query.")
-            return
-        fallback_table = table if mode == "table" else None
-        try:
-            rows = access.preview_query_from_path(
-                access_path,
-                staff_query,
-                limit=20,
-                table=fallback_table,
-            )
-        except access.AccessDriverError as exc:
-            QtWidgets.QMessageBox.warning(self, "Driver Missing", str(exc))
-            return
-        preview = "\n".join([str(row) for row in rows])
-        QtWidgets.QMessageBox.information(self, "Preview", preview or "No rows returned.")
 
     def _open_data_folder(self) -> None:
         """Open the application's data directory."""
