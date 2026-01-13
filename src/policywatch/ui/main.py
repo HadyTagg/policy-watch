@@ -34,6 +34,16 @@ from policywatch.services import (
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
 
+class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
+    """Force bold text for table items."""
+
+    def initStyleOption(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:
+        """Initialize style options with a bold font."""
+
+        super().initStyleOption(option, index)
+        option.font.setBold(True)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window coordinating dashboard and workflow tabs."""
 
@@ -1091,6 +1101,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.staff_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.staff_table.setItemDelegate(BoldTableItemDelegate(self.staff_table))
 
         audit_font = self.staff_table.font()
         audit_font.setPointSize(9)
