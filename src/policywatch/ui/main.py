@@ -1740,7 +1740,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_search.setPlaceholderText("Search audit log...")
         self.audit_search.textChanged.connect(self._load_audit_log)
         filters.addWidget(self.audit_search)
-        self.audit_hide_email_policy = QtWidgets.QCheckBox("Hide email_policy")
+        self.audit_hide_email_policy = QtWidgets.QCheckBox("Hide Email Logs")
         self.audit_hide_email_policy.toggled.connect(self._load_audit_log)
         filters.addWidget(self.audit_hide_email_policy)
 
