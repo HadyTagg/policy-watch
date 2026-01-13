@@ -15,11 +15,6 @@ DEFAULT_SETTINGS = {
     "amber_months": 2,
     "overdue_grace_days": 0,
     "max_attachment_mb": 0,
-    "access_db_path": "N:\\",
-    "access_query": "",
-    "access_table": "",
-    "access_mode": "table",
-    "access_fields": json.dumps({}),
 }
 
 

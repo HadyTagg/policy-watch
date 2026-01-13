@@ -587,39 +587,3 @@ def export_backup(conn, destination: Path, include_files: bool) -> None:
                         arcname = file_path.relative_to(policies_root)
                         archive.write(file_path, arcname=Path("policies") / arcname)
 
-
-def parse_mapping_json(mapping_text: str) -> dict:
-    """Parse mapping JSON safely, returning an empty dict on failure."""
-
-    if not mapping_text:
-        return {}
-    import json
-
-    try:
-        return json.loads(mapping_text)
-    except json.JSONDecodeError:
-        return {}
-
-
-def build_staff_query(mode: str, table: str, mapping: dict, custom_query: str) -> str:
-    """Build a staff query from a mapping or return the custom query."""
-
-    if mode == "query" and custom_query.strip():
-        return custom_query
-
-    fields = []
-    for key in [
-        "staff_id",
-        "first_name",
-        "last_name",
-        "display_name",
-        "email",
-        "role_team",
-        "active_flag",
-    ]:
-        field_name = mapping.get(key)
-        if field_name:
-            fields.append(f"[{field_name}]")
-    if not table or not fields:
-        return ""
-    return f"SELECT {', '.join(fields)} FROM [{table}]"
