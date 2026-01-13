@@ -25,6 +25,7 @@ from policywatch.services import (
     mark_policy_version_missing,
     resolve_version_file_path,
     restore_policy_version_file,
+    restore_missing_policy_file,
     scan_policy_file_integrity,
     list_categories,
     list_policies,
@@ -215,6 +216,35 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"- {item['title']} (v{item['version']}): {item['path']}" for item in altered
             )
         QtWidgets.QMessageBox.warning(self, "Policy File Issues", "\n".join(message_lines))
+        for item in missing:
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("Policy File Missing")
+            dialog.setText(
+                "A policy file could not be found.\n\n"
+                f"{item['title']} (v{item['version']})\n"
+                f"Stored path: {item['path']}\n\n"
+                "Locate the original file to restore it and verify the checksum."
+            )
+            locate_button = dialog.addButton("Locate Missing File", QtWidgets.QMessageBox.AcceptRole)
+            skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
+            dialog.exec()
+            clicked = dialog.clickedButton()
+            if clicked == locate_button:
+                file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                    self,
+                    "Select Missing Policy File",
+                )
+                if file_path:
+                    try:
+                        restore_missing_policy_file(
+                            self.conn,
+                            int(item["version_id"]),
+                            Path(file_path),
+                        )
+                    except ValueError as exc:
+                        QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
+            elif clicked == skip_button:
+                continue
         for item in altered:
             dialog = QtWidgets.QMessageBox(self)
             dialog.setWindowTitle("Policy Integrity Mismatch")

@@ -586,9 +586,11 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
             _log_event(conn, "policy_file_missing", "policy_version", row["version_id"], details)
             missing.append(
                 {
+                    "version_id": str(row["version_id"]),
                     "title": row["policy_title"],
                     "version": str(row["version_number"]),
                     "path": row["file_path"],
+                    "expected_hash": row["sha256_hash"],
                 }
             )
             continue
@@ -644,6 +646,36 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
         "policy_version",
         version_id,
         f"version={row['version_number']} path={target_path} new_hash={new_hash}",
+    )
+    conn.commit()
+
+
+def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> None:
+    """Restore a missing policy file if it matches the stored checksum."""
+
+    row = conn.execute(
+        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    source_hash = _hash_file(source_path)
+    if source_hash != row["sha256_hash"]:
+        raise ValueError("Selected file does not match the stored checksum.")
+    target_path = Path(row["file_path"])
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    file_size = target_path.stat().st_size
+    conn.execute(
+        "UPDATE policy_versions SET file_size_bytes = ? WHERE id = ?",
+        (file_size, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_file_missing_restored",
+        "policy_version",
+        version_id,
+        f"version={row['version_number']} path={target_path}",
     )
     conn.commit()
 
