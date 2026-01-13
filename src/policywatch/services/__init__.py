@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import datetime
 import hashlib
 import os
@@ -27,9 +28,27 @@ def _resolve_london_tz() -> datetime.tzinfo:
 LONDON_TZ = _resolve_london_tz()
 
 
-def _resolve_actor() -> str | None:
-    """Resolve the current OS login name if available."""
+_AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
 
+
+def set_audit_actor(actor: str | None) -> None:
+    """Set the current audit actor for service-layer logging."""
+
+    _AUDIT_ACTOR.set(actor)
+
+
+def get_audit_actor() -> str | None:
+    """Return the current audit actor for service-layer logging."""
+
+    return _AUDIT_ACTOR.get()
+
+
+def _resolve_actor() -> str | None:
+    """Resolve the current app or OS login name if available."""
+
+    actor = get_audit_actor()
+    if actor:
+        return actor
     try:
         return os.getlogin()
     except OSError:
