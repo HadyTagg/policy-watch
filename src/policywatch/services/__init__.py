@@ -75,6 +75,7 @@ def _log_event(
             "details": details,
         },
     )
+    conn.commit()
 
 
 @dataclass(frozen=True)
