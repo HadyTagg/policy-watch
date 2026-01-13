@@ -299,12 +299,17 @@ class MainWindow(QtWidgets.QMainWindow):
                         f"Accepted as replacement for version {item['version']} "
                         f"after integrity mismatch on {timestamp}."
                     )
+                    original_status_row = self.conn.execute(
+                        "SELECT status FROM policy_versions WHERE id = ?",
+                        (int(item["version_id"]),),
+                    ).fetchone()
+                    original_status = (original_status_row["status"] if original_status_row else None) or "Draft"
                     new_version_id = add_policy_version(
                         self.conn,
                         int(item["policy_id"]),
                         replacement_path,
                         None,
-                        {"notes": replacement_notes},
+                        {"notes": replacement_notes, "status": original_status},
                     )
                     new_version_row = self.conn.execute(
                         "SELECT version_number FROM policy_versions WHERE id = ?",
