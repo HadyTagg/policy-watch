@@ -8,7 +8,7 @@ from typing import Callable
 
 from PyQt5 import QtCore, QtWidgets
 
-from policywatch.services import add_policy_version, create_category, create_policy
+from policywatch.services import add_policy_version, create_category, create_policy, delete_category
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -89,8 +89,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         if policy_count and policy_count["count"] > 0:
             QtWidgets.QMessageBox.warning(self, "In Use", "Category is assigned to policies.")
             return
-        with self.conn:
-            self.conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        delete_category(self.conn, category_id)
         self._load_categories()
         self.on_updated()
 

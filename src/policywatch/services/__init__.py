@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import datetime
 import hashlib
 import os
@@ -27,9 +28,27 @@ def _resolve_london_tz() -> datetime.tzinfo:
 LONDON_TZ = _resolve_london_tz()
 
 
-def _resolve_actor() -> str | None:
-    """Resolve the current OS login name if available."""
+_AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
 
+
+def set_audit_actor(actor: str | None) -> None:
+    """Set the current audit actor for service-layer logging."""
+
+    _AUDIT_ACTOR.set(actor)
+
+
+def get_audit_actor() -> str | None:
+    """Return the current audit actor for service-layer logging."""
+
+    return _AUDIT_ACTOR.get()
+
+
+def _resolve_actor() -> str | None:
+    """Resolve the current app or OS login name if available."""
+
+    actor = get_audit_actor()
+    if actor:
+        return actor
     try:
         return os.getlogin()
     except OSError:
@@ -56,6 +75,7 @@ def _log_event(
             "details": details,
         },
     )
+    conn.commit()
 
 
 @dataclass(frozen=True)
@@ -769,10 +789,24 @@ def mark_policy_version_missing(
                 "UPDATE policies SET current_version_id = ? WHERE id = ?",
                 (replacement_version_id, row["policy_id"]),
             )
+            _log_event(
+                conn,
+                "current_version_replaced",
+                "policy",
+                row["policy_id"],
+                f"previous_version_id={version_id} new_version_id={replacement_version_id}",
+            )
         else:
             conn.execute(
                 "UPDATE policies SET current_version_id = NULL WHERE id = ?",
                 (row["policy_id"],),
+            )
+            _log_event(
+                conn,
+                "current_version_cleared",
+                "policy",
+                row["policy_id"],
+                f"previous_version_id={version_id}",
             )
     _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
     conn.commit()
