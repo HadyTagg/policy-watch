@@ -6,7 +6,9 @@ import csv
 import os
 import re
 import sqlite3
+import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime
 from email.utils import parseaddr
@@ -34,10 +36,26 @@ from policywatch.services import (
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
 
+class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
+    """Force bold text for table items."""
+
+    def initStyleOption(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:
+        """Initialize style options with a bold font."""
+
+        super().initStyleOption(option, index)
+        option.font.setBold(True)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window coordinating dashboard and workflow tabs."""
 
-    def __init__(self, username: str, conn: sqlite3.Connection, parent=None):
+    def __init__(
+        self,
+        username: str,
+        conn: sqlite3.Connection,
+        parent=None,
+        icon: QtGui.QIcon | None = None,
+    ):
         """Initialize the main window and build all primary UI sections."""
 
         super().__init__(parent)
@@ -50,6 +68,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._staff_records: list[dict[str, str]] = []
 
         self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
+        if icon and not icon.isNull():
+            self.setWindowIcon(icon)
 
         toolbar = self.addToolBar("Main")
         toolbar.setMovable(False)
@@ -1091,6 +1111,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.staff_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.staff_table.setItemDelegate(BoldTableItemDelegate(self.staff_table))
 
         audit_font = self.staff_table.font()
         audit_font.setPointSize(9)
@@ -1303,6 +1324,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         base_dir = config.get_paths().data_dir
         access_path = base_dir / "staff_details_extractor.accdb"
+        if not access_path.exists():
+            packaged_path = None
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                packaged_path = Path(sys._MEIPASS) / "staff_details_extractor.accdb"
+            else:
+                packaged_path = Path(sys.executable).resolve().parent / "staff_details_extractor.accdb"
+            if packaged_path and packaged_path.exists():
+                try:
+                    shutil.copy2(packaged_path, access_path)
+                except OSError:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Missing Extractor",
+                        f"Unable to copy staff extractor to {access_path}.",
+                    )
+                    return
         csv_path = base_dir / "staff_details.csv"
         if not access_path.exists():
             QtWidgets.QMessageBox.warning(
@@ -1379,6 +1416,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"records={len(self._staff_records)}",
         )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1481,6 +1519,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 "details": details,
             },
         )
+
+    def _refresh_audit_log_if_visible(self) -> None:
+        """Refresh the audit log table when it is visible."""
+
+        if not hasattr(self, "audit_table"):
+            return
+        if not self.audit_table.isVisible():
+            return
+        self._load_audit_log()
 
     def _recalculate_attachments(self) -> None:
         """Update total size and split plan based on selected policies."""
@@ -1703,6 +1750,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         ),
                     )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
         if failures:
             QtWidgets.QMessageBox.warning(

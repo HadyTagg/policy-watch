@@ -33,6 +33,8 @@ analysis = Analysis(
         *pyqt5_translations,
         *pyqt5_resources,
         *policywatch_datas,
+        ("src/policywatch/integrations/staff_details_extractor.accdb", "."),
+        ("policywatch.ico", "."),
     ],
     hiddenimports=[
         "pyodbc",
@@ -60,10 +62,11 @@ exe = EXE(
     analysis.zipfiles,
     analysis.datas,
     [],
-    name="PolicyWatch",
+    name="Policy Watch",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     console=False,
+    icon="policywatch.ico",
 )
