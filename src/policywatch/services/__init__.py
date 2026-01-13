@@ -557,10 +557,17 @@ def _hash_file(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def file_sha256(path: Path) -> str:
+    """Return a SHA-256 hash for a file path."""
+
+    return _hash_file(path)
+
+
 def format_replacement_note(
     replaced_version_number: int,
     replacement_version_number: int | None,
     timestamp: str,
+    reason: str,
 ) -> str:
     """Format a consistent replacement note for policy versions."""
 
@@ -569,7 +576,8 @@ def format_replacement_note(
         replacement_label = f"v{replacement_version_number}"
     return (
         "Replacement accepted: replaced v"
-        f"{replaced_version_number} with {replacement_label} on {timestamp}."
+        f"{replaced_version_number} with {replacement_label} on {timestamp} "
+        f"(reason: {reason})."
     )
 
 
@@ -595,7 +603,7 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
     missing: list[dict[str, str]] = []
     altered: list[dict[str, str]] = []
     for row in rows:
-        if row["status"] == "Withdrawn" and row["replacement_accepted"]:
+        if row["status"] == "Missing" and row["replacement_accepted"]:
             continue
         resolved = resolve_version_file_path(conn, row["version_id"], row["file_path"])
         if not resolved:
@@ -747,12 +755,13 @@ def mark_policy_version_missing(
         row["version_number"],
         replacement_version_number,
         timestamp,
+        "policy integrity mismatch",
     )
     existing_notes = (row["notes"] or "").rstrip()
     updated_notes = f"{existing_notes}\n{note_line}".strip()
     conn.execute(
         "UPDATE policy_versions SET status = ?, notes = ?, replacement_accepted = 1 WHERE id = ?",
-        ("Withdrawn", updated_notes, version_id),
+        ("Missing", updated_notes, version_id),
     )
     if row["current_version_id"] == version_id:
         if replacement_version_id is not None:

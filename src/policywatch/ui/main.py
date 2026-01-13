@@ -24,6 +24,7 @@ from policywatch.services import (
     get_version_file,
     mark_policy_version_missing,
     format_replacement_note,
+    file_sha256,
     resolve_version_file_path,
     restore_policy_version_file,
     restore_missing_policy_file,
@@ -115,7 +116,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.traffic_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.status_filter = QtWidgets.QComboBox()
-        self.status_filter.addItems(["All Statuses", "Draft", "Active", "Withdrawn", "Archived"])
+        self.status_filter.addItems(["All Statuses", "Draft", "Active", "Withdrawn", "Missing", "Archived"])
         self.status_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.ratified_filter = QtWidgets.QComboBox()
@@ -349,6 +350,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         int(item["version"]),
                         replacement_number,
                         timestamp,
+                        "policy integrity mismatch",
                     )
                     update_policy_version_notes(self.conn, new_version_id, replacement_note)
                     details = (
@@ -364,6 +366,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         replacement_note=replacement_note,
                         replacement_version_id=new_version_id,
                     )
+                    self._refresh_policies(clear_selection=False)
                 except ValueError as exc:
                     QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
             elif clicked == skip_button:
@@ -580,6 +583,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setHorizontalHeaderLabels(headers)
         self.version_table.setRowCount(len(versions))
         for row_index, version in enumerate(versions):
+            integrity_issue = False
+            issue_reason = ""
+            if version.get("file_path"):
+                resolved_path = resolve_version_file_path(
+                    self.conn,
+                    version["id"],
+                    version["file_path"],
+                )
+                if not resolved_path:
+                    integrity_issue = True
+                    issue_reason = "Missing file"
+                else:
+                    current_hash = file_sha256(resolved_path)
+                    if current_hash != version["sha256_hash"]:
+                        integrity_issue = True
+                        issue_reason = "Hash mismatch"
             is_current = policy["current_version_id"] == version["id"]
             created_item = QtWidgets.QTableWidgetItem(
                 self._format_datetime_display(version["created_at"])
@@ -611,6 +630,10 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
+                if integrity_issue:
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
+                    item.setForeground(QtGui.QColor("#9ca3af"))
+                    item.setToolTip(f"Integrity issue: {issue_reason}")
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
