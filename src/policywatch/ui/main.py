@@ -1375,6 +1375,42 @@ class MainWindow(QtWidgets.QMainWindow):
                 records.append({"name": name, "email": email, "team": team})
         return records
 
+    def _run_staff_extractor(self, access_path: Path) -> None:
+        """Run the Access staff extractor frontend."""
+
+        if os.name != "nt":
+            raise RuntimeError("Staff extractor requires Microsoft Access on Windows.")
+        subprocess.run(["cmd", "/c", "start", "/wait", "", str(access_path)], check=False)
+
+    def _wait_for_staff_csv(self, csv_path: Path, timeout_seconds: int = 60) -> bool:
+        """Wait for the staff CSV export to appear."""
+
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            QtCore.QCoreApplication.processEvents()
+            if csv_path.exists() and csv_path.stat().st_size > 0:
+                return True
+            time.sleep(0.2)
+        return False
+
+    def _read_staff_csv(self, csv_path: Path) -> list[dict[str, str]]:
+        """Read staff details from the CSV exported by Access."""
+
+        records: list[dict[str, str]] = []
+        with csv_path.open(newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                first_name = (row.get("FirstName") or "").strip()
+                last_name = (row.get("LastName") or "").strip()
+                email = (row.get("EmailAddress") or "").strip()
+                team = (row.get("DepartmentID") or "").strip()
+                name_parts = [part for part in [first_name, last_name] if part]
+                name = " ".join(name_parts).strip()
+                if not (name or email or team):
+                    continue
+                records.append({"name": name, "email": email, "team": team})
+        return records
+
     def _filter_staff(self, text: str) -> None:
         """Filter staff recipients by name or email."""
 
