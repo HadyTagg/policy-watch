@@ -628,6 +628,8 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
     if not row:
         raise ValueError("Version not found")
     target_path = Path(row["file_path"])
+    if source_path.resolve() == target_path.resolve():
+        raise ValueError("Selected file matches the stored policy file.")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
     new_hash = _hash_file(target_path)
@@ -646,9 +648,46 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
     conn.commit()
 
 
-def mark_policy_version_missing(conn, version_id: int, details: str) -> None:
+def mark_policy_version_missing(
+    conn,
+    version_id: int,
+    details: str,
+    replacement_version_number: int | None = None,
+) -> None:
     """Record that a policy version file is missing or replaced."""
 
+    row = conn.execute(
+        """
+        SELECT p.current_version_id,
+               v.policy_id,
+               v.version_number,
+               v.notes
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        WHERE v.id = ?
+        """,
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+    replacement_text = "Replacement version unknown"
+    if replacement_version_number is not None:
+        replacement_text = f"Replacement version v{replacement_version_number}"
+    note_line = (
+        f"{replacement_text} accepted on {timestamp} after integrity mismatch."
+    )
+    existing_notes = (row["notes"] or "").rstrip()
+    updated_notes = f"{existing_notes}\n{note_line}".strip()
+    conn.execute(
+        "UPDATE policy_versions SET status = ?, notes = ? WHERE id = ?",
+        ("Withdrawn", updated_notes, version_id),
+    )
+    if row["current_version_id"] == version_id:
+        conn.execute(
+            "UPDATE policies SET current_version_id = NULL WHERE id = ?",
+            (row["policy_id"],),
+        )
     _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
     conn.commit()
 

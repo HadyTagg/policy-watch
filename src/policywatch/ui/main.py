@@ -237,7 +237,14 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Select Original Policy File",
                 )
                 if file_path:
-                    restore_policy_version_file(self.conn, int(item["version_id"]), Path(file_path))
+                    try:
+                        restore_policy_version_file(
+                            self.conn,
+                            int(item["version_id"]),
+                            Path(file_path),
+                        )
+                    except ValueError as exc:
+                        QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
             elif clicked == replace_button:
                 response = QtWidgets.QMessageBox.question(
                     self,
@@ -256,23 +263,35 @@ class MainWindow(QtWidgets.QMainWindow):
                     if not file_path:
                         continue
                     replacement_path = Path(file_path)
-                details = (
-                    f"title={item['title']} "
-                    f"version={item['version']} "
-                    f"path={item['path']}"
-                )
-                mark_policy_version_missing(self.conn, int(item["version_id"]), details)
-                notes = (
-                    f"Accepted as replacement for version {item['version']} "
-                    "after integrity mismatch."
-                )
                 try:
-                    add_policy_version(
+                    replacement_notes = (
+                        f"Accepted as replacement for version {item['version']} "
+                        "after integrity mismatch."
+                    )
+                    new_version_id = add_policy_version(
                         self.conn,
                         int(item["policy_id"]),
                         replacement_path,
                         None,
-                        {"notes": notes},
+                        {"notes": replacement_notes},
+                    )
+                    new_version_row = self.conn.execute(
+                        "SELECT version_number FROM policy_versions WHERE id = ?",
+                        (new_version_id,),
+                    ).fetchone()
+                    replacement_number = (
+                        int(new_version_row["version_number"]) if new_version_row else None
+                    )
+                    details = (
+                        f"title={item['title']} "
+                        f"version={item['version']} "
+                        f"path={item['path']}"
+                    )
+                    mark_policy_version_missing(
+                        self.conn,
+                        int(item["version_id"]),
+                        details,
+                        replacement_version_number=replacement_number,
                     )
                 except ValueError as exc:
                     QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
