@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -543,6 +544,240 @@ def resolve_version_file_path(conn, version_id: int, stored_path: str) -> Path |
     return None
 
 
+def _hash_file(path: Path) -> str:
+    """Return the SHA-256 hash for a file on disk."""
+
+    sha256 = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(8192)
+            if not chunk:
+                break
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    """Return a SHA-256 hash for a file path."""
+
+    return _hash_file(path)
+
+
+def format_replacement_note(
+    replaced_version_number: int,
+    replacement_version_number: int | None,
+    timestamp: str,
+    reason: str,
+) -> str:
+    """Format a consistent replacement note for policy versions."""
+
+    replacement_label = "unknown"
+    if replacement_version_number is not None:
+        replacement_label = f"v{replacement_version_number}"
+    return (
+        "Replacement accepted: replaced v"
+        f"{replaced_version_number} with {replacement_label} on {timestamp} "
+        f"(reason: {reason})."
+    )
+
+
+def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    """Repair stored paths and detect missing or altered policy files."""
+
+    rows = conn.execute(
+        """
+        SELECT v.id AS version_id,
+               v.file_path,
+               v.sha256_hash,
+               v.status,
+               v.notes,
+               v.replacement_accepted,
+               v.version_number,
+               p.id AS policy_id,
+               p.title AS policy_title
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        ORDER BY p.title, v.version_number
+        """
+    ).fetchall()
+    missing: list[dict[str, str]] = []
+    altered: list[dict[str, str]] = []
+    for row in rows:
+        if row["status"] == "Missing" and row["replacement_accepted"]:
+            continue
+        resolved = resolve_version_file_path(conn, row["version_id"], row["file_path"])
+        if not resolved:
+            details = (
+                f"title={row['policy_title']} "
+                f"version={row['version_number']} "
+                f"path={row['file_path']}"
+            )
+            _log_event(conn, "policy_file_missing", "policy_version", row["version_id"], details)
+            missing.append(
+                {
+                    "version_id": str(row["version_id"]),
+                    "title": row["policy_title"],
+                    "version": str(row["version_number"]),
+                    "path": row["file_path"],
+                    "expected_hash": row["sha256_hash"],
+                }
+            )
+            continue
+        current_hash = _hash_file(resolved)
+        if current_hash != row["sha256_hash"]:
+            details = (
+                f"title={row['policy_title']} "
+                f"version={row['version_number']} "
+                f"path={resolved} "
+                f"expected_hash={row['sha256_hash']} "
+                f"actual_hash={current_hash}"
+            )
+            _log_event(conn, "policy_file_integrity_mismatch", "policy_version", row["version_id"], details)
+            altered.append(
+                {
+                    "version_id": str(row["version_id"]),
+                    "policy_id": str(row["policy_id"]),
+                    "title": row["policy_title"],
+                    "version": str(row["version_number"]),
+                    "path": str(resolved),
+                    "expected_hash": row["sha256_hash"],
+                    "actual_hash": current_hash,
+                }
+            )
+    if missing or altered:
+        conn.commit()
+    return missing, altered
+
+
+def restore_policy_version_file(conn, version_id: int, source_path: Path) -> None:
+    """Replace a policy version file with a selected source file and update metadata."""
+
+    row = conn.execute(
+        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    target_path = Path(row["file_path"])
+    if source_path.resolve() == target_path.resolve():
+        raise ValueError("Selected file matches the stored policy file.")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    new_hash = _hash_file(target_path)
+    file_size = target_path.stat().st_size
+    conn.execute(
+        "UPDATE policy_versions SET sha256_hash = ?, file_size_bytes = ? WHERE id = ?",
+        (new_hash, file_size, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_file_integrity_restored",
+        "policy_version",
+        version_id,
+        f"version={row['version_number']} path={target_path} new_hash={new_hash}",
+    )
+    conn.commit()
+
+
+def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> None:
+    """Restore a missing policy file if it matches the stored checksum."""
+
+    row = conn.execute(
+        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    source_hash = _hash_file(source_path)
+    if source_hash != row["sha256_hash"]:
+        raise ValueError("Selected file does not match the stored checksum.")
+    target_path = Path(row["file_path"])
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    file_size = target_path.stat().st_size
+    conn.execute(
+        "UPDATE policy_versions SET file_size_bytes = ? WHERE id = ?",
+        (file_size, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_file_missing_restored",
+        "policy_version",
+        version_id,
+        f"version={row['version_number']} path={target_path}",
+    )
+    conn.commit()
+
+
+def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
+    """Update notes for a policy version and log the change."""
+
+    conn.execute(
+        "UPDATE policy_versions SET notes = ? WHERE id = ?",
+        (notes, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_version_notes_updated",
+        "policy_version",
+        version_id,
+        "replacement_notes_applied",
+    )
+    conn.commit()
+
+
+def mark_policy_version_missing(
+    conn,
+    version_id: int,
+    details: str,
+    replacement_version_number: int | None = None,
+    replacement_note: str | None = None,
+    replacement_version_id: int | None = None,
+) -> None:
+    """Record that a policy version file is missing or replaced."""
+
+    row = conn.execute(
+        """
+        SELECT p.current_version_id,
+               v.policy_id,
+               v.version_number,
+               v.notes
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        WHERE v.id = ?
+        """,
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
+    note_line = replacement_note or format_replacement_note(
+        row["version_number"],
+        replacement_version_number,
+        timestamp,
+        "policy integrity mismatch",
+    )
+    existing_notes = (row["notes"] or "").rstrip()
+    updated_notes = f"{existing_notes}\n{note_line}".strip()
+    conn.execute(
+        "UPDATE policy_versions SET status = ?, notes = ?, replacement_accepted = 1 WHERE id = ?",
+        ("Missing", updated_notes, version_id),
+    )
+    if row["current_version_id"] == version_id:
+        if replacement_version_id is not None:
+            conn.execute(
+                "UPDATE policies SET current_version_id = ? WHERE id = ?",
+                (replacement_version_id, row["policy_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE policies SET current_version_id = NULL WHERE id = ?",
+                (row["policy_id"],),
+            )
+    _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
+    conn.commit()
+
+
 def list_categories(conn) -> list[str]:
     """Return available category names."""
 
@@ -586,4 +821,3 @@ def export_backup(conn, destination: Path, include_files: bool) -> None:
                         file_path = Path(root) / file
                         arcname = file_path.relative_to(policies_root)
                         archive.write(file_path, arcname=Path("policies") / arcname)
-
