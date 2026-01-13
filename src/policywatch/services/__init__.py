@@ -724,6 +724,7 @@ def mark_policy_version_missing(
     details: str,
     replacement_version_number: int | None = None,
     replacement_note: str | None = None,
+    replacement_version_id: int | None = None,
 ) -> None:
     """Record that a policy version file is missing or replaced."""
 
@@ -754,10 +755,16 @@ def mark_policy_version_missing(
         ("Withdrawn", updated_notes, version_id),
     )
     if row["current_version_id"] == version_id:
-        conn.execute(
-            "UPDATE policies SET current_version_id = NULL WHERE id = ?",
-            (row["policy_id"],),
-        )
+        if replacement_version_id is not None:
+            conn.execute(
+                "UPDATE policies SET current_version_id = ? WHERE id = ?",
+                (replacement_version_id, row["policy_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE policies SET current_version_id = NULL WHERE id = ?",
+                (row["policy_id"],),
+            )
     _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
     conn.commit()
 

@@ -298,7 +298,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 try:
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
                     original_status_row = self.conn.execute(
-                        "SELECT status FROM policy_versions WHERE id = ?",
+                        """
+                        SELECT status, ratified, ratified_at, ratified_by_user_id
+                        FROM policy_versions
+                        WHERE id = ?
+                        """,
                         (int(item["version_id"]),),
                     ).fetchone()
                     original_status = (original_status_row["status"] if original_status_row else None) or "Draft"
@@ -309,6 +313,31 @@ class MainWindow(QtWidgets.QMainWindow):
                         None,
                         {"notes": "", "status": original_status},
                     )
+                    if original_status_row and original_status_row["ratified"]:
+                        self.conn.execute(
+                            """
+                            UPDATE policy_versions
+                            SET ratified = 1, ratified_at = ?, ratified_by_user_id = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                original_status_row["ratified_at"],
+                                original_status_row["ratified_by_user_id"],
+                                new_version_id,
+                            ),
+                        )
+                        self.conn.commit()
+                        audit.append_event_log(
+                            self.conn,
+                            {
+                                "occurred_at": datetime.utcnow().isoformat(),
+                                "actor": None,
+                                "action": "policy_version_ratification_copied",
+                                "entity_type": "policy_version",
+                                "entity_id": new_version_id,
+                                "details": f"copied_from_version={item['version_id']}",
+                            },
+                        )
                     new_version_row = self.conn.execute(
                         "SELECT version_number FROM policy_versions WHERE id = ?",
                         (new_version_id,),
@@ -333,6 +362,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         details,
                         replacement_version_number=replacement_number,
                         replacement_note=replacement_note,
+                        replacement_version_id=new_version_id,
                     )
                 except ValueError as exc:
                     QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
