@@ -1756,7 +1756,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         audit_font = self.audit_table.font()
         audit_font.setPointSize(9)
-        audit_font.setBold(True)
+        audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
