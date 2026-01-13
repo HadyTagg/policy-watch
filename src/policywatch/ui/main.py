@@ -34,6 +34,16 @@ from policywatch.services import (
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
 
+class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
+    """Force bold text for table items."""
+
+    def initStyleOption(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:
+        """Initialize style options with a bold font."""
+
+        super().initStyleOption(option, index)
+        option.font.setBold(True)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     """Main application window coordinating dashboard and workflow tabs."""
 
@@ -1091,6 +1101,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.staff_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.staff_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.staff_table.setItemDelegate(BoldTableItemDelegate(self.staff_table))
 
         audit_font = self.staff_table.font()
         audit_font.setPointSize(9)
@@ -1098,7 +1109,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: white; font-weight: bold; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -1346,6 +1357,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 pass
 
         self.staff_table.setRowCount(len(self._staff_records))
+        item_font = self.staff_table.font()
+        item_font.setBold(True)
         for row_index, row in enumerate(self._staff_records):
             checkbox = QtWidgets.QTableWidgetItem()
             checkbox.setFlags(
@@ -1358,10 +1371,17 @@ class MainWindow(QtWidgets.QMainWindow):
             name = row.get("name", "")
             email = row.get("email", "")
             team = row.get("team", "")
+            checkbox.setFont(item_font)
+            name_item = QtWidgets.QTableWidgetItem(name or "")
+            name_item.setFont(item_font)
+            email_item = QtWidgets.QTableWidgetItem(email or "")
+            email_item.setFont(item_font)
+            team_item = QtWidgets.QTableWidgetItem(team or "")
+            team_item.setFont(item_font)
             self.staff_table.setItem(row_index, 0, checkbox)
-            self.staff_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(name or ""))
-            self.staff_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(email or ""))
-            self.staff_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(team or ""))
+            self.staff_table.setItem(row_index, 1, name_item)
+            self.staff_table.setItem(row_index, 2, email_item)
+            self.staff_table.setItem(row_index, 3, team_item)
         self._filter_staff(self.staff_search.text())
         self._append_audit_event(
             "load_staff",
@@ -1370,6 +1390,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"records={len(self._staff_records)}",
         )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1472,6 +1493,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 "details": details,
             },
         )
+
+    def _refresh_audit_log_if_visible(self) -> None:
+        """Refresh the audit log table when it is visible."""
+
+        if not hasattr(self, "audit_table"):
+            return
+        if not self.audit_table.isVisible():
+            return
+        self._load_audit_log()
 
     def _recalculate_attachments(self) -> None:
         """Update total size and split plan based on selected policies."""
@@ -1694,6 +1724,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         ),
                     )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
         if failures:
             QtWidgets.QMessageBox.warning(
