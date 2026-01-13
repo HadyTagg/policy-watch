@@ -1390,6 +1390,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f"records={len(self._staff_records)}",
         )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
     def _run_staff_extractor(self, access_path: Path) -> None:
         """Run the Access staff extractor frontend."""
@@ -1492,6 +1493,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 "details": details,
             },
         )
+
+    def _refresh_audit_log_if_visible(self) -> None:
+        """Refresh the audit log table when it is visible."""
+
+        if not hasattr(self, "audit_table"):
+            return
+        if not self.audit_table.isVisible():
+            return
+        self._load_audit_log()
 
     def _recalculate_attachments(self) -> None:
         """Update total size and split plan based on selected policies."""
@@ -1714,6 +1724,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         ),
                     )
         self.conn.commit()
+        self._refresh_audit_log_if_visible()
 
         if failures:
             QtWidgets.QMessageBox.warning(
