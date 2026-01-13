@@ -170,6 +170,7 @@ def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
         ("review_frequency_months", "INTEGER"),
         ("expiry_date", "TEXT"),
         ("notes", "TEXT"),
+        ("replacement_accepted", "INTEGER"),
     ]
     for name, column_type in additions:
         if name not in columns:

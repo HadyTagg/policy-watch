@@ -567,6 +567,7 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
                v.sha256_hash,
                v.status,
                v.notes,
+               v.replacement_accepted,
                v.version_number,
                p.id AS policy_id,
                p.title AS policy_title
@@ -578,7 +579,7 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
     missing: list[dict[str, str]] = []
     altered: list[dict[str, str]] = []
     for row in rows:
-        if row["status"] == "Withdrawn" and row["notes"] and "Replacement version" in row["notes"]:
+        if row["status"] == "Withdrawn" and row["replacement_accepted"]:
             continue
         resolved = resolve_version_file_path(conn, row["version_id"], row["file_path"])
         if not resolved:
@@ -716,7 +717,7 @@ def mark_policy_version_missing(
     existing_notes = (row["notes"] or "").rstrip()
     updated_notes = f"{existing_notes}\n{note_line}".strip()
     conn.execute(
-        "UPDATE policy_versions SET status = ?, notes = ? WHERE id = ?",
+        "UPDATE policy_versions SET status = ?, notes = ?, replacement_accepted = 1 WHERE id = ?",
         ("Withdrawn", updated_notes, version_id),
     )
     if row["current_version_id"] == version_id:
