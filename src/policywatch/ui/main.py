@@ -1678,6 +1678,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Audit Log")
+        dialog.setWindowFlags(
+            dialog.windowFlags()
+            | QtCore.Qt.WindowMaximizeButtonHint
+            | QtCore.Qt.WindowMinimizeButtonHint
+        )
         dialog_layout = QtWidgets.QVBoxLayout(dialog)
         dialog_layout.addWidget(self._build_audit_log())
         dialog.resize(900, 600)
@@ -1728,11 +1733,14 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export CSV")
         export_button.clicked.connect(self._export_audit_csv)
+        export_visible_button = QtWidgets.QPushButton("Export shown rows")
+        export_visible_button.clicked.connect(self._export_audit_csv_shown)
         verify_button = QtWidgets.QPushButton("Verify Integrity")
         verify_button.clicked.connect(self._verify_audit)
         refresh_button = QtWidgets.QPushButton("Refresh")
         refresh_button.clicked.connect(self._load_audit_log)
         button_row.addWidget(export_button)
+        button_row.addWidget(export_visible_button)
         button_row.addWidget(verify_button)
         button_row.addWidget(refresh_button)
         button_row.addStretch(1)
@@ -1744,6 +1752,29 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _load_audit_log(self) -> None:
         """Load audit events into the audit log table."""
+
+        rows = self._fetch_audit_rows()
+        self.audit_table.setRowCount(len(rows))
+        for row_index, row in enumerate(rows):
+            entity = row["entity_type"]
+            if row["policy_title"]:
+                entity = row["policy_title"]
+                if row["version_number"] is not None:
+                    entity = f"{entity} (v{row['version_number']})"
+            elif row["entity_id"] is not None:
+                entity = f"{entity} #{row['entity_id']}"
+            self.audit_table.setItem(
+                row_index,
+                0,
+                QtWidgets.QTableWidgetItem(self._format_datetime_display(row["occurred_at"])),
+            )
+            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
+            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
+            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
+            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
+
+    def _fetch_audit_rows(self) -> list[sqlite3.Row]:
+        """Fetch audit rows using the current filters."""
 
         start_date = self.audit_start.date().toString("yyyy-MM-dd")
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
@@ -1764,7 +1795,7 @@ class MainWindow(QtWidgets.QMainWindow):
             """
             like_value = f"%{search_text}%"
             params.extend([like_value] * 7)
-        rows = self.conn.execute(
+        return self.conn.execute(
             f"""
             SELECT ae.occurred_at,
                    ae.actor,
@@ -1787,24 +1818,6 @@ class MainWindow(QtWidgets.QMainWindow):
             """,
             params,
         ).fetchall()
-        self.audit_table.setRowCount(len(rows))
-        for row_index, row in enumerate(rows):
-            entity = row["entity_type"]
-            if row["policy_title"]:
-                entity = row["policy_title"]
-                if row["version_number"] is not None:
-                    entity = f"{entity} (v{row['version_number']})"
-            elif row["entity_id"] is not None:
-                entity = f"{entity} #{row['entity_id']}"
-            self.audit_table.setItem(
-                row_index,
-                0,
-                QtWidgets.QTableWidgetItem(self._format_datetime_display(row["occurred_at"])),
-            )
-            self.audit_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["actor"] or ""))
-            self.audit_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["action"]))
-            self.audit_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(entity))
-            self.audit_table.setItem(row_index, 4, QtWidgets.QTableWidgetItem(row["details"] or ""))
 
     def _export_audit_csv(self) -> None:
         """Export the audit log table to CSV."""
@@ -1821,6 +1834,29 @@ class MainWindow(QtWidgets.QMainWindow):
                 writer.writerow(rows[0].keys())
             for row in rows:
                 writer.writerow(list(row))
+
+    def _export_audit_csv_shown(self) -> None:
+        """Export the currently shown audit rows to CSV."""
+
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Export CSV", "audit_log_filtered.csv")
+        if not path:
+            return
+        import csv
+
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            headers = [
+                self.audit_table.horizontalHeaderItem(col).text()
+                for col in range(self.audit_table.columnCount())
+            ]
+            writer.writerow(headers)
+            for row in range(self.audit_table.rowCount()):
+                writer.writerow(
+                    [
+                        self.audit_table.item(row, col).text() if self.audit_table.item(row, col) else ""
+                        for col in range(self.audit_table.columnCount())
+                    ]
+                )
 
     def _verify_audit(self) -> None:
         """Verify audit log integrity and show the result."""
