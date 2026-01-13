@@ -317,6 +317,12 @@ class MainWindow(QtWidgets.QMainWindow):
                         None,
                         {"notes": "", "status": original_status},
                     )
+                    self._append_audit_event(
+                        "policy_version_status_copied",
+                        "policy_version",
+                        new_version_id,
+                        f"copied_from_version={item['version_id']} status={original_status}",
+                    )
                     if original_status_row and original_status_row["ratified"]:
                         self.conn.execute(
                             """
