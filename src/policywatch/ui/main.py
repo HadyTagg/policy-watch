@@ -20,10 +20,11 @@ from policywatch.core import audit, config
 from policywatch.integrations import outlook
 from policywatch.services import (
     add_policy_version,
-    accept_policy_version_hash,
     export_backup,
     get_version_file,
+    mark_policy_version_missing,
     resolve_version_file_path,
+    restore_policy_version_file,
     scan_policy_file_integrity,
     list_categories,
     list_policies,
@@ -214,17 +215,69 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"- {item['title']} (v{item['version']}): {item['path']}" for item in altered
             )
         QtWidgets.QMessageBox.warning(self, "Policy File Issues", "\n".join(message_lines))
-        if altered:
-            response = QtWidgets.QMessageBox.question(
-                self,
-                "Accept Updated Files?",
-                "Do you want to accept the current files as the new approved versions? "
-                "This will update stored hashes for the mismatched versions.",
+        for item in altered:
+            dialog = QtWidgets.QMessageBox(self)
+            dialog.setWindowTitle("Policy Integrity Mismatch")
+            dialog.setText(
+                "A policy file has changed since it was recorded.\n\n"
+                f"{item['title']} (v{item['version']})\n"
+                f"Stored path: {item['path']}\n\n"
+                "Choose how to resolve this mismatch."
             )
-            if response == QtWidgets.QMessageBox.Yes:
-                for item in altered:
-                    accept_policy_version_hash(self.conn, int(item["version_id"]), item["actual_hash"])
-                self.conn.commit()
+            locate_button = dialog.addButton("Locate Original File", QtWidgets.QMessageBox.AcceptRole)
+            replace_button = dialog.addButton(
+                "Create Replacement Version", QtWidgets.QMessageBox.DestructiveRole
+            )
+            skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
+            dialog.exec()
+            clicked = dialog.clickedButton()
+            if clicked == locate_button:
+                file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                    self,
+                    "Select Original Policy File",
+                )
+                if file_path:
+                    restore_policy_version_file(self.conn, int(item["version_id"]), Path(file_path))
+            elif clicked == replace_button:
+                response = QtWidgets.QMessageBox.question(
+                    self,
+                    "Create Replacement Version",
+                    "This will mark the original version as missing and create a new version "
+                    "from the current file on disk. Continue?",
+                )
+                if response != QtWidgets.QMessageBox.Yes:
+                    continue
+                replacement_path = Path(item["path"])
+                if not replacement_path.exists():
+                    file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                        self,
+                        "Select Replacement Policy File",
+                    )
+                    if not file_path:
+                        continue
+                    replacement_path = Path(file_path)
+                details = (
+                    f"title={item['title']} "
+                    f"version={item['version']} "
+                    f"path={item['path']}"
+                )
+                mark_policy_version_missing(self.conn, int(item["version_id"]), details)
+                notes = (
+                    f"Accepted as replacement for version {item['version']} "
+                    "after integrity mismatch."
+                )
+                try:
+                    add_policy_version(
+                        self.conn,
+                        int(item["policy_id"]),
+                        replacement_path,
+                        None,
+                        {"notes": notes},
+                    )
+                except ValueError as exc:
+                    QtWidgets.QMessageBox.warning(self, "Replacement Failed", str(exc))
+            elif clicked == skip_button:
+                continue
         self._load_audit_log()
 
     def _refresh_categories(self) -> None:

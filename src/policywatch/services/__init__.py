@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -604,6 +605,7 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
             altered.append(
                 {
                     "version_id": str(row["version_id"]),
+                    "policy_id": str(row["policy_id"]),
                     "title": row["policy_title"],
                     "version": str(row["version_number"]),
                     "path": str(resolved),
@@ -616,20 +618,39 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
     return missing, altered
 
 
-def accept_policy_version_hash(conn, version_id: int, new_hash: str) -> None:
-    """Accept a new file hash for a policy version after a manual override."""
+def restore_policy_version_file(conn, version_id: int, source_path: Path) -> None:
+    """Replace a policy version file with a selected source file and update metadata."""
 
+    row = conn.execute(
+        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    target_path = Path(row["file_path"])
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_path, target_path)
+    new_hash = _hash_file(target_path)
+    file_size = target_path.stat().st_size
     conn.execute(
-        "UPDATE policy_versions SET sha256_hash = ? WHERE id = ?",
-        (new_hash, version_id),
+        "UPDATE policy_versions SET sha256_hash = ?, file_size_bytes = ? WHERE id = ?",
+        (new_hash, file_size, version_id),
     )
     _log_event(
         conn,
-        "policy_file_integrity_override",
+        "policy_file_integrity_restored",
         "policy_version",
         version_id,
-        f"accepted_hash={new_hash}",
+        f"version={row['version_number']} path={target_path} new_hash={new_hash}",
     )
+    conn.commit()
+
+
+def mark_policy_version_missing(conn, version_id: int, details: str) -> None:
+    """Record that a policy version file is missing or replaced."""
+
+    _log_event(conn, "policy_version_marked_missing", "policy_version", version_id, details)
+    conn.commit()
 
 
 def list_categories(conn) -> list[str]:
