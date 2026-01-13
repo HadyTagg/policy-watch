@@ -39,6 +39,7 @@ from policywatch.services import (
     unset_current_version,
     update_policy_category,
     update_policy_title,
+    set_audit_actor,
 )
 from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
 
@@ -67,6 +68,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         super().__init__(parent)
         self.conn = conn
+        self.username = username
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._title_dirty = False
@@ -74,6 +76,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_category = ""
         self._staff_records: list[dict[str, str]] = []
 
+        set_audit_actor(username)
         self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
         if icon and not icon.isNull():
             self.setWindowIcon(icon)
@@ -314,6 +317,12 @@ class MainWindow(QtWidgets.QMainWindow):
                         None,
                         {"notes": "", "status": original_status},
                     )
+                    self._append_audit_event(
+                        "policy_version_status_copied",
+                        "policy_version",
+                        new_version_id,
+                        f"copied_from_version={item['version_id']} status={original_status}",
+                    )
                     if original_status_row and original_status_row["ratified"]:
                         self.conn.execute(
                             """
@@ -332,11 +341,15 @@ class MainWindow(QtWidgets.QMainWindow):
                             self.conn,
                             {
                                 "occurred_at": datetime.utcnow().isoformat(),
-                                "actor": None,
+                                "actor": self._resolve_audit_actor(),
                                 "action": "policy_version_ratification_copied",
                                 "entity_type": "policy_version",
                                 "entity_id": new_version_id,
-                                "details": f"copied_from_version={item['version_id']}",
+                                "details": (
+                                    f"copied_from_version={item['version_id']} "
+                                    f"ratified_at={original_status_row['ratified_at']} "
+                                    f"ratified_by_user_id={original_status_row['ratified_by_user_id']}"
+                                ),
                             },
                         )
                     new_version_row = self.conn.execute(
@@ -823,7 +836,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.conn,
                     {
                         "occurred_at": datetime.utcnow().isoformat(),
-                        "actor": None,
+                        "actor": self._resolve_audit_actor(),
                         "action": "policy_file_missing",
                         "entity_type": "policy_version",
                         "entity_id": version_id,
@@ -997,15 +1010,11 @@ class MainWindow(QtWidgets.QMainWindow):
                     (value, self.current_policy_id),
                 )
         self.conn.commit()
-        try:
-            actor = os.getlogin()
-        except OSError:
-            actor = None
         audit.append_event_log(
             self.conn,
             {
                 "occurred_at": datetime.utcnow().isoformat(),
-                "actor": actor,
+                "actor": self._resolve_audit_actor(),
                 "action": "update_policy_field",
                 "entity_type": "policy_version" if current_version_id else "policy",
                 "entity_id": current_version_id or self.current_policy_id,
@@ -1820,21 +1829,27 @@ class MainWindow(QtWidgets.QMainWindow):
     ) -> None:
         """Append a standard audit event row."""
 
-        try:
-            actor = os.getlogin()
-        except OSError:
-            actor = None
         audit.append_event_log(
             self.conn,
             {
                 "occurred_at": datetime.utcnow().isoformat(),
-                "actor": actor,
+                "actor": self._resolve_audit_actor(),
                 "action": action,
                 "entity_type": entity_type,
                 "entity_id": entity_id,
                 "details": details,
             },
         )
+
+    def _resolve_audit_actor(self) -> str | None:
+        """Resolve the current audit actor for UI-driven logging."""
+
+        if self.username:
+            return self.username
+        try:
+            return os.getlogin()
+        except OSError:
+            return None
 
     def _refresh_audit_log_if_visible(self) -> None:
         """Refresh the audit log table when it is visible."""
@@ -2343,10 +2358,37 @@ class MainWindow(QtWidgets.QMainWindow):
     def _save_settings(self) -> None:
         """Persist settings from the UI to the config table."""
 
-        config.set_setting(self.conn, "policy_root", self.policy_root_input.text().strip())
-        config.set_setting(self.conn, "amber_months", self.amber_months_input.value())
-        config.set_setting(self.conn, "overdue_grace_days", self.overdue_days_input.value())
-        config.set_setting(self.conn, "max_attachment_mb", self.max_attachment_input.value())
+        current_policy_root = config.get_setting(self.conn, "policy_root", "")
+        current_amber_months = config.get_setting(self.conn, "amber_months", 2)
+        current_overdue_days = config.get_setting(self.conn, "overdue_grace_days", 0)
+        current_max_attachment = config.get_setting(self.conn, "max_attachment_mb", 0)
+
+        new_policy_root = self.policy_root_input.text().strip()
+        new_amber_months = self.amber_months_input.value()
+        new_overdue_days = self.overdue_days_input.value()
+        new_max_attachment = self.max_attachment_input.value()
+
+        config.set_setting(self.conn, "policy_root", new_policy_root)
+        config.set_setting(self.conn, "amber_months", new_amber_months)
+        config.set_setting(self.conn, "overdue_grace_days", new_overdue_days)
+        config.set_setting(self.conn, "max_attachment_mb", new_max_attachment)
+
+        changes = []
+        if current_policy_root != new_policy_root:
+            changes.append(f"policy_root: {current_policy_root} -> {new_policy_root}")
+        if str(current_amber_months) != str(new_amber_months):
+            changes.append(f"amber_months: {current_amber_months} -> {new_amber_months}")
+        if str(current_overdue_days) != str(new_overdue_days):
+            changes.append(f"overdue_grace_days: {current_overdue_days} -> {new_overdue_days}")
+        if str(current_max_attachment) != str(new_max_attachment):
+            changes.append(f"max_attachment_mb: {current_max_attachment} -> {new_max_attachment}")
+        if changes:
+            self._append_audit_event(
+                "update_settings",
+                "config",
+                None,
+                "; ".join(changes),
+            )
         QtWidgets.QMessageBox.information(self, "Saved", "Settings updated.")
 
     def _load_settings(self) -> None:
