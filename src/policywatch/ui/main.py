@@ -631,10 +631,10 @@ class MainWindow(QtWidgets.QMainWindow):
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
                 if integrity_issue:
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
                     item.setForeground(QtGui.QColor("#9ca3af"))
                     item.setToolTip(f"Integrity issue: {issue_reason}")
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
+            self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole + 1, issue_reason)
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
 
@@ -665,6 +665,13 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
+            return
         if (
             QtWidgets.QMessageBox.question(
                 self,
@@ -687,6 +694,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
             return
         if (
             QtWidgets.QMessageBox.question(
@@ -712,6 +726,13 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
             return
         if (
             QtWidgets.QMessageBox.question(
@@ -747,6 +768,13 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_version_id = self.version_table.item(selection[0].row(), 0).data(
                 QtCore.Qt.UserRole
             )
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
+            return
         if (
             QtWidgets.QMessageBox.question(
                 self,
@@ -769,6 +797,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before opening this file.",
+            )
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         file_path = get_version_file(self.conn, version_id)
@@ -816,6 +851,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selection:
             self._clear_policy_metadata_fields()
             return
+        integrity_issue = self._selected_version_integrity_issue()
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
@@ -832,7 +868,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
-        self._set_policy_metadata_enabled(True)
+        self._set_policy_metadata_enabled(not integrity_issue)
+        self._set_version_action_state(not integrity_issue)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
         self.detail_status.setCurrentText(version["status"] or "")
@@ -845,6 +882,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_title.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
+
+        if integrity_issue:
+            reason = self._selected_version_integrity_issue_reason()
+            if (version["status"] or "").lower() == "missing":
+                message = "This policy is missing and its details can no longer be edited."
+            else:
+                message = (
+                    f"This version has an integrity issue: {reason}. Resolve it before editing."
+                )
+            QtWidgets.QMessageBox.information(self, "Integrity Issue", message)
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         """Apply traffic-light color coding to a policy row."""
@@ -880,6 +927,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Update a policy/version field with confirmation and audit logging."""
 
         if not self.current_policy_id:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
             return
         selected = self.version_table.selectionModel().selectedRows()
         selected_version_id = None
@@ -1149,6 +1203,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_expiry.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
 
+    def _set_version_action_state(self, enabled: bool) -> None:
+        """Enable or disable version-specific actions."""
+
+        self.ratify_button.setEnabled(enabled)
+        self.unratify_button.setEnabled(enabled)
+        self.set_current_button.setEnabled(enabled)
+        self.set_not_current_button.setEnabled(enabled)
+        self.open_location_button.setEnabled(enabled)
+
+    def _selected_version_integrity_issue_reason(self) -> str:
+        """Return the integrity issue reason for the selected version, if any."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return ""
+        return self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole + 1) or ""
+
+    def _selected_version_integrity_issue(self) -> bool:
+        """Return True if the selected version has a known integrity issue."""
+
+        return bool(self._selected_version_integrity_issue_reason())
+
     def _clear_policy_metadata_fields(self) -> None:
         """Reset policy metadata fields when no version is selected."""
 
@@ -1158,6 +1234,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
         self._set_policy_metadata_enabled(False)
+        self._set_version_action_state(False)
         self.detail_title.setText("")
         self.detail_status.setCurrentIndex(-1)
         self._set_date_field(self.detail_expiry, None)
@@ -1253,27 +1330,27 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Notes", self.detail_notes)
 
         button_row = QtWidgets.QHBoxLayout()
-        ratify_button = QtWidgets.QPushButton("Mark Ratified")
-        ratify_button.clicked.connect(self._mark_ratified)
-        unratify_button = QtWidgets.QPushButton("Mark Unratified")
-        unratify_button.clicked.connect(self._mark_unratified)
-        set_current_button = QtWidgets.QPushButton("Set Current")
-        set_current_button.clicked.connect(self._set_current)
-        set_not_current_button = QtWidgets.QPushButton("Set Not Current")
-        set_not_current_button.clicked.connect(self._set_not_current)
-        open_location_button = QtWidgets.QPushButton("Open Policy Document")
-        open_location_button.clicked.connect(self._open_file_location)
-        add_version_button = QtWidgets.QPushButton("Add Version")
-        add_version_button.clicked.connect(self._upload_version)
-        button_row.addWidget(add_version_button)
+        self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
+        self.ratify_button.clicked.connect(self._mark_ratified)
+        self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
+        self.unratify_button.clicked.connect(self._mark_unratified)
+        self.set_current_button = QtWidgets.QPushButton("Set Current")
+        self.set_current_button.clicked.connect(self._set_current)
+        self.set_not_current_button = QtWidgets.QPushButton("Set Not Current")
+        self.set_not_current_button.clicked.connect(self._set_not_current)
+        self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
+        self.open_location_button.clicked.connect(self._open_file_location)
+        self.add_version_button = QtWidgets.QPushButton("Add Version")
+        self.add_version_button.clicked.connect(self._upload_version)
+        button_row.addWidget(self.add_version_button)
         button_row.addStretch(2)
-        button_row.addWidget(ratify_button)
-        button_row.addWidget(unratify_button)
+        button_row.addWidget(self.ratify_button)
+        button_row.addWidget(self.unratify_button)
         button_row.addStretch(2)
-        button_row.addWidget(set_current_button)
-        button_row.addWidget(set_not_current_button)
+        button_row.addWidget(self.set_current_button)
+        button_row.addWidget(self.set_not_current_button)
         button_row.addStretch(2)
-        button_row.addWidget(open_location_button)
+        button_row.addWidget(self.open_location_button)
 
         layout.addWidget(versions)
         layout.addWidget(summary)
