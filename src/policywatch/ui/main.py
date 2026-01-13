@@ -1769,7 +1769,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: white;}"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
