@@ -823,6 +823,9 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
     target_path = Path(row["file_path"])
     if source_path.resolve() == target_path.resolve():
         raise ValueError("Selected file matches the stored policy file.")
+    source_hash = _hash_file(source_path)
+    if source_hash != row["sha256_hash"]:
+        raise ValueError("Selected file does not match the stored checksum.")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
     _ensure_policy_read_only(target_path)
