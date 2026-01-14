@@ -125,11 +125,15 @@ def _policy_backup_path(
     return _policy_backup_root(conn) / f"policy_{policy_id}" / f"version_{version_id}{suffix}"
 
 
-def _ensure_read_only(path: Path) -> None:
-    """Mark a file as read-only when possible."""
+def _ensure_backup_read_only(path: Path, backup_root: Path) -> None:
+    """Mark a backup file as read-only when possible."""
 
     try:
-        path.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+        resolved_path = path.resolve()
+        resolved_root = backup_root.resolve()
+        if resolved_root not in resolved_path.parents and resolved_path != resolved_root:
+            return
+        resolved_path.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
     except OSError:
         return
 
@@ -153,7 +157,7 @@ def _store_policy_backup(
         temp_path.unlink(missing_ok=True)
         raise ValueError("Backup checksum did not match expected hash.")
     temp_path.replace(backup_path)
-    _ensure_read_only(backup_path)
+    _ensure_backup_read_only(backup_path, _policy_backup_root(conn))
     return backup_path
 
 
