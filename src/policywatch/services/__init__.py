@@ -138,6 +138,15 @@ def _ensure_backup_read_only(path: Path, backup_root: Path) -> None:
         return
 
 
+def _ensure_policy_read_only(path: Path) -> None:
+    """Mark a policy version file as read-only when possible."""
+
+    try:
+        path.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+    except OSError:
+        return
+
+
 def _store_policy_backup(
     conn,
     policy_id: int,
@@ -336,6 +345,7 @@ def add_policy_version(
         temp_path.unlink(missing_ok=True)
         raise ValueError("No change detected. Policy document matches an existing version.")
     temp_path.replace(target_path)
+    _ensure_policy_read_only(target_path)
 
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
@@ -707,6 +717,7 @@ def restore_policy_from_backup(conn, version_id: int, reason: str) -> None:
     target_path = Path(row["file_path"])
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(backup_path, target_path)
+    _ensure_policy_read_only(target_path)
     restored_hash = _hash_file(target_path)
     if restored_hash != row["sha256_hash"]:
         raise ValueError("Restored file failed checksum verification.")
@@ -812,6 +823,7 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
         raise ValueError("Selected file matches the stored policy file.")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
+    _ensure_policy_read_only(target_path)
     new_hash = _hash_file(target_path)
     file_size = target_path.stat().st_size
     _store_policy_backup(
@@ -855,6 +867,7 @@ def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> Non
     target_path = Path(row["file_path"])
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
+    _ensure_policy_read_only(target_path)
     file_size = target_path.stat().st_size
     _store_policy_backup(
         conn,
