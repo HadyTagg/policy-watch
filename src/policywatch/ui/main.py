@@ -1398,7 +1398,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.setEditable(False)
         self.detail_category.currentTextChanged.connect(self._on_category_changed)
         self.detail_status = QtWidgets.QComboBox()
-        self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Missing", "Archived"])
         self.detail_status.currentTextChanged.connect(self._on_status_changed)
         self.detail_expiry = QtWidgets.QDateEdit()
         self.detail_expiry.setCalendarPopup(True)
