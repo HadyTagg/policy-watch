@@ -761,7 +761,8 @@ def mark_policy_version_missing(
                v.policy_id,
                v.version_number,
                v.status,
-               v.notes
+               v.notes,
+               v.owner
         FROM policy_versions v
         JOIN policies p ON p.id = v.policy_id
         WHERE v.id = ?
@@ -800,6 +801,17 @@ def mark_policy_version_missing(
                 ).fetchone()
                 if replacement_row:
                     new_version_number = replacement_row["version_number"]
+            conn.execute(
+                "UPDATE policy_versions SET owner = ? WHERE id = ?",
+                (row["owner"], replacement_version_id),
+            )
+            _log_event(
+                conn,
+                "policy_owner_copied",
+                "policy_version",
+                replacement_version_id,
+                f"owner={row['owner'] or 'Unassigned'} copied_from_version={row['version_number']}",
+            )
             conn.execute(
                 "UPDATE policies SET current_version_id = ? WHERE id = ?",
                 (replacement_version_id, row["policy_id"]),
