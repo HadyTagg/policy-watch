@@ -155,22 +155,20 @@ def _store_policy_backup(
     source_path: Path,
     expected_hash: str,
 ) -> Path:
-    """Store or replace a read-only backup for a policy version."""
+    """Store a read-only backup for a policy version if one does not exist."""
 
     backup_path = _policy_backup_path(conn, policy_id, version_id, original_filename)
     backup_path.parent.mkdir(parents=True, exist_ok=True)
+    if backup_path.exists():
+        if _hash_file(backup_path) != expected_hash:
+            raise ValueError("Existing backup checksum does not match expected hash.")
+        return backup_path
     temp_path = backup_path.with_suffix(backup_path.suffix + ".tmp")
     shutil.copy2(source_path, temp_path)
     backup_hash = _hash_file(temp_path)
     if backup_hash != expected_hash:
         temp_path.unlink(missing_ok=True)
         raise ValueError("Backup checksum did not match expected hash.")
-    if backup_path.exists():
-        try:
-            backup_path.chmod(stat.S_IWRITE | stat.S_IREAD)
-        except OSError:
-            pass
-        backup_path.unlink(missing_ok=True)
     temp_path.replace(backup_path)
     _ensure_backup_read_only(backup_path, _policy_backup_root(conn))
     return backup_path
