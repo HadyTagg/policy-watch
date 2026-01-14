@@ -747,7 +747,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        mark_version_ratified(self.conn, version_id, None)
+        mark_version_ratified(self.conn, version_id, self.user_id)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
