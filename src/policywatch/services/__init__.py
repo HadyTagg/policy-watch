@@ -847,6 +847,14 @@ def create_user(
 
     created_at = datetime.datetime.utcnow().isoformat()
     pwd_hash, salt = security.hash_password(password)
+    created_by_username = None
+    if created_by_user_id is not None:
+        row = conn.execute(
+            "SELECT username FROM users WHERE id = ?",
+            (created_by_user_id,),
+        ).fetchone()
+        if row:
+            created_by_username = row["username"]
     cursor = conn.execute(
         """
         INSERT INTO users (username, password_hash, salt, role, created_at, disabled)
@@ -860,7 +868,7 @@ def create_user(
         "create_user",
         "user",
         cursor.lastrowid,
-        f"username={username} role={role} created_by={created_by_user_id}",
+        f"username={username} role={role} created_by={created_by_username}",
     )
     return cursor.lastrowid
 
