@@ -31,6 +31,7 @@ from policywatch.services import (
     update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
+    list_users,
     list_policies,
     list_versions,
     mark_version_ratified,
@@ -38,6 +39,7 @@ from policywatch.services import (
     set_current_version,
     unset_current_version,
     update_policy_category,
+    update_policy_version_owner,
     update_policy_title,
     set_audit_actor,
 )
@@ -77,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_title = ""
         self._current_policy_category = ""
         self._staff_records: list[dict[str, str]] = []
+        self._owner_refreshing = False
 
         set_audit_actor(username)
         self._load_user_context()
@@ -618,6 +621,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _load_policy_detail(self, policy_id: int) -> None:
         """Load policy details and version history for the selected policy."""
 
+        selected_version_id = None
+        selection = self.version_table.selectionModel().selectedRows()
+        if selection:
+            selected_version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+
         policy = self.conn.execute(
             "SELECT * FROM policies WHERE id = ?",
             (policy_id,),
@@ -631,13 +639,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self._populate_category_options(self._current_policy_category)
         self._clear_policy_metadata_fields()
+        self._populate_owner_options(None)
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
 
@@ -700,6 +711,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     item.setToolTip(f"Integrity issue: {issue_reason}")
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole + 1, issue_reason)
+        if selected_version_id and self._select_version_row_by_id(selected_version_id):
+            return
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
 
@@ -909,6 +922,41 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(resolved_path)))
 
+    def _print_policy_document(self) -> None:
+        """Send the current version file to the default printer."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before printing this version.",
+            )
+            return
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+        file_path = get_version_file(self.conn, version_id)
+        resolved_path = resolve_version_file_path(self.conn, version_id, file_path)
+        if not resolved_path:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing File",
+                "The policy file could not be found. Please confirm the policy root folder.",
+            )
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(resolved_path), "print")
+            else:
+                subprocess.run(["lpr", str(resolved_path)], check=False)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Print Failed",
+                f"Unable to print this policy file: {exc}",
+            )
+
     def _on_version_selected(self) -> None:
         """Populate metadata controls for the selected version."""
 
@@ -923,6 +971,7 @@ class MainWindow(QtWidgets.QMainWindow):
             SELECT v.status,
                    v.expiry_date,
                    v.notes,
+                   v.owner,
                    v.ratified,
                    v.ratified_at,
                    u.username AS ratified_by
@@ -940,8 +989,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
+        self._populate_owner_options(version["owner"])
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
@@ -956,6 +1007,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
 
@@ -1282,11 +1334,31 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.detail_category.setCurrentIndex(-1)
 
+    def _populate_owner_options(self, selected: str | None) -> None:
+        """Populate owner options for the detail panel."""
+
+        self._owner_refreshing = True
+        owners = list_users(self.conn)
+        if selected and selected not in owners:
+            owners.append(selected)
+        self.detail_owner.clear()
+        self.detail_owner.addItem("Unassigned", None)
+        for owner in owners:
+            if owner:
+                self.detail_owner.addItem(owner, owner)
+        if selected:
+            index = self.detail_owner.findData(selected)
+        else:
+            index = self.detail_owner.findData(None)
+        self.detail_owner.setCurrentIndex(index if index >= 0 else 0)
+        self._owner_refreshing = False
+
     def _set_policy_metadata_enabled(self, enabled: bool) -> None:
         """Enable or disable policy metadata fields."""
 
         self.detail_title.setEnabled(enabled)
         self.detail_category.setEnabled(enabled)
+        self.detail_owner.setEnabled(enabled and self._is_admin())
         self.detail_status.setEnabled(enabled)
         self.detail_expiry.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
@@ -1302,6 +1374,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_current_button.setEnabled(enabled)
         self.set_not_current_button.setEnabled(enabled)
         self.open_location_button.setEnabled(enabled)
+        self.print_document_button.setEnabled(enabled)
 
     def _selected_version_integrity_issue_reason(self) -> str:
         """Return the integrity issue reason for the selected version, if any."""
@@ -1337,6 +1410,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self._set_policy_metadata_enabled(False)
         self._set_version_action_state(False)
         self.detail_title.setText("")
@@ -1344,6 +1418,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_date_field(self.detail_expiry, None)
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
+        self.detail_owner.setCurrentIndex(-1)
         self.detail_ratified.setText("")
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
@@ -1352,8 +1427,69 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
+
+    def _on_owner_changed(self, owner: str) -> None:
+        """Handle owner updates from the metadata form."""
+
+        if self._owner_refreshing:
+            return
+        if not self.current_policy_id or not self._is_admin():
+            return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
+            return
+        selected_owner = self.detail_owner.currentData()
+        selected = self.version_table.selectionModel().selectedRows()
+        selected_version_id = None
+        if selected:
+            selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
+        policy_row = self.conn.execute(
+            "SELECT current_version_id FROM policies WHERE id = ?",
+            (self.current_policy_id,),
+        ).fetchone()
+        if not policy_row:
+            return
+        version_id = selected_version_id or policy_row["current_version_id"]
+        if not version_id:
+            return
+        row = self.conn.execute(
+            "SELECT owner FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if not row:
+            return
+        current_owner = row["owner"] or ""
+        new_owner = selected_owner or ""
+        if current_owner == new_owner:
+            return
+        current_label = current_owner or "Unassigned"
+        new_label = new_owner or "Unassigned"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Change",
+            f"Change Owner from {current_label} to {new_label}?",
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            self._load_policy_detail(self.current_policy_id)
+            return
+        update_policy_version_owner(self.conn, version_id, selected_owner)
+        self._refresh_policies(clear_selection=False)
+        self._load_policy_detail(self.current_policy_id)
+        self._load_audit_log()
 
     def _on_category_changed(self, category: str) -> None:
         """Handle category updates from the metadata form."""
@@ -1418,6 +1554,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category = QtWidgets.QComboBox()
         self.detail_category.setEditable(False)
         self.detail_category.currentTextChanged.connect(self._on_category_changed)
+        self.detail_owner = QtWidgets.QComboBox()
+        self.detail_owner.setEditable(False)
+        self.detail_owner.currentTextChanged.connect(self._on_owner_changed)
         self.detail_status = QtWidgets.QComboBox()
         self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Missing", "Archived"])
         missing_index = self.detail_status.findText("Missing")
@@ -1443,6 +1582,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
+        form.addRow("Owner", self.detail_owner)
         form.addRow("Status", self.detail_status)
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Notes", self.detail_notes)
@@ -1461,6 +1601,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
         self.open_location_button.clicked.connect(self._open_file_location)
+        self.print_document_button = QtWidgets.QPushButton("Print Policy Document")
+        self.print_document_button.clicked.connect(self._print_policy_document)
         self.add_version_button = QtWidgets.QPushButton("Add Version")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
@@ -1472,6 +1614,7 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.set_not_current_button)
         button_row.addStretch(2)
         button_row.addWidget(self.open_location_button)
+        button_row.addWidget(self.print_document_button)
 
         layout.addWidget(versions)
         layout.addWidget(summary)

@@ -203,9 +203,9 @@ def create_policy(
         """
         INSERT INTO policies (
             title, slug, category, status, ratified, ratified_at, ratified_by_user_id,
-            effective_date, review_due_date, review_frequency_months, expiry_date, owner, notes,
+            effective_date, review_due_date, review_frequency_months, expiry_date, notes,
             current_version_id, created_at, created_by_user_id
-        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         (
             title,
@@ -216,7 +216,6 @@ def create_policy(
             review_due_date,
             None,
             expiry,
-            None,
             notes,
             created_at,
             created_by_user_id,
@@ -762,7 +761,8 @@ def mark_policy_version_missing(
                v.policy_id,
                v.version_number,
                v.status,
-               v.notes
+               v.notes,
+               v.owner
         FROM policy_versions v
         JOIN policies p ON p.id = v.policy_id
         WHERE v.id = ?
@@ -802,6 +802,17 @@ def mark_policy_version_missing(
                 if replacement_row:
                     new_version_number = replacement_row["version_number"]
             conn.execute(
+                "UPDATE policy_versions SET owner = ? WHERE id = ?",
+                (row["owner"], replacement_version_id),
+            )
+            _log_event(
+                conn,
+                "policy_owner_copied",
+                "policy_version",
+                replacement_version_id,
+                f"owner={row['owner'] or 'Unassigned'} copied_from_version={row['version_number']}",
+            )
+            conn.execute(
                 "UPDATE policies SET current_version_id = ? WHERE id = ?",
                 (replacement_version_id, row["policy_id"]),
             )
@@ -840,6 +851,18 @@ def list_categories(conn) -> list[str]:
     return [row["name"] for row in rows]
 
 
+def list_users(conn, include_disabled: bool = False) -> list[str]:
+    """Return usernames for existing users."""
+
+    query = "SELECT username FROM users"
+    params: tuple = ()
+    if not include_disabled:
+        query += " WHERE disabled = 0"
+    query += " ORDER BY username"
+    rows = conn.execute(query, params).fetchall()
+    return [row["username"] for row in rows]
+
+
 def create_category(conn, name: str) -> None:
     """Create a category record and log the event."""
 
@@ -855,6 +878,36 @@ def delete_category(conn, category_id: int) -> None:
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
     _log_event(conn, "delete_category", "category", category_id, None)
+
+
+def update_policy_version_owner(conn, version_id: int, owner: str | None) -> None:
+    """Update the policy version owner and log the change."""
+
+    row = conn.execute(
+        "SELECT owner, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        return
+    current_owner = row["owner"] or ""
+    new_owner = owner or ""
+    if current_owner == new_owner:
+        return
+    conn.execute(
+        "UPDATE policy_versions SET owner = ? WHERE id = ?",
+        (owner, version_id),
+    )
+    conn.commit()
+    previous_label = current_owner or "Unassigned"
+    new_label = new_owner or "Unassigned"
+    details = f"version={row['version_number']} owner={new_label} previous_owner={previous_label}"
+    _log_event(
+        conn,
+        "update_policy_owner",
+        "policy_version",
+        version_id,
+        details,
+    )
 
 
 def create_user(
