@@ -621,6 +621,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _load_policy_detail(self, policy_id: int) -> None:
         """Load policy details and version history for the selected policy."""
 
+        selected_version_id = None
+        selection = self.version_table.selectionModel().selectedRows()
+        if selection:
+            selected_version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+
         policy = self.conn.execute(
             "SELECT * FROM policies WHERE id = ?",
             (policy_id,),
@@ -706,6 +711,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     item.setToolTip(f"Integrity issue: {issue_reason}")
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole + 1, issue_reason)
+        if selected_version_id and self._select_version_row_by_id(selected_version_id):
+            return
         if policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
 
