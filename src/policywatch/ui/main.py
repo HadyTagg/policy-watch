@@ -922,6 +922,41 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(resolved_path)))
 
+    def _print_policy_document(self) -> None:
+        """Send the current version file to the default printer."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before printing this version.",
+            )
+            return
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+        file_path = get_version_file(self.conn, version_id)
+        resolved_path = resolve_version_file_path(self.conn, version_id, file_path)
+        if not resolved_path:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing File",
+                "The policy file could not be found. Please confirm the policy root folder.",
+            )
+            return
+        try:
+            if hasattr(os, "startfile"):
+                os.startfile(str(resolved_path), "print")
+            else:
+                subprocess.run(["lpr", str(resolved_path)], check=False)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Print Failed",
+                f"Unable to print this policy file: {exc}",
+            )
+
     def _on_version_selected(self) -> None:
         """Populate metadata controls for the selected version."""
 
@@ -1339,6 +1374,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_current_button.setEnabled(enabled)
         self.set_not_current_button.setEnabled(enabled)
         self.open_location_button.setEnabled(enabled)
+        self.print_document_button.setEnabled(enabled)
 
     def _selected_version_integrity_issue_reason(self) -> str:
         """Return the integrity issue reason for the selected version, if any."""
@@ -1565,6 +1601,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
         self.open_location_button.clicked.connect(self._open_file_location)
+        self.print_document_button = QtWidgets.QPushButton("Print Policy Document")
+        self.print_document_button.clicked.connect(self._print_policy_document)
         self.add_version_button = QtWidgets.QPushButton("Add Version")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
@@ -1576,6 +1614,7 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.set_not_current_button)
         button_row.addStretch(2)
         button_row.addWidget(self.open_location_button)
+        button_row.addWidget(self.print_document_button)
 
         layout.addWidget(versions)
         layout.addWidget(summary)
