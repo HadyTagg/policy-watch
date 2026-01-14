@@ -80,6 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_category = ""
         self._current_policy_owner = ""
         self._staff_records: list[dict[str, str]] = []
+        self._owner_refreshing = False
 
         set_audit_actor(username)
         self._load_user_context()
@@ -1295,6 +1296,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _populate_owner_options(self, selected: str | None) -> None:
         """Populate owner options for the detail panel."""
 
+        self._owner_refreshing = True
         owners = list_users(self.conn)
         if selected and selected not in owners:
             owners.append(selected)
@@ -1308,6 +1310,7 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             index = self.detail_owner.findData(None)
         self.detail_owner.setCurrentIndex(index if index >= 0 else 0)
+        self._owner_refreshing = False
 
     def _set_policy_metadata_enabled(self, enabled: bool) -> None:
         """Enable or disable policy metadata fields."""
@@ -1389,6 +1392,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_owner_changed(self, owner: str) -> None:
         """Handle owner updates from the metadata form."""
 
+        if self._owner_refreshing:
+            return
         if not self.current_policy_id or not self._is_admin():
             return
         if self._selected_version_is_missing():
