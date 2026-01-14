@@ -165,6 +165,12 @@ def _store_policy_backup(
     if backup_hash != expected_hash:
         temp_path.unlink(missing_ok=True)
         raise ValueError("Backup checksum did not match expected hash.")
+    if backup_path.exists():
+        try:
+            backup_path.chmod(stat.S_IWRITE | stat.S_IREAD)
+        except OSError:
+            pass
+        backup_path.unlink(missing_ok=True)
     temp_path.replace(backup_path)
     _ensure_backup_read_only(backup_path, _policy_backup_root(conn))
     return backup_path
