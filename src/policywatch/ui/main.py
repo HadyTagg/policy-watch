@@ -302,6 +302,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 if response != QtWidgets.QMessageBox.Yes:
                     continue
+                self._append_audit_event(
+                    "policy_file_replacement_accepted",
+                    "policy_version",
+                    int(item["version_id"]),
+                    f"title={item['title']} version={item['version']}",
+                )
                 replacement_path = Path(item["path"])
                 if not replacement_path.exists():
                     file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
