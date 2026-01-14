@@ -784,6 +784,13 @@ def mark_policy_version_missing(
         "UPDATE policy_versions SET status = ?, notes = ?, replacement_accepted = 1 WHERE id = ?",
         ("Missing", updated_notes, version_id),
     )
+    _log_event(
+        conn,
+        "policy_version_notes_updated",
+        "policy_version",
+        version_id,
+        "replacement_notes_applied",
+    )
     if row["current_version_id"] == version_id:
         if replacement_version_id is not None:
             new_version_number = replacement_version_number
@@ -804,10 +811,10 @@ def mark_policy_version_missing(
                 "policy",
                 row["policy_id"],
                 (
-                    "status_copied"
+                    "current_status_copied"
                     f" status={row['status']}"
-                    f" to_version={new_version_number}"
                     f" from_version={row['version_number']}"
+                    f" to_version={new_version_number}"
                 ),
             )
         else:
