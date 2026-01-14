@@ -41,7 +41,7 @@ from policywatch.services import (
     update_policy_title,
     set_audit_actor,
 )
-from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
+from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -69,6 +69,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.conn = conn
         self.username = username
+        self.user_id: int | None = None
+        self.user_role: str | None = None
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._title_dirty = False
@@ -77,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._staff_records: list[dict[str, str]] = []
 
         set_audit_actor(username)
+        self._load_user_context()
         self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
         if icon and not icon.isNull():
             self.setWindowIcon(icon)
@@ -91,6 +94,15 @@ class MainWindow(QtWidgets.QMainWindow):
         manage_categories_action = QtWidgets.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
+
+        create_account_action = QtWidgets.QAction("Create Account", self)
+        create_account_action.triggered.connect(self._open_account_creation)
+        create_account_action.setEnabled(self._is_admin())
+        toolbar.addAction(create_account_action)
+
+        change_password_action = QtWidgets.QAction("Change Password", self)
+        change_password_action.triggered.connect(self._open_change_password)
+        toolbar.addAction(change_password_action)
 
         toolbar.addSeparator()
         spacer = QtWidgets.QWidget()
@@ -534,6 +546,40 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.setCurrentIndex(0)
         self.tabs.blockSignals(False)
         QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+
+    def _load_user_context(self) -> None:
+        """Load the current user's metadata for role-aware actions."""
+
+        row = self.conn.execute(
+            "SELECT id, role FROM users WHERE username = ?",
+            (self.username,),
+        ).fetchone()
+        if row:
+            self.user_id = row["id"]
+            self.user_role = row["role"]
+
+    def _is_admin(self) -> bool:
+        """Return True if the current user is an admin."""
+
+        return (self.user_role or "").lower() == "admin"
+
+    def _open_account_creation(self) -> None:
+        """Open the account creation dialog for admins."""
+
+        if not self._is_admin():
+            QtWidgets.QMessageBox.warning(self, "Restricted", "Only admins can create accounts.")
+            return
+        dialog = AccountCreationDialog(self.conn, self.user_id, self)
+        dialog.exec()
+
+    def _open_change_password(self) -> None:
+        """Open the change password dialog for the current user."""
+
+        if self.user_id is None:
+            QtWidgets.QMessageBox.warning(self, "Unavailable", "User account not found.")
+            return
+        dialog = PasswordChangeDialog(self.conn, self.user_id, self.username, self)
+        dialog.exec()
 
     def _open_categories(self) -> None:
         """Open the category management dialog and refresh data."""

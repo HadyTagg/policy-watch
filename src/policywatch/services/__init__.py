@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from policywatch.core import audit, config
+from policywatch.core import audit, config, security
 from policywatch.services.policies import build_policy_path, next_version_number, slugify
 from policywatch.services.traffic import traffic_light_status
 
@@ -834,6 +834,47 @@ def delete_category(conn, category_id: int) -> None:
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
     _log_event(conn, "delete_category", "category", category_id, None)
+
+
+def create_user(
+    conn,
+    username: str,
+    password: str,
+    role: str,
+    created_by_user_id: int | None,
+) -> int:
+    """Create a user account and log the event."""
+
+    created_at = datetime.datetime.utcnow().isoformat()
+    pwd_hash, salt = security.hash_password(password)
+    cursor = conn.execute(
+        """
+        INSERT INTO users (username, password_hash, salt, role, created_at, disabled)
+        VALUES (?, ?, ?, ?, ?, 0)
+        """,
+        (username, pwd_hash, salt, role, created_at),
+    )
+    conn.commit()
+    _log_event(
+        conn,
+        "create_user",
+        "user",
+        cursor.lastrowid,
+        f"username={username} role={role} created_by={created_by_user_id}",
+    )
+    return cursor.lastrowid
+
+
+def update_user_password(conn, user_id: int, password: str) -> None:
+    """Update a user password and log the event."""
+
+    pwd_hash, salt = security.hash_password(password)
+    conn.execute(
+        "UPDATE users SET password_hash = ?, salt = ? WHERE id = ?",
+        (pwd_hash, salt, user_id),
+    )
+    conn.commit()
+    _log_event(conn, "update_user_password", "user", user_id, None)
 
 
 def export_backup(conn, destination: Path, include_files: bool) -> None:
