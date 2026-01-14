@@ -302,6 +302,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 if response != QtWidgets.QMessageBox.Yes:
                     continue
+                self._append_audit_event(
+                    "policy_file_replacement_accepted",
+                    "policy_version",
+                    int(item["version_id"]),
+                    f"title={item['title']} version={item['version']}",
+                )
                 replacement_path = Path(item["path"])
                 if not replacement_path.exists():
                     file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -914,26 +920,37 @@ class MainWindow(QtWidgets.QMainWindow):
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
-            SELECT status, expiry_date, notes
-            FROM policy_versions
-            WHERE id = ?
+            SELECT v.status,
+                   v.expiry_date,
+                   v.notes,
+                   v.ratified,
+                   v.ratified_at,
+                   u.username AS ratified_by
+            FROM policy_versions v
+            LEFT JOIN users u ON u.id = v.ratified_by_user_id
+            WHERE v.id = ?
             """,
             (version_id,),
         ).fetchone()
         if not version:
             return
+        is_missing_status = (version["status"] or "").lower() == "missing"
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
-        self._set_policy_metadata_enabled(not integrity_issue)
-        self._set_version_action_state(not integrity_issue)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
+        self.detail_ratified.setText("Yes" if int(version["ratified"] or 0) else "No")
+        self.detail_ratified_at.setText(self._format_datetime_display(version["ratified_at"] or ""))
+        self.detail_ratified_by.setText(version["ratified_by"] or "")
+        read_only = integrity_issue or is_missing_status
+        self._set_policy_metadata_enabled(not read_only)
+        self._set_version_action_state(not read_only)
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -942,15 +959,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notes_dirty = False
         self._title_dirty = False
 
-        if integrity_issue:
-            reason = self._selected_version_integrity_issue_reason()
-            if (version["status"] or "").lower() == "missing":
+        if read_only:
+            if is_missing_status:
                 message = "This policy is missing and its details can no longer be edited."
+                title = "Missing Policy"
             else:
+                reason = self._selected_version_integrity_issue_reason()
                 message = (
                     f"This version has an integrity issue: {reason}. Resolve it before editing."
                 )
-            QtWidgets.QMessageBox.information(self, "Integrity Issue", message)
+                title = "Integrity Issue"
+            QtWidgets.QMessageBox.information(self, title, message)
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         """Apply traffic-light color coding to a policy row."""
@@ -986,6 +1005,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Update a policy/version field with confirmation and audit logging."""
 
         if not self.current_policy_id:
+            return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
             return
         if self._selected_version_integrity_issue():
             QtWidgets.QMessageBox.warning(
@@ -1214,6 +1240,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.current_policy_id:
             return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
+            return
         policy_row = self.conn.execute(
             "SELECT title FROM policies WHERE id = ?",
             (self.current_policy_id,),
@@ -1257,6 +1290,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_status.setEnabled(enabled)
         self.detail_expiry.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
+        self.detail_ratified.setEnabled(enabled)
+        self.detail_ratified_at.setEnabled(enabled)
+        self.detail_ratified_by.setEnabled(enabled)
 
     def _set_version_action_state(self, enabled: bool) -> None:
         """Enable or disable version-specific actions."""
@@ -1280,6 +1316,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return bool(self._selected_version_integrity_issue_reason())
 
+    def _selected_version_is_missing(self) -> bool:
+        """Return True if the selected version has Missing status."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return False
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        return bool(row and (row["status"] or "").lower() == "missing")
+
     def _clear_policy_metadata_fields(self) -> None:
         """Reset policy metadata fields when no version is selected."""
 
@@ -1295,6 +1344,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_date_field(self.detail_expiry, None)
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
+        self.detail_ratified.setText("")
+        self.detail_ratified_at.setText("")
+        self.detail_ratified_by.setText("")
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -1367,7 +1419,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.setEditable(False)
         self.detail_category.currentTextChanged.connect(self._on_category_changed)
         self.detail_status = QtWidgets.QComboBox()
-        self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Missing", "Archived"])
+        missing_index = self.detail_status.findText("Missing")
+        if missing_index >= 0:
+            missing_item = self.detail_status.model().item(missing_index)
+            if missing_item is not None:
+                missing_item.setFlags(missing_item.flags() & ~QtCore.Qt.ItemIsEnabled)
         self.detail_status.currentTextChanged.connect(self._on_status_changed)
         self.detail_expiry = QtWidgets.QDateEdit()
         self.detail_expiry.setCalendarPopup(True)
@@ -1377,12 +1434,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.setReadOnly(False)
         self.detail_notes.textChanged.connect(self._mark_notes_dirty)
         self.detail_notes.installEventFilter(self)
+        self.detail_ratified = QtWidgets.QLineEdit()
+        self.detail_ratified.setReadOnly(True)
+        self.detail_ratified_at = QtWidgets.QLineEdit()
+        self.detail_ratified_at.setReadOnly(True)
+        self.detail_ratified_by = QtWidgets.QLineEdit()
+        self.detail_ratified_by.setReadOnly(True)
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
         form.addRow("Status", self.detail_status)
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Notes", self.detail_notes)
+        form.addRow("Ratified", self.detail_ratified)
+        form.addRow("Ratified At", self.detail_ratified_at)
+        form.addRow("Ratified By", self.detail_ratified_by)
 
         button_row = QtWidgets.QHBoxLayout()
         self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
