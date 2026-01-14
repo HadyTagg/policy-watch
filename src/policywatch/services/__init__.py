@@ -761,6 +761,7 @@ def mark_policy_version_missing(
         SELECT p.current_version_id,
                v.policy_id,
                v.version_number,
+               v.status,
                v.notes
         FROM policy_versions v
         JOIN policies p ON p.id = v.policy_id
@@ -785,6 +786,14 @@ def mark_policy_version_missing(
     )
     if row["current_version_id"] == version_id:
         if replacement_version_id is not None:
+            new_version_number = replacement_version_number
+            if new_version_number is None:
+                replacement_row = conn.execute(
+                    "SELECT version_number FROM policy_versions WHERE id = ?",
+                    (replacement_version_id,),
+                ).fetchone()
+                if replacement_row:
+                    new_version_number = replacement_row["version_number"]
             conn.execute(
                 "UPDATE policies SET current_version_id = ? WHERE id = ?",
                 (replacement_version_id, row["policy_id"]),
@@ -794,7 +803,12 @@ def mark_policy_version_missing(
                 "current_version_replaced",
                 "policy",
                 row["policy_id"],
-                f"previous_version_id={version_id} new_version_id={replacement_version_id}",
+                (
+                    "status_copied"
+                    f" status={row['status']}"
+                    f" to_version={new_version_number}"
+                    f" from_version={row['version_number']}"
+                ),
             )
         else:
             conn.execute(
