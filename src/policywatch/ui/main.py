@@ -41,7 +41,7 @@ from policywatch.services import (
     update_policy_title,
     set_audit_actor,
 )
-from policywatch.ui.dialogs import CategoryManagerDialog, PolicyDialog
+from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -69,6 +69,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.conn = conn
         self.username = username
+        self.user_id: int | None = None
+        self.user_role: str | None = None
         self.current_policy_id: int | None = None
         self._notes_dirty = False
         self._title_dirty = False
@@ -77,6 +79,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._staff_records: list[dict[str, str]] = []
 
         set_audit_actor(username)
+        self._load_user_context()
         self.setWindowTitle("Policy Watch - Developed by Hady Tagg")
         if icon and not icon.isNull():
             self.setWindowIcon(icon)
@@ -91,6 +94,15 @@ class MainWindow(QtWidgets.QMainWindow):
         manage_categories_action = QtWidgets.QAction("Manage Categories", self)
         manage_categories_action.triggered.connect(self._open_categories)
         toolbar.addAction(manage_categories_action)
+
+        create_account_action = QtWidgets.QAction("Create Account", self)
+        create_account_action.triggered.connect(self._open_account_creation)
+        create_account_action.setEnabled(self._is_admin())
+        toolbar.addAction(create_account_action)
+
+        change_password_action = QtWidgets.QAction("Change Password", self)
+        change_password_action.triggered.connect(self._open_change_password)
+        toolbar.addAction(change_password_action)
 
         toolbar.addSeparator()
         spacer = QtWidgets.QWidget()
@@ -535,6 +547,40 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.blockSignals(False)
         QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
+    def _load_user_context(self) -> None:
+        """Load the current user's metadata for role-aware actions."""
+
+        row = self.conn.execute(
+            "SELECT id, role FROM users WHERE username = ?",
+            (self.username,),
+        ).fetchone()
+        if row:
+            self.user_id = row["id"]
+            self.user_role = row["role"]
+
+    def _is_admin(self) -> bool:
+        """Return True if the current user is an admin."""
+
+        return (self.user_role or "").lower() == "admin"
+
+    def _open_account_creation(self) -> None:
+        """Open the account creation dialog for admins."""
+
+        if not self._is_admin():
+            QtWidgets.QMessageBox.warning(self, "Restricted", "Only admins can create accounts.")
+            return
+        dialog = AccountCreationDialog(self.conn, self.user_id, self)
+        dialog.exec()
+
+    def _open_change_password(self) -> None:
+        """Open the change password dialog for the current user."""
+
+        if self.user_id is None:
+            QtWidgets.QMessageBox.warning(self, "Unavailable", "User account not found.")
+            return
+        dialog = PasswordChangeDialog(self.conn, self.user_id, self.username, self)
+        dialog.exec()
+
     def _open_categories(self) -> None:
         """Open the category management dialog and refresh data."""
 
@@ -876,18 +922,20 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not version:
             return
+        is_missing_status = (version["status"] or "").lower() == "missing"
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
-        self._set_policy_metadata_enabled(not integrity_issue)
-        self._set_version_action_state(not integrity_issue)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
+        read_only = integrity_issue or is_missing_status
+        self._set_policy_metadata_enabled(not read_only)
+        self._set_version_action_state(not read_only)
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -896,15 +944,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._notes_dirty = False
         self._title_dirty = False
 
-        if integrity_issue:
-            reason = self._selected_version_integrity_issue_reason()
-            if (version["status"] or "").lower() == "missing":
+        if read_only:
+            if is_missing_status:
                 message = "This policy is missing and its details can no longer be edited."
+                title = "Missing Policy"
             else:
+                reason = self._selected_version_integrity_issue_reason()
                 message = (
                     f"This version has an integrity issue: {reason}. Resolve it before editing."
                 )
-            QtWidgets.QMessageBox.information(self, "Integrity Issue", message)
+                title = "Integrity Issue"
+            QtWidgets.QMessageBox.information(self, title, message)
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         """Apply traffic-light color coding to a policy row."""
@@ -940,6 +990,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """Update a policy/version field with confirmation and audit logging."""
 
         if not self.current_policy_id:
+            return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
             return
         if self._selected_version_integrity_issue():
             QtWidgets.QMessageBox.warning(
@@ -1168,6 +1225,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.current_policy_id:
             return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
+            return
         policy_row = self.conn.execute(
             "SELECT title FROM policies WHERE id = ?",
             (self.current_policy_id,),
@@ -1233,6 +1297,19 @@ class MainWindow(QtWidgets.QMainWindow):
         """Return True if the selected version has a known integrity issue."""
 
         return bool(self._selected_version_integrity_issue_reason())
+
+    def _selected_version_is_missing(self) -> bool:
+        """Return True if the selected version has Missing status."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return False
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        return bool(row and (row["status"] or "").lower() == "missing")
 
     def _clear_policy_metadata_fields(self) -> None:
         """Reset policy metadata fields when no version is selected."""

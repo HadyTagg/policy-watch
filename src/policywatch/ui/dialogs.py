@@ -8,7 +8,15 @@ from typing import Callable
 
 from PyQt5 import QtCore, QtWidgets
 
-from policywatch.services import add_policy_version, create_category, create_policy, delete_category
+from policywatch.core import security
+from policywatch.services import (
+    add_policy_version,
+    create_category,
+    create_policy,
+    create_user,
+    delete_category,
+    update_user_password,
+)
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -239,3 +247,135 @@ class PolicyDialog(QtWidgets.QDialog):
         if not self.expiry_date.isEnabled():
             return ""
         return self.expiry_date.date().toString("yyyy-MM-dd")
+
+
+class AccountCreationDialog(QtWidgets.QDialog):
+    """Dialog for creating new user accounts."""
+
+    def __init__(self, conn: sqlite3.Connection, created_by_user_id: int | None, parent=None) -> None:
+        """Initialize the account creation dialog UI."""
+
+        super().__init__(parent)
+        self.conn = conn
+        self.created_by_user_id = created_by_user_id
+        self.setWindowTitle("Create Account")
+        self.setModal(True)
+
+        self.username_input = QtWidgets.QLineEdit()
+        self.username_input.setPlaceholderText("Username")
+        self.role_combo = QtWidgets.QComboBox()
+        self.role_combo.addItems(["User", "Admin"])
+        self.password_input = QtWidgets.QLineEdit()
+        self.password_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.confirm_input = QtWidgets.QLineEdit()
+        self.confirm_input.setEchoMode(QtWidgets.QLineEdit.Password)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Username", self.username_input)
+        form.addRow("Role", self.role_combo)
+        form.addRow("Password", self.password_input)
+        form.addRow("Confirm Password", self.confirm_input)
+
+        create_button = QtWidgets.QPushButton("Create")
+        create_button.clicked.connect(self._create_account)
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(create_button)
+        button_row.addWidget(cancel_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(button_row)
+
+    def _create_account(self) -> None:
+        """Validate inputs and create the user account."""
+
+        username = self.username_input.text().strip()
+        password = self.password_input.text()
+        confirm = self.confirm_input.text()
+        role = self.role_combo.currentText()
+        if not username or not password:
+            QtWidgets.QMessageBox.warning(self, "Missing", "Username and password are required.")
+            return
+        if password != confirm:
+            QtWidgets.QMessageBox.warning(self, "Mismatch", "Passwords do not match.")
+            return
+        if len(password) < 8:
+            QtWidgets.QMessageBox.warning(self, "Weak Password", "Passwords must be at least 8 characters.")
+            return
+        try:
+            create_user(self.conn, username, password, role, self.created_by_user_id)
+        except sqlite3.IntegrityError:
+            QtWidgets.QMessageBox.warning(self, "Duplicate", "That username already exists.")
+            return
+        QtWidgets.QMessageBox.information(self, "Account Created", "User account created successfully.")
+        self.accept()
+
+
+class PasswordChangeDialog(QtWidgets.QDialog):
+    """Dialog for updating the current user's password."""
+
+    def __init__(self, conn: sqlite3.Connection, user_id: int, username: str, parent=None) -> None:
+        """Initialize the password change dialog UI."""
+
+        super().__init__(parent)
+        self.conn = conn
+        self.user_id = user_id
+        self.username = username
+        self.setWindowTitle("Change Password")
+        self.setModal(True)
+
+        self.current_input = QtWidgets.QLineEdit()
+        self.current_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.new_input = QtWidgets.QLineEdit()
+        self.new_input.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.confirm_input = QtWidgets.QLineEdit()
+        self.confirm_input.setEchoMode(QtWidgets.QLineEdit.Password)
+
+        form = QtWidgets.QFormLayout()
+        form.addRow("Current Password", self.current_input)
+        form.addRow("New Password", self.new_input)
+        form.addRow("Confirm New Password", self.confirm_input)
+
+        save_button = QtWidgets.QPushButton("Save")
+        save_button.clicked.connect(self._change_password)
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+
+        button_row = QtWidgets.QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(save_button)
+        button_row.addWidget(cancel_button)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(button_row)
+
+    def _change_password(self) -> None:
+        """Validate and update the password for the current user."""
+
+        current = self.current_input.text()
+        new_password = self.new_input.text()
+        confirm = self.confirm_input.text()
+        if not current or not new_password:
+            QtWidgets.QMessageBox.warning(self, "Missing", "All password fields are required.")
+            return
+        if new_password != confirm:
+            QtWidgets.QMessageBox.warning(self, "Mismatch", "New passwords do not match.")
+            return
+        if len(new_password) < 8:
+            QtWidgets.QMessageBox.warning(self, "Weak Password", "Passwords must be at least 8 characters.")
+            return
+        row = self.conn.execute(
+            "SELECT password_hash, salt FROM users WHERE id = ?",
+            (self.user_id,),
+        ).fetchone()
+        if not row or not security.verify_password(current, row["password_hash"], row["salt"]):
+            QtWidgets.QMessageBox.warning(self, "Invalid", "Current password is incorrect.")
+            return
+        update_user_password(self.conn, self.user_id, new_password)
+        QtWidgets.QMessageBox.information(self, "Updated", "Password updated successfully.")
+        self.accept()
