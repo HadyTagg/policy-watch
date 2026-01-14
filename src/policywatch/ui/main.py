@@ -25,7 +25,9 @@ from policywatch.services import (
     mark_policy_version_missing,
     format_replacement_note,
     file_sha256,
+    policy_backup_available,
     resolve_version_file_path,
+    restore_policy_from_backup,
     restore_policy_version_file,
     restore_missing_policy_file,
     update_policy_version_notes,
@@ -246,11 +248,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"Stored path: {item['path']}\n\n"
                 "Locate the original file to restore it and verify the checksum."
             )
+            backup_button = None
+            if policy_backup_available(self.conn, int(item["version_id"])):
+                backup_button = dialog.addButton(
+                    "Restore from Backup",
+                    QtWidgets.QMessageBox.ActionRole,
+                )
             locate_button = dialog.addButton("Locate Missing File", QtWidgets.QMessageBox.AcceptRole)
             skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
             dialog.exec()
             clicked = dialog.clickedButton()
-            if clicked == locate_button:
+            if backup_button and clicked == backup_button:
+                try:
+                    restore_policy_from_backup(self.conn, int(item["version_id"]), "missing")
+                except ValueError as exc:
+                    QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
+            elif clicked == locate_button:
                 file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
                     self,
                     "Select Missing Policy File",
@@ -275,6 +288,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"Stored path: {item['path']}\n\n"
                 "Choose how to resolve this mismatch."
             )
+            backup_button = None
+            if policy_backup_available(self.conn, int(item["version_id"])):
+                backup_button = dialog.addButton(
+                    "Restore from Backup",
+                    QtWidgets.QMessageBox.ActionRole,
+                )
             locate_button = dialog.addButton("Locate Original File", QtWidgets.QMessageBox.AcceptRole)
             replace_button = dialog.addButton(
                 "Create Replacement Version", QtWidgets.QMessageBox.DestructiveRole
@@ -282,7 +301,12 @@ class MainWindow(QtWidgets.QMainWindow):
             skip_button = dialog.addButton("Skip", QtWidgets.QMessageBox.RejectRole)
             dialog.exec()
             clicked = dialog.clickedButton()
-            if clicked == locate_button:
+            if backup_button and clicked == backup_button:
+                try:
+                    restore_policy_from_backup(self.conn, int(item["version_id"]), "hash_mismatch")
+                except ValueError as exc:
+                    QtWidgets.QMessageBox.warning(self, "Restore Failed", str(exc))
+            elif clicked == locate_button:
                 file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
                     self,
                     "Select Original Policy File",

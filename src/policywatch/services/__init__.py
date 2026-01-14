@@ -7,6 +7,7 @@ import datetime
 import hashlib
 import os
 import shutil
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -103,6 +104,57 @@ def _policy_root(conn) -> Path:
         return Path(root)
     paths = config.get_paths()
     return paths.data_dir / "policies"
+
+
+def _policy_backup_root(conn) -> Path:
+    """Return the hidden backup directory for policy files."""
+
+    paths = config.get_paths()
+    return paths.data_dir / ".policy_backups"
+
+
+def _policy_backup_path(
+    conn,
+    policy_id: int,
+    version_id: int,
+    original_filename: str,
+) -> Path:
+    """Build the backup path for a specific policy version."""
+
+    suffix = Path(original_filename).suffix
+    return _policy_backup_root(conn) / f"policy_{policy_id}" / f"version_{version_id}{suffix}"
+
+
+def _ensure_read_only(path: Path) -> None:
+    """Mark a file as read-only when possible."""
+
+    try:
+        path.chmod(stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)
+    except OSError:
+        return
+
+
+def _store_policy_backup(
+    conn,
+    policy_id: int,
+    version_id: int,
+    original_filename: str,
+    source_path: Path,
+    expected_hash: str,
+) -> Path:
+    """Store or replace a read-only backup for a policy version."""
+
+    backup_path = _policy_backup_path(conn, policy_id, version_id, original_filename)
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = backup_path.with_suffix(backup_path.suffix + ".tmp")
+    shutil.copy2(source_path, temp_path)
+    backup_hash = _hash_file(temp_path)
+    if backup_hash != expected_hash:
+        temp_path.unlink(missing_ok=True)
+        raise ValueError("Backup checksum did not match expected hash.")
+    temp_path.replace(backup_path)
+    _ensure_read_only(backup_path)
+    return backup_path
 
 
 def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
@@ -322,15 +374,29 @@ def add_policy_version(
             notes,
         ),
     )
+    version_id = cursor.lastrowid
+    try:
+        _store_policy_backup(
+            conn,
+            policy_id,
+            version_id,
+            original_path.name,
+            target_path,
+            sha256.hexdigest(),
+        )
+    except Exception:
+        conn.rollback()
+        target_path.unlink(missing_ok=True)
+        raise
     conn.commit()
     _log_event(
         conn,
         "add_policy_version",
         "policy_version",
-        cursor.lastrowid,
+        version_id,
         f"policy_id={policy_id} version={version_number}",
     )
-    return cursor.lastrowid
+    return version_id
 
 
 def mark_version_ratified(conn, version_id: int, user_id: int | None) -> None:
@@ -600,6 +666,61 @@ def format_replacement_note(
     )
 
 
+def policy_backup_available(conn, version_id: int) -> bool:
+    """Return True when a verified backup exists for the policy version."""
+
+    row = conn.execute(
+        "SELECT policy_id, original_filename, sha256_hash FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        return False
+    backup_path = _policy_backup_path(conn, row["policy_id"], version_id, row["original_filename"])
+    if not backup_path.exists():
+        return False
+    return _hash_file(backup_path) == row["sha256_hash"]
+
+
+def restore_policy_from_backup(conn, version_id: int, reason: str) -> None:
+    """Restore a policy file from its backup after verifying the checksum."""
+
+    row = conn.execute(
+        """
+        SELECT policy_id, file_path, sha256_hash, version_number, original_filename
+        FROM policy_versions
+        WHERE id = ?
+        """,
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    backup_path = _policy_backup_path(conn, row["policy_id"], version_id, row["original_filename"])
+    if not backup_path.exists():
+        raise ValueError("Backup file not found.")
+    backup_hash = _hash_file(backup_path)
+    if backup_hash != row["sha256_hash"]:
+        raise ValueError("Backup checksum does not match the stored hash.")
+    target_path = Path(row["file_path"])
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(backup_path, target_path)
+    restored_hash = _hash_file(target_path)
+    if restored_hash != row["sha256_hash"]:
+        raise ValueError("Restored file failed checksum verification.")
+    file_size = target_path.stat().st_size
+    conn.execute(
+        "UPDATE policy_versions SET file_size_bytes = ? WHERE id = ?",
+        (file_size, version_id),
+    )
+    _log_event(
+        conn,
+        "policy_backup_restored",
+        "policy_version",
+        version_id,
+        f"reason={reason} path={target_path}",
+    )
+    conn.commit()
+
+
 def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Repair stored paths and detect missing or altered policy files."""
 
@@ -611,6 +732,7 @@ def scan_policy_file_integrity(conn) -> tuple[list[dict[str, str]], list[dict[st
                v.status,
                v.notes,
                v.replacement_accepted,
+               v.original_filename,
                v.version_number,
                p.id AS policy_id,
                p.title AS policy_title
@@ -672,7 +794,11 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
     """Replace a policy version file with a selected source file and update metadata."""
 
     row = conn.execute(
-        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        """
+        SELECT policy_id, file_path, sha256_hash, version_number, original_filename
+        FROM policy_versions
+        WHERE id = ?
+        """,
         (version_id,),
     ).fetchone()
     if not row:
@@ -684,6 +810,14 @@ def restore_policy_version_file(conn, version_id: int, source_path: Path) -> Non
     shutil.copy2(source_path, target_path)
     new_hash = _hash_file(target_path)
     file_size = target_path.stat().st_size
+    _store_policy_backup(
+        conn,
+        row["policy_id"],
+        version_id,
+        row["original_filename"],
+        target_path,
+        new_hash,
+    )
     conn.execute(
         "UPDATE policy_versions SET sha256_hash = ?, file_size_bytes = ? WHERE id = ?",
         (new_hash, file_size, version_id),
@@ -702,7 +836,11 @@ def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> Non
     """Restore a missing policy file if it matches the stored checksum."""
 
     row = conn.execute(
-        "SELECT file_path, sha256_hash, version_number FROM policy_versions WHERE id = ?",
+        """
+        SELECT policy_id, file_path, sha256_hash, version_number, original_filename
+        FROM policy_versions
+        WHERE id = ?
+        """,
         (version_id,),
     ).fetchone()
     if not row:
@@ -714,6 +852,14 @@ def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> Non
     target_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source_path, target_path)
     file_size = target_path.stat().st_size
+    _store_policy_backup(
+        conn,
+        row["policy_id"],
+        version_id,
+        row["original_filename"],
+        target_path,
+        row["sha256_hash"],
+    )
     conn.execute(
         "UPDATE policy_versions SET file_size_bytes = ? WHERE id = ?",
         (file_size, version_id),
