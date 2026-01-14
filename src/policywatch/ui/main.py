@@ -920,9 +920,15 @@ class MainWindow(QtWidgets.QMainWindow):
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
-            SELECT status, expiry_date, notes
-            FROM policy_versions
-            WHERE id = ?
+            SELECT v.status,
+                   v.expiry_date,
+                   v.notes,
+                   v.ratified,
+                   v.ratified_at,
+                   u.username AS ratified_by
+            FROM policy_versions v
+            LEFT JOIN users u ON u.id = v.ratified_by_user_id
+            WHERE v.id = ?
             """,
             (version_id,),
         ).fetchone()
@@ -939,6 +945,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
+        self.detail_ratified.setText("Yes" if int(version["ratified"] or 0) else "No")
+        self.detail_ratified_at.setText(self._format_datetime_display(version["ratified_at"] or ""))
+        self.detail_ratified_by.setText(version["ratified_by"] or "")
         read_only = integrity_issue or is_missing_status
         self._set_policy_metadata_enabled(not read_only)
         self._set_version_action_state(not read_only)
@@ -1281,6 +1290,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_status.setEnabled(enabled)
         self.detail_expiry.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
+        self.detail_ratified.setEnabled(enabled)
+        self.detail_ratified_at.setEnabled(enabled)
+        self.detail_ratified_by.setEnabled(enabled)
 
     def _set_version_action_state(self, enabled: bool) -> None:
         """Enable or disable version-specific actions."""
@@ -1332,6 +1344,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_date_field(self.detail_expiry, None)
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
+        self.detail_ratified.setText("")
+        self.detail_ratified_at.setText("")
+        self.detail_ratified_by.setText("")
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -1419,12 +1434,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.setReadOnly(False)
         self.detail_notes.textChanged.connect(self._mark_notes_dirty)
         self.detail_notes.installEventFilter(self)
+        self.detail_ratified = QtWidgets.QLineEdit()
+        self.detail_ratified.setReadOnly(True)
+        self.detail_ratified_at = QtWidgets.QLineEdit()
+        self.detail_ratified_at.setReadOnly(True)
+        self.detail_ratified_by = QtWidgets.QLineEdit()
+        self.detail_ratified_by.setReadOnly(True)
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
         form.addRow("Status", self.detail_status)
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Notes", self.detail_notes)
+        form.addRow("Ratified", self.detail_ratified)
+        form.addRow("Ratified At", self.detail_ratified_at)
+        form.addRow("Ratified By", self.detail_ratified_by)
 
         button_row = QtWidgets.QHBoxLayout()
         self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
