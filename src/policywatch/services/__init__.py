@@ -685,7 +685,7 @@ def format_replacement_note(
 
 
 def policy_backup_available(conn, version_id: int) -> bool:
-    """Return True when a verified backup exists for the policy version."""
+    """Return True when a backup exists for the policy version."""
 
     row = conn.execute(
         "SELECT policy_id, original_filename, sha256_hash FROM policy_versions WHERE id = ?",
@@ -694,9 +694,7 @@ def policy_backup_available(conn, version_id: int) -> bool:
     if not row:
         return False
     backup_path = _policy_backup_path(conn, row["policy_id"], version_id, row["original_filename"])
-    if not backup_path.exists():
-        return False
-    return _hash_file(backup_path) == row["sha256_hash"]
+    return backup_path.exists()
 
 
 def restore_policy_from_backup(conn, version_id: int, reason: str) -> None:
