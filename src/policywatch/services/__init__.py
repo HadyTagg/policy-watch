@@ -203,9 +203,9 @@ def create_policy(
         """
         INSERT INTO policies (
             title, slug, category, status, ratified, ratified_at, ratified_by_user_id,
-            effective_date, review_due_date, review_frequency_months, expiry_date, owner, notes,
+            effective_date, review_due_date, review_frequency_months, expiry_date, notes,
             current_version_id, created_at, created_by_user_id
-        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+        ) VALUES (?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?, ?)
         """,
         (
             title,
@@ -216,7 +216,6 @@ def create_policy(
             review_due_date,
             None,
             expiry,
-            None,
             notes,
             created_at,
             created_by_user_id,
@@ -869,12 +868,12 @@ def delete_category(conn, category_id: int) -> None:
     _log_event(conn, "delete_category", "category", category_id, None)
 
 
-def update_policy_owner(conn, policy_id: int, owner: str | None) -> None:
-    """Update the policy owner and log the change."""
+def update_policy_version_owner(conn, version_id: int, owner: str | None) -> None:
+    """Update the policy version owner and log the change."""
 
     row = conn.execute(
-        "SELECT owner FROM policies WHERE id = ?",
-        (policy_id,),
+        "SELECT owner, version_number FROM policy_versions WHERE id = ?",
+        (version_id,),
     ).fetchone()
     if not row:
         return
@@ -883,18 +882,19 @@ def update_policy_owner(conn, policy_id: int, owner: str | None) -> None:
     if current_owner == new_owner:
         return
     conn.execute(
-        "UPDATE policies SET owner = ? WHERE id = ?",
-        (owner, policy_id),
+        "UPDATE policy_versions SET owner = ? WHERE id = ?",
+        (owner, version_id),
     )
     conn.commit()
     previous_label = current_owner or "Unassigned"
     new_label = new_owner or "Unassigned"
+    details = f"version={row['version_number']} owner={new_label} previous_owner={previous_label}"
     _log_event(
         conn,
         "update_policy_owner",
-        "policy",
-        policy_id,
-        f"owner={new_label} previous_owner={previous_label}",
+        "policy_version",
+        version_id,
+        details,
     )
 
 

@@ -39,7 +39,7 @@ from policywatch.services import (
     set_current_version,
     unset_current_version,
     update_policy_category,
-    update_policy_owner,
+    update_policy_version_owner,
     update_policy_title,
     set_audit_actor,
 )
@@ -78,7 +78,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._current_policy_title = ""
         self._current_policy_category = ""
-        self._current_policy_owner = ""
         self._staff_records: list[dict[str, str]] = []
         self._owner_refreshing = False
 
@@ -630,7 +629,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
-        self._current_policy_owner = policy["owner"] or ""
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
@@ -639,7 +637,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_owner.blockSignals(True)
         self._populate_category_options(self._current_policy_category)
         self._clear_policy_metadata_fields()
-        self._populate_owner_options(self._current_policy_owner)
+        self._populate_owner_options(None)
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -931,6 +929,7 @@ class MainWindow(QtWidgets.QMainWindow):
             SELECT v.status,
                    v.expiry_date,
                    v.notes,
+                   v.owner,
                    v.ratified,
                    v.ratified_at,
                    u.username AS ratified_by
@@ -951,7 +950,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_owner.blockSignals(True)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
-        self._populate_owner_options(self._current_policy_owner)
+        self._populate_owner_options(version["owner"])
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
@@ -1411,9 +1410,22 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             return
         selected_owner = self.detail_owner.currentData()
-        row = self.conn.execute(
-            "SELECT owner FROM policies WHERE id = ?",
+        selected = self.version_table.selectionModel().selectedRows()
+        selected_version_id = None
+        if selected:
+            selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
+        policy_row = self.conn.execute(
+            "SELECT current_version_id FROM policies WHERE id = ?",
             (self.current_policy_id,),
+        ).fetchone()
+        if not policy_row:
+            return
+        version_id = selected_version_id or policy_row["current_version_id"]
+        if not version_id:
+            return
+        row = self.conn.execute(
+            "SELECT owner FROM policy_versions WHERE id = ?",
+            (version_id,),
         ).fetchone()
         if not row:
             return
@@ -1431,7 +1443,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if response != QtWidgets.QMessageBox.Yes:
             self._load_policy_detail(self.current_policy_id)
             return
-        update_policy_owner(self.conn, self.current_policy_id, selected_owner)
+        update_policy_version_owner(self.conn, version_id, selected_owner)
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()

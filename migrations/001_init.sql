@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS policies (
     effective_date TEXT NOT NULL,
     review_due_date TEXT NOT NULL,
     expiry_date TEXT NOT NULL,
-    owner TEXT,
     notes TEXT,
     current_version_id INTEGER,
     created_at TEXT NOT NULL,
@@ -53,6 +52,7 @@ CREATE TABLE IF NOT EXISTS policy_versions (
     ratified INTEGER NOT NULL DEFAULT 0,
     ratified_at TEXT,
     ratified_by_user_id INTEGER,
+    owner TEXT,
     FOREIGN KEY (policy_id) REFERENCES policies(id),
     FOREIGN KEY (created_by_user_id) REFERENCES users(id),
     FOREIGN KEY (ratified_by_user_id) REFERENCES users(id)

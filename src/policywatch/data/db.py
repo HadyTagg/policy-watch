@@ -59,7 +59,6 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 effective_date TEXT NOT NULL,
                 review_due_date TEXT NOT NULL,
                 expiry_date TEXT NOT NULL,
-                owner TEXT,
                 notes TEXT,
                 current_version_id INTEGER,
                 created_at TEXT NOT NULL,
@@ -81,6 +80,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 ratified INTEGER NOT NULL DEFAULT 0,
                 ratified_at TEXT,
                 ratified_by_user_id INTEGER,
+                owner TEXT,
                 FOREIGN KEY (policy_id) REFERENCES policies(id),
                 FOREIGN KEY (created_by_user_id) REFERENCES users(id),
                 FOREIGN KEY (ratified_by_user_id) REFERENCES users(id)
@@ -171,6 +171,7 @@ def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
         ("expiry_date", "TEXT"),
         ("notes", "TEXT"),
         ("replacement_accepted", "INTEGER"),
+        ("owner", "TEXT"),
     ]
     for name, column_type in additions:
         if name not in columns:
