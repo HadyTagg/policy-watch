@@ -31,6 +31,7 @@ from policywatch.services import (
     update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
+    list_users,
     list_policies,
     list_versions,
     mark_version_ratified,
@@ -38,6 +39,7 @@ from policywatch.services import (
     set_current_version,
     unset_current_version,
     update_policy_category,
+    update_policy_owner,
     update_policy_title,
     set_audit_actor,
 )
@@ -76,6 +78,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._current_policy_title = ""
         self._current_policy_category = ""
+        self._current_policy_owner = ""
         self._staff_records: list[dict[str, str]] = []
 
         set_audit_actor(username)
@@ -626,18 +629,22 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
+        self._current_policy_owner = policy["owner"] or ""
         self.detail_status.blockSignals(True)
         self.detail_expiry.blockSignals(True)
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self._populate_category_options(self._current_policy_category)
         self._clear_policy_metadata_fields()
+        self._populate_owner_options(self._current_policy_owner)
         self.detail_status.blockSignals(False)
         self.detail_expiry.blockSignals(False)
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
 
@@ -747,7 +754,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        mark_version_ratified(self.conn, version_id, None)
+        mark_version_ratified(self.conn, version_id, self.user_id)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
@@ -940,8 +947,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self.detail_title.setText(self._current_policy_title)
         self._populate_category_options(self._current_policy_category)
+        self._populate_owner_options(self._current_policy_owner)
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self.detail_notes.setPlainText(version["notes"] or "")
@@ -956,6 +965,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
 
@@ -1282,11 +1292,29 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.detail_category.setCurrentIndex(-1)
 
+    def _populate_owner_options(self, selected: str | None) -> None:
+        """Populate owner options for the detail panel."""
+
+        owners = list_users(self.conn)
+        if selected and selected not in owners:
+            owners.append(selected)
+        self.detail_owner.clear()
+        self.detail_owner.addItem("Unassigned", None)
+        for owner in owners:
+            if owner:
+                self.detail_owner.addItem(owner, owner)
+        if selected:
+            index = self.detail_owner.findData(selected)
+        else:
+            index = self.detail_owner.findData(None)
+        self.detail_owner.setCurrentIndex(index if index >= 0 else 0)
+
     def _set_policy_metadata_enabled(self, enabled: bool) -> None:
         """Enable or disable policy metadata fields."""
 
         self.detail_title.setEnabled(enabled)
         self.detail_category.setEnabled(enabled)
+        self.detail_owner.setEnabled(enabled and self._is_admin())
         self.detail_status.setEnabled(enabled)
         self.detail_expiry.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
@@ -1337,6 +1365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(True)
         self.detail_title.blockSignals(True)
         self.detail_category.blockSignals(True)
+        self.detail_owner.blockSignals(True)
         self._set_policy_metadata_enabled(False)
         self._set_version_action_state(False)
         self.detail_title.setText("")
@@ -1344,6 +1373,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_date_field(self.detail_expiry, None)
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
+        self.detail_owner.setCurrentIndex(-1)
         self.detail_ratified.setText("")
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
@@ -1352,8 +1382,54 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_notes.blockSignals(False)
         self.detail_category.blockSignals(False)
         self.detail_title.blockSignals(False)
+        self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
+
+    def _on_owner_changed(self, owner: str) -> None:
+        """Handle owner updates from the metadata form."""
+
+        if not self.current_policy_id or not self._is_admin():
+            return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
+            return
+        selected_owner = self.detail_owner.currentData()
+        row = self.conn.execute(
+            "SELECT owner FROM policies WHERE id = ?",
+            (self.current_policy_id,),
+        ).fetchone()
+        if not row:
+            return
+        current_owner = row["owner"] or ""
+        new_owner = selected_owner or ""
+        if current_owner == new_owner:
+            return
+        current_label = current_owner or "Unassigned"
+        new_label = new_owner or "Unassigned"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Change",
+            f"Change Owner from {current_label} to {new_label}?",
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            self._load_policy_detail(self.current_policy_id)
+            return
+        update_policy_owner(self.conn, self.current_policy_id, selected_owner)
+        self._refresh_policies(clear_selection=False)
+        self._load_policy_detail(self.current_policy_id)
+        self._load_audit_log()
 
     def _on_category_changed(self, category: str) -> None:
         """Handle category updates from the metadata form."""
@@ -1418,6 +1494,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category = QtWidgets.QComboBox()
         self.detail_category.setEditable(False)
         self.detail_category.currentTextChanged.connect(self._on_category_changed)
+        self.detail_owner = QtWidgets.QComboBox()
+        self.detail_owner.setEditable(False)
+        self.detail_owner.currentTextChanged.connect(self._on_owner_changed)
         self.detail_status = QtWidgets.QComboBox()
         self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Missing", "Archived"])
         missing_index = self.detail_status.findText("Missing")
@@ -1443,6 +1522,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form.addRow("Title", self.detail_title)
         form.addRow("Category", self.detail_category)
+        form.addRow("Owner", self.detail_owner)
         form.addRow("Status", self.detail_status)
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Notes", self.detail_notes)

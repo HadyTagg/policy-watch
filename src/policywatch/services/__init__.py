@@ -840,6 +840,18 @@ def list_categories(conn) -> list[str]:
     return [row["name"] for row in rows]
 
 
+def list_users(conn, include_disabled: bool = False) -> list[str]:
+    """Return usernames for existing users."""
+
+    query = "SELECT username FROM users"
+    params: tuple = ()
+    if not include_disabled:
+        query += " WHERE disabled = 0"
+    query += " ORDER BY username"
+    rows = conn.execute(query, params).fetchall()
+    return [row["username"] for row in rows]
+
+
 def create_category(conn, name: str) -> None:
     """Create a category record and log the event."""
 
@@ -855,6 +867,35 @@ def delete_category(conn, category_id: int) -> None:
     conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     conn.commit()
     _log_event(conn, "delete_category", "category", category_id, None)
+
+
+def update_policy_owner(conn, policy_id: int, owner: str | None) -> None:
+    """Update the policy owner and log the change."""
+
+    row = conn.execute(
+        "SELECT owner FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if not row:
+        return
+    current_owner = row["owner"] or ""
+    new_owner = owner or ""
+    if current_owner == new_owner:
+        return
+    conn.execute(
+        "UPDATE policies SET owner = ? WHERE id = ?",
+        (owner, policy_id),
+    )
+    conn.commit()
+    previous_label = current_owner or "Unassigned"
+    new_label = new_owner or "Unassigned"
+    _log_event(
+        conn,
+        "update_policy_owner",
+        "policy",
+        policy_id,
+        f"owner={new_label} previous_owner={previous_label}",
+    )
 
 
 def create_user(
