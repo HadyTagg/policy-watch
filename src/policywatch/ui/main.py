@@ -814,6 +814,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Select a policy version before recording a review.",
             )
             return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before recording a review.",
+            )
+            return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version_row = self.conn.execute(
             "SELECT status FROM policy_versions WHERE id = ?",
