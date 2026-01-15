@@ -113,6 +113,66 @@ def _policy_backup_root(conn) -> Path:
     return paths.data_dir / ".policy_backups"
 
 
+def _unique_destination(destination: Path) -> Path:
+    """Return a unique destination path by appending a counter when needed."""
+
+    if not destination.exists():
+        return destination
+    stem = destination.stem
+    suffix = destination.suffix
+    for index in range(1, 1000):
+        candidate = destination.with_name(f"{stem}-{index}{suffix}")
+        if not candidate.exists():
+            return candidate
+    raise RuntimeError(f"Unable to find unique destination for {destination}")
+
+
+def evacuate_untracked_policy_files(conn) -> list[Path]:
+    """Move unexpected policy files into the Evacuated Files folder."""
+
+    policy_rows = conn.execute(
+        "SELECT id, policy_id, original_filename, file_path FROM policy_versions"
+    ).fetchall()
+    policy_root = _policy_root(conn)
+    backup_root = _policy_backup_root(conn)
+    expected_policy_files: set[Path] = set()
+    expected_backup_files: set[Path] = set()
+
+    for row in policy_rows:
+        stored_path = Path(row["file_path"])
+        if stored_path.is_absolute():
+            expected_policy_files.add(stored_path.resolve())
+        else:
+            expected_policy_files.add((policy_root / stored_path).resolve())
+        expected_backup_files.add(
+            _policy_backup_path(conn, row["policy_id"], row["id"], row["original_filename"]).resolve()
+        )
+
+    evac_root = config.get_paths().data_dir / "Evacuated Files"
+    evacuated: list[Path] = []
+
+    def _evacuate_unknown_files(root: Path, expected: set[Path], label: str) -> None:
+        if not root.exists():
+            return
+        for current_root, _, files in os.walk(root):
+            for filename in files:
+                file_path = Path(current_root) / filename
+                resolved_path = file_path.resolve()
+                if resolved_path in expected:
+                    continue
+                relative = file_path.relative_to(root)
+                target = evac_root / label / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                destination = _unique_destination(target)
+                shutil.move(str(file_path), str(destination))
+                evacuated.append(destination)
+
+    _evacuate_unknown_files(policy_root, expected_policy_files, "policies")
+    _evacuate_unknown_files(backup_root, expected_backup_files, ".policy_backups")
+
+    return evacuated
+
+
 def _policy_backup_path(
     conn,
     policy_id: int,

@@ -15,6 +15,7 @@ from PyQt5 import QtGui, QtWidgets
 
 from policywatch.core import config, security
 from policywatch.data import db
+from policywatch.services import evacuate_untracked_policy_files
 from policywatch.ui.login import LoginWindow
 from policywatch.ui.main import MainWindow
 
@@ -29,6 +30,7 @@ class PolicyWatchApp:
         self.conn = db.connect(self.paths.db_path)
         db.apply_schema(self.conn)
         config.ensure_defaults(self.conn)
+        evacuate_untracked_policy_files(self.conn)
         self._app: QtWidgets.QApplication | None = None
         self._dark_stylesheet = """
             QWidget {
