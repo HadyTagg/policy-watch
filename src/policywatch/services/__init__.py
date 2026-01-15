@@ -365,9 +365,14 @@ def list_policy_reviews(conn, policy_version_id: int) -> list[dict]:
         LEFT JOIN policy_versions v ON v.id = pr.policy_version_id
         LEFT JOIN users u ON u.id = pr.reviewed_by_user_id
         WHERE pr.policy_version_id = ?
+           OR pr.policy_version_id IN (
+                SELECT source_version_id
+                FROM policy_review_carryovers
+                WHERE replacement_version_id = ?
+           )
         ORDER BY pr.reviewed_at DESC, pr.id DESC
         """,
-        (policy_version_id,),
+        (policy_version_id, policy_version_id),
     ).fetchall()
     return [dict(row) for row in rows]
 
@@ -1129,37 +1134,29 @@ def mark_policy_version_missing(
                 ).fetchone()
                 if replacement_row:
                     new_version_number = replacement_row["version_number"]
-            review_rows = conn.execute(
+            existing_carryover = conn.execute(
                 """
-                SELECT reviewed_at, reviewed_by_user_id, notes, no_change
-                FROM policy_reviews
-                WHERE policy_version_id = ?
+                SELECT 1
+                FROM policy_review_carryovers
+                WHERE source_version_id = ? AND replacement_version_id = ?
                 """,
-                (version_id,),
-            ).fetchall()
-            for review_row in review_rows:
+                (version_id, replacement_version_id),
+            ).fetchone()
+            if not existing_carryover:
                 conn.execute(
                     """
-                    INSERT INTO policy_reviews (
-                        policy_id, policy_version_id, reviewed_at, reviewed_by_user_id, notes, no_change
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO policy_review_carryovers (
+                        source_version_id, replacement_version_id, carried_at
+                    ) VALUES (?, ?, ?)
                     """,
-                    (
-                        row["policy_id"],
-                        replacement_version_id,
-                        review_row["reviewed_at"],
-                        review_row["reviewed_by_user_id"],
-                        review_row["notes"],
-                        review_row["no_change"],
-                    ),
+                    (version_id, replacement_version_id, datetime.datetime.utcnow().isoformat()),
                 )
-            if review_rows:
                 _log_event(
                     conn,
-                    "policy_review_copied",
+                    "policy_review_carryover_added",
                     "policy_version",
                     replacement_version_id,
-                    f"copied_reviews_from_version={row['version_number']}",
+                    f"carried_reviews_from_version={row['version_number']}",
                 )
             conn.execute(
                 "UPDATE policy_versions SET owner = ? WHERE id = ?",
