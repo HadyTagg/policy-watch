@@ -58,6 +58,28 @@ CREATE TABLE IF NOT EXISTS policy_versions (
     FOREIGN KEY (ratified_by_user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS policy_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    policy_id INTEGER NOT NULL,
+    policy_version_id INTEGER NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    reviewed_by_user_id INTEGER,
+    notes TEXT,
+    no_change INTEGER NOT NULL DEFAULT 1,
+    FOREIGN KEY (policy_id) REFERENCES policies(id),
+    FOREIGN KEY (policy_version_id) REFERENCES policy_versions(id),
+    FOREIGN KEY (reviewed_by_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS policy_review_carryovers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_version_id INTEGER NOT NULL,
+    replacement_version_id INTEGER NOT NULL,
+    carried_at TEXT NOT NULL,
+    FOREIGN KEY (source_version_id) REFERENCES policy_versions(id),
+    FOREIGN KEY (replacement_version_id) REFERENCES policy_versions(id)
+);
+
 CREATE TABLE IF NOT EXISTS email_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sent_at TEXT NOT NULL,
