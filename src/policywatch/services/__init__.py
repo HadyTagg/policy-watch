@@ -350,6 +350,72 @@ def list_versions(conn, policy_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_policy_reviews(conn, policy_id: int) -> list[dict]:
+    """Return review records for a policy."""
+
+    rows = conn.execute(
+        """
+        SELECT pr.id,
+               pr.reviewed_at,
+               pr.notes,
+               pr.no_change,
+               v.version_number,
+               u.username AS reviewed_by
+        FROM policy_reviews pr
+        LEFT JOIN policy_versions v ON v.id = pr.policy_version_id
+        LEFT JOIN users u ON u.id = pr.reviewed_by_user_id
+        WHERE pr.policy_id = ?
+        ORDER BY pr.reviewed_at DESC, pr.id DESC
+        """,
+        (policy_id,),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def add_policy_review(
+    conn,
+    policy_id: int,
+    policy_version_id: int | None,
+    reviewed_by_user_id: int | None,
+    reviewed_at: str,
+    notes: str | None,
+    no_change: bool = True,
+) -> int:
+    """Record a policy review that did not create a new version."""
+
+    cursor = conn.execute(
+        """
+        INSERT INTO policy_reviews (
+            policy_id, policy_version_id, reviewed_at, reviewed_by_user_id, notes, no_change
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            policy_id,
+            policy_version_id,
+            reviewed_at,
+            reviewed_by_user_id,
+            notes,
+            1 if no_change else 0,
+        ),
+    )
+    conn.commit()
+    version_number = None
+    if policy_version_id:
+        row = conn.execute(
+            "SELECT version_number FROM policy_versions WHERE id = ?",
+            (policy_version_id,),
+        ).fetchone()
+        if row:
+            version_number = row["version_number"]
+    details = f"reviewed_at={reviewed_at}"
+    if version_number is not None:
+        details = f"{details} version=v{version_number}"
+    if no_change:
+        details = f"{details} no_change=true"
+    _log_event(conn, "record_policy_review", "policy", policy_id, details)
+    return cursor.lastrowid
+
+
 def create_policy(
     conn,
     title: str,

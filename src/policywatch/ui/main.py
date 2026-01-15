@@ -20,6 +20,7 @@ from policywatch.core import audit, config
 from policywatch.integrations import outlook
 from policywatch.services import (
     add_policy_version,
+    add_policy_review,
     export_backup,
     get_version_file,
     mark_policy_version_missing,
@@ -35,6 +36,7 @@ from policywatch.services import (
     list_categories,
     list_users,
     list_policies,
+    list_policy_reviews,
     list_versions,
     mark_version_ratified,
     unmark_version_ratified,
@@ -735,10 +737,105 @@ class MainWindow(QtWidgets.QMainWindow):
                     item.setToolTip(f"Integrity issue: {issue_reason}")
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole + 1, issue_reason)
-        if selected_version_id and self._select_version_row_by_id(selected_version_id):
-            return
-        if policy["current_version_id"]:
+        selected = False
+        if selected_version_id:
+            selected = self._select_version_row_by_id(selected_version_id)
+        if not selected and policy["current_version_id"]:
             self._select_version_row_by_id(policy["current_version_id"])
+        self._load_policy_reviews(policy_id)
+
+    def _load_policy_reviews(self, policy_id: int) -> None:
+        """Load review history for the selected policy."""
+
+        reviews = list_policy_reviews(self.conn, policy_id)
+        self.review_table.setRowCount(len(reviews))
+        for row_index, review in enumerate(reviews):
+            reviewed_at = self._format_review_date_display(review["reviewed_at"] or "")
+            reviewed_by = review.get("reviewed_by") or ""
+            version_number = review.get("version_number")
+            version_label = f"v{version_number}" if version_number is not None else ""
+            notes = review.get("notes") or ""
+            self.review_table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(reviewed_at))
+            self.review_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(reviewed_by))
+            self.review_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(version_label))
+            self.review_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(notes))
+
+    def _prompt_policy_review(self) -> dict | None:
+        """Prompt for review details when recording a no-change review."""
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Record Review (No Changes)")
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        form = QtWidgets.QFormLayout()
+        review_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
+        review_date.setCalendarPopup(True)
+        review_date.setDisplayFormat("dd/MM/yyyy")
+        notes_input = QtWidgets.QPlainTextEdit()
+
+        form.addRow("Review Date", review_date)
+        form.addRow("Notes", notes_input)
+        layout.addLayout(form)
+
+        button_row = QtWidgets.QHBoxLayout()
+        save_button = QtWidgets.QPushButton("Save")
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        save_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+        button_row.addStretch(1)
+        button_row.addWidget(save_button)
+        button_row.addWidget(cancel_button)
+        layout.addLayout(button_row)
+
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return None
+        return {
+            "reviewed_at": review_date.date().toString("yyyy-MM-dd"),
+            "notes": notes_input.toPlainText().strip() or None,
+        }
+
+    def _record_policy_review(self) -> None:
+        """Record a review without creating a new policy version."""
+
+        if not self.current_policy_id:
+            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
+            return
+        policy_row = self.conn.execute(
+            "SELECT current_version_id FROM policies WHERE id = ?",
+            (self.current_policy_id,),
+        ).fetchone()
+        current_version_id = policy_row["current_version_id"] if policy_row else None
+        if not current_version_id:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Current Version",
+                "Set a current policy version before recording a review.",
+            )
+            return
+        version_row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (current_version_id,),
+        ).fetchone()
+        if version_row and (version_row["status"] or "").lower() == "missing":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is marked as missing and cannot be reviewed.",
+            )
+            return
+        review_details = self._prompt_policy_review()
+        if not review_details:
+            return
+        add_policy_review(
+            self.conn,
+            self.current_policy_id,
+            current_version_id,
+            self.user_id,
+            review_details["reviewed_at"],
+            review_details["notes"],
+        )
+        self._load_policy_reviews(self.current_policy_id)
+        self._load_audit_log()
 
     def _upload_version(self) -> None:
         """Prompt for a file and add a policy version."""
@@ -1207,6 +1304,16 @@ class MainWindow(QtWidgets.QMainWindow):
             return value
         return date_value.date().toString("dd/MM/yyyy")
 
+    def _format_review_date_display(self, value: str) -> str:
+        """Format a review timestamp or date string for UI display."""
+
+        if not value:
+            return ""
+        date_time = QtCore.QDateTime.fromString(value, QtCore.Qt.ISODate)
+        if date_time.isValid():
+            return date_time.date().toString("dd/MM/yyyy")
+        return self._format_date_display(value)
+
     def _set_date_field(self, widget: QtWidgets.QDateEdit, value: str | None) -> None:
         """Configure a date widget with a stored date or blank state."""
 
@@ -1614,6 +1721,32 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Ratified At", self.detail_ratified_at)
         form.addRow("Ratified By", self.detail_ratified_by)
 
+        reviews = QtWidgets.QGroupBox("Reviews (No Changes)")
+        reviews_layout = QtWidgets.QVBoxLayout(reviews)
+        self.review_table = QtWidgets.QTableWidget(0, 4)
+        self.review_table.setHorizontalHeaderLabels(
+            ["Reviewed At", "Reviewed By", "Version", "Notes"]
+        )
+        self.review_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.review_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.review_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.review_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        review_font = self.review_table.font()
+        review_font.setPointSize(9)
+        review_font.setBold(True)
+        self.review_table.setFont(review_font)
+        self.review_table.setStyleSheet(
+            "QTableWidget::item { color: white; }"
+            "QTableWidget::item:selected { background-color: blue; color: white; }"
+        )
+        reviews_layout.addWidget(self.review_table)
+        review_button_row = QtWidgets.QHBoxLayout()
+        review_button_row.addStretch(1)
+        self.review_button = QtWidgets.QPushButton("Record Review")
+        self.review_button.clicked.connect(self._record_policy_review)
+        review_button_row.addWidget(self.review_button)
+        reviews_layout.addLayout(review_button_row)
+
         button_row = QtWidgets.QHBoxLayout()
         self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
         self.ratify_button.clicked.connect(self._mark_ratified)
@@ -1642,6 +1775,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         layout.addWidget(versions)
         layout.addWidget(summary)
+        layout.addWidget(reviews)
         layout.addLayout(button_row)
         return wrapper
 
