@@ -350,8 +350,8 @@ def list_versions(conn, policy_id: int) -> list[dict]:
     return [dict(row) for row in rows]
 
 
-def list_policy_reviews(conn, policy_id: int) -> list[dict]:
-    """Return review records for a policy."""
+def list_policy_reviews(conn, policy_version_id: int) -> list[dict]:
+    """Return review records for a policy version."""
 
     rows = conn.execute(
         """
@@ -364,18 +364,17 @@ def list_policy_reviews(conn, policy_id: int) -> list[dict]:
         FROM policy_reviews pr
         LEFT JOIN policy_versions v ON v.id = pr.policy_version_id
         LEFT JOIN users u ON u.id = pr.reviewed_by_user_id
-        WHERE pr.policy_id = ?
+        WHERE pr.policy_version_id = ?
         ORDER BY pr.reviewed_at DESC, pr.id DESC
         """,
-        (policy_id,),
+        (policy_version_id,),
     ).fetchall()
     return [dict(row) for row in rows]
 
 
 def add_policy_review(
     conn,
-    policy_id: int,
-    policy_version_id: int | None,
+    policy_version_id: int,
     reviewed_by_user_id: int | None,
     reviewed_at: str,
     notes: str | None,
@@ -383,6 +382,13 @@ def add_policy_review(
 ) -> int:
     """Record a policy review that did not create a new version."""
 
+    policy_row = conn.execute(
+        "SELECT policy_id, version_number FROM policy_versions WHERE id = ?",
+        (policy_version_id,),
+    ).fetchone()
+    if not policy_row:
+        raise ValueError("Policy version not found")
+    policy_id = policy_row["policy_id"]
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -399,17 +405,8 @@ def add_policy_review(
         ),
     )
     conn.commit()
-    version_number = None
-    if policy_version_id:
-        row = conn.execute(
-            "SELECT version_number FROM policy_versions WHERE id = ?",
-            (policy_version_id,),
-        ).fetchone()
-        if row:
-            version_number = row["version_number"]
     details = f"reviewed_at={reviewed_at}"
-    if version_number is not None:
-        details = f"{details} version=v{version_number}"
+    details = f"{details} version=v{policy_row['version_number']}"
     if no_change:
         details = f"{details} no_change=true"
     _log_event(conn, "record_policy_review", "policy", policy_id, details)

@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS policy_versions (
 CREATE TABLE IF NOT EXISTS policy_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     policy_id INTEGER NOT NULL,
-    policy_version_id INTEGER,
+    policy_version_id INTEGER NOT NULL,
     reviewed_at TEXT NOT NULL,
     reviewed_by_user_id INTEGER,
     notes TEXT,

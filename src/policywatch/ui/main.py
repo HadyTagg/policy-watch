@@ -741,13 +741,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if selected_version_id:
             selected = self._select_version_row_by_id(selected_version_id)
         if not selected and policy["current_version_id"]:
-            self._select_version_row_by_id(policy["current_version_id"])
-        self._load_policy_reviews(policy_id)
+            selected = self._select_version_row_by_id(policy["current_version_id"])
+        if selected:
+            version_id = self.version_table.item(self.version_table.currentRow(), 0).data(QtCore.Qt.UserRole)
+            self._load_policy_reviews(version_id)
+        else:
+            self._clear_policy_reviews()
 
-    def _load_policy_reviews(self, policy_id: int) -> None:
-        """Load review history for the selected policy."""
+    def _load_policy_reviews(self, policy_version_id: int) -> None:
+        """Load review history for the selected policy version."""
 
-        reviews = list_policy_reviews(self.conn, policy_id)
+        reviews = list_policy_reviews(self.conn, policy_version_id)
         self.review_table.setRowCount(len(reviews))
         for row_index, review in enumerate(reviews):
             reviewed_at = self._format_review_date_display(review["reviewed_at"] or "")
@@ -759,6 +763,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.review_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(reviewed_by))
             self.review_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(version_label))
             self.review_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(notes))
+
+    def _clear_policy_reviews(self) -> None:
+        """Clear review history table."""
+
+        self.review_table.setRowCount(0)
 
     def _prompt_policy_review(self) -> dict | None:
         """Prompt for review details when recording a no-change review."""
@@ -797,24 +806,18 @@ class MainWindow(QtWidgets.QMainWindow):
     def _record_policy_review(self) -> None:
         """Record a review without creating a new policy version."""
 
-        if not self.current_policy_id:
-            QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
-            return
-        policy_row = self.conn.execute(
-            "SELECT current_version_id FROM policies WHERE id = ?",
-            (self.current_policy_id,),
-        ).fetchone()
-        current_version_id = policy_row["current_version_id"] if policy_row else None
-        if not current_version_id:
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
             QtWidgets.QMessageBox.warning(
                 self,
-                "Missing Current Version",
-                "Set a current policy version before recording a review.",
+                "Select Version",
+                "Select a policy version before recording a review.",
             )
             return
+        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version_row = self.conn.execute(
             "SELECT status FROM policy_versions WHERE id = ?",
-            (current_version_id,),
+            (version_id,),
         ).fetchone()
         if version_row and (version_row["status"] or "").lower() == "missing":
             QtWidgets.QMessageBox.warning(
@@ -828,13 +831,12 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         add_policy_review(
             self.conn,
-            self.current_policy_id,
-            current_version_id,
+            version_id,
             self.user_id,
             review_details["reviewed_at"],
             review_details["notes"],
         )
-        self._load_policy_reviews(self.current_policy_id)
+        self._load_policy_reviews(version_id)
         self._load_audit_log()
 
     def _upload_version(self) -> None:
@@ -1084,6 +1086,7 @@ class MainWindow(QtWidgets.QMainWindow):
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
             self._clear_policy_metadata_fields()
+            self._clear_policy_reviews()
             return
         integrity_issue = self._selected_version_integrity_issue()
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
@@ -1131,6 +1134,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_owner.blockSignals(False)
         self._notes_dirty = False
         self._title_dirty = False
+        self._load_policy_reviews(version_id)
 
         if read_only:
             if is_missing_status:
