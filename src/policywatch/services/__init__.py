@@ -89,6 +89,7 @@ class PolicyRow:
     status: str | None
     ratified: bool
     review_due_date: str | None
+    review_frequency_months: int | None
     expiry_date: str | None
     current_version_id: int | None
     current_version_number: int | None
@@ -295,6 +296,7 @@ def list_policies(conn) -> list[PolicyRow]:
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
                CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.expiry_date END AS expiry_date,
                p.current_version_id,
                v.version_number AS current_version_number
@@ -311,9 +313,14 @@ def list_policies(conn) -> list[PolicyRow]:
     for row in rows:
         traffic_status = ""
         traffic_reason = ""
+        review_due = None
+        if row["review_due_date"]:
+            review_due = datetime.date.fromisoformat(row["review_due_date"])
+        expiry = None
         if row["expiry_date"]:
             expiry = datetime.date.fromisoformat(row["expiry_date"])
-            traffic = traffic_light_status(today, expiry, amber_months)
+        if review_due or expiry:
+            traffic = traffic_light_status(today, review_due, expiry, amber_months)
             traffic_status = traffic.status
             traffic_reason = traffic.reason
         policies.append(
@@ -324,6 +331,7 @@ def list_policies(conn) -> list[PolicyRow]:
                 status=row["status"],
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
+                review_frequency_months=row["review_frequency_months"],
                 expiry_date=row["expiry_date"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
@@ -424,6 +432,8 @@ def create_policy(
     category: str,
     status: str,
     expiry: str,
+    review_due_date: str,
+    review_frequency_months: int | None,
     notes: str | None,
     created_by_user_id: int | None,
 ) -> int:
@@ -432,7 +442,7 @@ def create_policy(
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
     effective_date = expiry or ""
-    review_due_date = expiry or ""
+    review_due_date = review_due_date or expiry or ""
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -448,7 +458,7 @@ def create_policy(
             status,
             effective_date,
             review_due_date,
-            None,
+            review_frequency_months,
             expiry,
             notes,
             created_at,
@@ -519,6 +529,7 @@ def add_policy_version(
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
     effective_date = policy_row["effective_date"]
+    review_due_date = policy_row["review_due_date"]
     review_frequency = policy_row["review_frequency_months"]
     expiry_date = policy_row["expiry_date"]
     status = policy_row["status"]
@@ -526,11 +537,16 @@ def add_policy_version(
     if metadata:
         if "expiry_date" in metadata:
             expiry_date = metadata["expiry_date"]
+        if "review_due_date" in metadata:
+            review_due_date = metadata["review_due_date"]
         if "status" in metadata:
             status = metadata["status"]
+        if "review_frequency_months" in metadata:
+            review_frequency = metadata["review_frequency_months"]
         if "notes" in metadata:
             notes = metadata["notes"]
-    review_due_date = expiry_date or ""
+    if not review_due_date:
+        review_due_date = expiry_date or ""
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
