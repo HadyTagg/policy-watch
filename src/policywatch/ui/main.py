@@ -1349,6 +1349,9 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
+        if current_version_id:
+            self._select_version_row_by_id(current_version_id)
+            self._load_policy_reviews(current_version_id)
         self._load_audit_log()
 
     def _format_file_size(self, size_bytes: int) -> str:
