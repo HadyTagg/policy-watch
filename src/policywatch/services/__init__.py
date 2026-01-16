@@ -588,6 +588,19 @@ def add_policy_version(
             notes = metadata["notes"]
     if not review_due_date:
         review_due_date = ""
+    if (status or "").lower() == "active":
+        active_row = conn.execute(
+            """
+            SELECT id
+            FROM policy_versions
+            WHERE policy_id = ?
+              AND LOWER(status) = 'active'
+            LIMIT 1
+            """,
+            (policy_id,),
+        ).fetchone()
+        if active_row:
+            raise ValueError("Only one active version is allowed for a policy.")
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
