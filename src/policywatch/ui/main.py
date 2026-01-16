@@ -1562,6 +1562,23 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(cancel_button)
         layout.addLayout(button_row)
 
+        def auto_update_review_due() -> None:
+            min_date = QtCore.QDate(1900, 1, 1)
+            if not expiry_date.isEnabled() or expiry_date.date() == min_date:
+                review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
+                return
+            expiry_value = expiry_date.date()
+            review_due_date.setMaximumDate(expiry_value)
+            frequency_value = review_frequency.currentData()
+            if frequency_value:
+                candidate = QtCore.QDate.currentDate().addMonths(int(frequency_value))
+                if candidate > expiry_value:
+                    candidate = expiry_value
+                review_due_date.setDate(candidate)
+                return
+            if review_due_date.date() > expiry_value:
+                review_due_date.setDate(expiry_value)
+
         def update_metadata_state(status: str) -> None:
             is_draft = status == "Draft"
             min_date = QtCore.QDate(1900, 1, 1)
@@ -1589,12 +1606,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_due_date.setDisplayFormat("dd/MM/yyyy")
                 if review_due_date.date() == min_date:
                     review_due_date.setDate(QtCore.QDate.currentDate())
-                review_due_date.setMaximumDate(expiry_date.date())
-                if review_due_date.date() > expiry_date.date():
-                    review_due_date.setDate(expiry_date.date())
                 review_frequency.setEnabled(True)
+                auto_update_review_due()
         status_combo.currentTextChanged.connect(update_metadata_state)
         expiry_date.dateChanged.connect(lambda _: update_metadata_state(status_combo.currentText()))
+        review_frequency.currentIndexChanged.connect(auto_update_review_due)
         update_metadata_state(status_combo.currentText())
 
         if dialog.exec() != QtWidgets.QDialog.Accepted:
