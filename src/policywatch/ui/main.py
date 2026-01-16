@@ -1743,9 +1743,9 @@ class MainWindow(QtWidgets.QMainWindow):
                         "Change Not Allowed",
                         f"Only one active version is allowed. {label} is already active.",
                     )
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
         if (current_status or "").lower() == "draft" and (status or "").lower() in {"withdrawn", "archived"}:
             QtWidgets.QMessageBox.warning(
                 self,
