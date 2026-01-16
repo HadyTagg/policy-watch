@@ -2925,6 +2925,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_search = QtWidgets.QLineEdit()
         self.audit_search.setPlaceholderText("Search audit log...")
         self.audit_search.textChanged.connect(self._load_audit_log)
+        self.audit_search_field = QtWidgets.QComboBox()
+        self.audit_search_field.addItems(["All Fields", "Actor", "Action", "Entity", "Details"])
+        self.audit_search_field.currentIndexChanged.connect(self._load_audit_log)
+        filters.addWidget(self.audit_search_field)
         filters.addWidget(self.audit_search)
         self.audit_hide_email_policy = QtWidgets.QCheckBox("Hide Email Logs")
         self.audit_hide_email_policy.toggled.connect(self._load_audit_log)
@@ -2999,6 +3003,9 @@ class MainWindow(QtWidgets.QMainWindow):
         start_date = self.audit_start.date().toString("yyyy-MM-dd")
         end_date = self.audit_end.date().toString("yyyy-MM-dd")
         search_text = self.audit_search.text().strip().lower()
+        search_field = (
+            self.audit_search_field.currentText() if hasattr(self, "audit_search_field") else "All Fields"
+        )
         search_clause = ""
         action_clause = ""
         params: list[str] = [start_date, end_date]
@@ -3006,19 +3013,39 @@ class MainWindow(QtWidgets.QMainWindow):
             action_clause = "AND ae.action != ?"
             params.append("email_policy")
         if search_text:
-            search_clause = """
-                AND (
-                    lower(COALESCE(ae.actor, '')) LIKE ?
-                    OR lower(COALESCE(ae.action, '')) LIKE ?
-                    OR lower(COALESCE(ae.entity_type, '')) LIKE ?
-                    OR lower(COALESCE(ae.details, '')) LIKE ?
-                    OR lower(COALESCE(p.title, pv_policy.title, '')) LIKE ?
-                    OR lower(COALESCE(CAST(pv.version_number AS TEXT), '')) LIKE ?
-                    OR lower(COALESCE(CAST(ae.entity_id AS TEXT), '')) LIKE ?
-                )
-            """
             like_value = f"%{search_text}%"
-            params.extend([like_value] * 7)
+            if search_field == "Actor":
+                search_clause = "AND lower(COALESCE(ae.actor, '')) LIKE ?"
+                params.append(like_value)
+            elif search_field == "Action":
+                search_clause = "AND lower(COALESCE(ae.action, '')) LIKE ?"
+                params.append(like_value)
+            elif search_field == "Entity":
+                search_clause = """
+                    AND (
+                        lower(COALESCE(ae.entity_type, '')) LIKE ?
+                        OR lower(COALESCE(p.title, pv_policy.title, '')) LIKE ?
+                        OR lower(COALESCE(CAST(pv.version_number AS TEXT), '')) LIKE ?
+                        OR lower(COALESCE(CAST(ae.entity_id AS TEXT), '')) LIKE ?
+                    )
+                """
+                params.extend([like_value] * 4)
+            elif search_field == "Details":
+                search_clause = "AND lower(COALESCE(ae.details, '')) LIKE ?"
+                params.append(like_value)
+            else:
+                search_clause = """
+                    AND (
+                        lower(COALESCE(ae.actor, '')) LIKE ?
+                        OR lower(COALESCE(ae.action, '')) LIKE ?
+                        OR lower(COALESCE(ae.entity_type, '')) LIKE ?
+                        OR lower(COALESCE(ae.details, '')) LIKE ?
+                        OR lower(COALESCE(p.title, pv_policy.title, '')) LIKE ?
+                        OR lower(COALESCE(CAST(pv.version_number AS TEXT), '')) LIKE ?
+                        OR lower(COALESCE(CAST(ae.entity_id AS TEXT), '')) LIKE ?
+                    )
+                """
+                params.extend([like_value] * 7)
         return self.conn.execute(
             f"""
             SELECT ae.occurred_at,
