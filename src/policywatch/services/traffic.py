@@ -1,4 +1,4 @@
-"""Traffic-light calculations for policy expiry status."""
+"""Traffic-light calculations for policy review status."""
 
 from __future__ import annotations
 
@@ -27,18 +27,15 @@ def _add_months(source: date, months: int) -> date:
 def traffic_light_status(
     today: date,
     review_due_date: date | None,
-    expiry_date: date | None,
     amber_months: int,
 ) -> TrafficResult:
-    """Return traffic-light status for review or expiry deadlines."""
+    """Return traffic-light status for review deadlines."""
 
-    if expiry_date and today > expiry_date:
-        return TrafficResult(status="Red", reason="Expired")
+    if review_due_date and today > review_due_date:
+        return TrafficResult(status="Red", reason="Past Review Date")
 
     amber_threshold = _add_months(today, amber_months)
     if review_due_date and review_due_date <= amber_threshold:
-        return TrafficResult(status="Amber", reason="Review Due")
-    if expiry_date and expiry_date <= amber_threshold:
         return TrafficResult(status="Amber", reason="Review Due")
 
     return TrafficResult(status="Green", reason="In Date")

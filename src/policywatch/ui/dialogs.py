@@ -124,16 +124,10 @@ class PolicyDialog(QtWidgets.QDialog):
         self.owner_combo = QtWidgets.QComboBox()
         self.owner_combo.setEditable(False)
 
-        self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
-        self.expiry_date.setCalendarPopup(True)
-        self.expiry_date.setDisplayFormat("dd/MM/yyyy")
-        self.expiry_date.setEnabled(True)
-        self.expiry_date.dateChanged.connect(self._auto_update_review_due)
-
         self.review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.review_due_date.setCalendarPopup(True)
         self.review_due_date.setDisplayFormat("dd/MM/yyyy")
-        self.review_due_date.setReadOnly(True)
+        self.review_due_date.setReadOnly(False)
         self.review_due_date.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.review_frequency_combo = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.review_frequency_combo)
@@ -155,7 +149,6 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Category", self.category_combo)
         form.addRow("Status", self.status_combo)
         form.addRow("Owner", self.owner_combo)
-        form.addRow("Expiry", self.expiry_date)
         form.addRow("Review Due", self.review_due_date)
         form.addRow("Review Frequency", self.review_frequency_combo)
         form.addRow("Notes", self.notes_input)
@@ -223,7 +216,6 @@ class PolicyDialog(QtWidgets.QDialog):
             title=title,
             category=category,
             status=self.status_combo.currentText(),
-            expiry=self._expiry_value(),
             review_due_date=self._review_due_value(),
             review_frequency_months=self._review_frequency_value(),
             notes=self.notes_input.toPlainText().strip() or None,
@@ -238,7 +230,6 @@ class PolicyDialog(QtWidgets.QDialog):
                 {
                     "status": self.status_combo.currentText(),
                     "owner": self.owner_combo.currentData(),
-                    "expiry_date": self._expiry_value(),
                     "review_due_date": self._review_due_value(),
                     "review_frequency_months": self._review_frequency_value(),
                     "notes": self.notes_input.toPlainText().strip() or None,
@@ -258,17 +249,12 @@ class PolicyDialog(QtWidgets.QDialog):
             self.file_path_input.setText(file_path)
 
     def _update_metadata_state(self, status: str) -> None:
-        """Enable or disable expiry date based on the selected status."""
+        """Enable or disable review metadata based on the selected status."""
 
         is_draft = status == "Draft"
         min_date = QtCore.QDate(1900, 1, 1)
-        self.expiry_date.setMinimumDate(min_date)
         self.review_due_date.setMinimumDate(min_date)
         if is_draft:
-            self.expiry_date.setEnabled(False)
-            self.expiry_date.setSpecialValueText("")
-            self.expiry_date.setDate(min_date)
-            self.expiry_date.setDisplayFormat(" ")
             self.review_due_date.setEnabled(False)
             self.review_due_date.setSpecialValueText("")
             self.review_due_date.setDate(min_date)
@@ -276,29 +262,14 @@ class PolicyDialog(QtWidgets.QDialog):
             self.review_due_date.setReadOnly(True)
             self.review_frequency_combo.setEnabled(False)
         else:
-            self.expiry_date.setEnabled(True)
-            self.expiry_date.setSpecialValueText("")
-            self.expiry_date.setDisplayFormat("dd/MM/yyyy")
-            if self.expiry_date.date() == min_date:
-                self.expiry_date.setDate(QtCore.QDate.currentDate())
             self.review_due_date.setEnabled(True)
             self.review_due_date.setSpecialValueText("")
             self.review_due_date.setDisplayFormat("dd/MM/yyyy")
             self.review_due_date.setReadOnly(True)
             if self.review_due_date.date() == min_date:
-                if self.expiry_date.date() != min_date:
-                    self.review_due_date.setDate(self.expiry_date.date())
-                else:
-                    self.review_due_date.setDate(QtCore.QDate.currentDate())
+                self.review_due_date.setDate(QtCore.QDate.currentDate())
             self.review_frequency_combo.setEnabled(True)
         self._auto_update_review_due()
-
-    def _expiry_value(self) -> str:
-        """Return the expiry date value or empty string for draft policies."""
-
-        if not self.expiry_date.isEnabled():
-            return ""
-        return self.expiry_date.date().toString("yyyy-MM-dd")
 
     def _review_due_value(self) -> str:
         """Return the review due date value or empty string when not set."""
@@ -316,32 +287,23 @@ class PolicyDialog(QtWidgets.QDialog):
         return self.review_frequency_combo.currentData()
 
     def _auto_update_review_due(self) -> None:
-        """Update review due based on frequency and clamp to expiry."""
+        """Update review due based on frequency."""
 
-        min_date = QtCore.QDate(1900, 1, 1)
-        if not self.expiry_date.isEnabled():
-            self.review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
+        if not self.review_due_date.isEnabled():
             return
-        expiry = self.expiry_date.date()
-        if expiry == min_date:
-            self.review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
-            return
-        self.review_due_date.setMaximumDate(expiry)
         frequency = self.review_frequency_combo.currentData()
+        base_date = QtCore.QDate.currentDate()
         if frequency:
-            candidate = QtCore.QDate.currentDate().addMonths(int(frequency))
-            if candidate > expiry:
-                candidate = expiry
+            candidate = base_date.addMonths(int(frequency))
             self.review_due_date.setDate(candidate)
             return
-        self.review_due_date.setDate(expiry)
+        self.review_due_date.setDate(base_date)
 
     def _populate_review_frequency_options(self, combo: QtWidgets.QComboBox) -> None:
         """Populate review frequency options."""
 
         combo.clear()
         options = [
-            ("None", None),
             ("Annual", 12),
             ("Biannual", 6),
             ("Quarterly", 3),
