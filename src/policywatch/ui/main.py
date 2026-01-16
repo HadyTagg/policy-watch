@@ -135,7 +135,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.category_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.traffic_filter = QtWidgets.QComboBox()
-        self.traffic_filter.addItems(["All", "In Date", "Review Due", "Expired"])
+        self.traffic_filter.addItems(["All", "In Date", "Review Due", "Past Review Date"])
         self.traffic_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.status_filter = QtWidgets.QComboBox()
@@ -153,7 +153,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.status_filter, 1)
         filter_row.addWidget(self.ratified_filter, 1)
 
-        self.table = QtWidgets.QTableWidget(0, 8)
+        self.table = QtWidgets.QTableWidget(0, 7)
         self.table.setHorizontalHeaderLabels(
             [
                 "Category",
@@ -162,7 +162,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Current Version",
                 "Review Due",
                 "Days Remaining",
-                "Expiry",
                 "Ratified",
             ]
         )
@@ -467,7 +466,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     continue
                 if traffic == "Review Due" and policy.traffic_status != "Amber":
                     continue
-                if traffic == "Expired" and policy.traffic_status != "Red":
+                if traffic == "Past Review Date" and policy.traffic_status != "Red":
                     continue
             if status != "All Statuses" and policy.status != status:
                 continue
@@ -492,14 +491,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 days_remaining_item = QtWidgets.QTableWidgetItem(
                     self._format_days_remaining(policy.review_due_date)
                 )
-                expiry_item = QtWidgets.QTableWidgetItem(self._format_date_display(policy.expiry_date))
                 ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
             else:
                 status_item = QtWidgets.QTableWidgetItem("")
                 current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
                 days_remaining_item = QtWidgets.QTableWidgetItem("")
-                expiry_item = QtWidgets.QTableWidgetItem("")
                 ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
                 category_item,
@@ -508,7 +505,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_version_item,
                 review_due_item,
                 days_remaining_item,
-                expiry_item,
                 ratified_item,
             ]
             for column, item in enumerate(items):
@@ -675,7 +671,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
         self.detail_status.blockSignals(True)
-        self.detail_expiry.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self.detail_review_frequency.blockSignals(True)
         self.detail_notes.blockSignals(True)
@@ -686,7 +681,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._clear_policy_metadata_fields()
         self._populate_owner_options(None)
         self.detail_status.blockSignals(False)
-        self.detail_expiry.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -1126,7 +1120,6 @@ class MainWindow(QtWidgets.QMainWindow):
         version = self.conn.execute(
             """
             SELECT v.status,
-                   v.expiry_date,
                    v.review_due_date,
                    v.review_frequency_months,
                    v.notes,
@@ -1144,7 +1137,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         is_missing_status = (version["status"] or "").lower() == "missing"
         self.detail_status.blockSignals(True)
-        self.detail_expiry.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self.detail_review_frequency.blockSignals(True)
         self.detail_notes.blockSignals(True)
@@ -1155,7 +1147,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_category_options(self._current_policy_category)
         self._populate_owner_options(version["owner"])
         self.detail_status.setCurrentText(version["status"] or "")
-        self._set_date_field(self.detail_expiry, version["expiry_date"])
         self._set_date_field(self.detail_review_due, version["review_due_date"])
         self.detail_review_due.setMaximumDate(QtCore.QDate(9999, 12, 31))
         self._set_review_frequency_selection(version["review_frequency_months"])
@@ -1168,7 +1159,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_policy_metadata_enabled(not read_only)
         self._set_version_action_state(not read_only)
         self.detail_status.blockSignals(False)
-        self.detail_expiry.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -1268,7 +1258,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         field_labels = {
             "status": "Status",
-            "expiry_date": "Expiry",
             "review_due_date": "Review Due",
             "review_frequency_months": "Review Frequency",
             "notes": "Notes",
@@ -1505,7 +1494,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return super().eventFilter(obj, event)
 
     def _prompt_version_metadata(self) -> dict | None:
-        """Prompt for status, review, expiry, and notes when adding a version."""
+        """Prompt for status, review, and notes when adding a version."""
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Version Metadata")
@@ -1514,10 +1503,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form = QtWidgets.QFormLayout()
         status_combo = QtWidgets.QComboBox()
         status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
-        expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
-        expiry_date.setCalendarPopup(True)
-        expiry_date.setDisplayFormat("dd/MM/yyyy")
-        expiry_date.setEnabled(True)
         review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         review_due_date.setCalendarPopup(True)
         review_due_date.setDisplayFormat("dd/MM/yyyy")
@@ -1529,7 +1514,6 @@ class MainWindow(QtWidgets.QMainWindow):
         notes_input = QtWidgets.QPlainTextEdit()
 
         form.addRow("Status", status_combo)
-        form.addRow("Expiry", expiry_date)
         form.addRow("Review Due", review_due_date)
         form.addRow("Review Frequency", review_frequency)
         form.addRow("Notes", notes_input)
@@ -1559,13 +1543,8 @@ class MainWindow(QtWidgets.QMainWindow):
         def update_metadata_state(status: str) -> None:
             is_draft = status == "Draft"
             min_date = QtCore.QDate(1900, 1, 1)
-            expiry_date.setMinimumDate(min_date)
             review_due_date.setMinimumDate(min_date)
             if is_draft:
-                expiry_date.setEnabled(False)
-                expiry_date.setSpecialValueText("")
-                expiry_date.setDate(min_date)
-                expiry_date.setDisplayFormat(" ")
                 review_due_date.setEnabled(False)
                 review_due_date.setSpecialValueText("")
                 review_due_date.setDate(min_date)
@@ -1573,11 +1552,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
                 review_frequency.setEnabled(False)
             else:
-                expiry_date.setEnabled(True)
-                expiry_date.setSpecialValueText("")
-                expiry_date.setDisplayFormat("dd/MM/yyyy")
-                if expiry_date.date() == min_date:
-                    expiry_date.setDate(QtCore.QDate.currentDate())
                 review_due_date.setEnabled(True)
                 review_due_date.setSpecialValueText("")
                 review_due_date.setDisplayFormat("dd/MM/yyyy")
@@ -1593,7 +1567,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return None
         return {
             "status": status_combo.currentText(),
-            "expiry_date": "" if not expiry_date.isEnabled() else expiry_date.date().toString("yyyy-MM-dd"),
             "review_due_date": (
                 ""
                 if not review_due_date.isEnabled()
@@ -1607,12 +1580,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Handle status updates from the metadata form."""
 
         self._update_policy_field("status", status)
-
-    def _on_expiry_changed(self, value: QtCore.QDate) -> None:
-        """Handle expiry date updates from the metadata form."""
-
-        expiry_value = value.toString("yyyy-MM-dd")
-        self._update_policy_field("expiry_date", expiry_value)
 
     def _on_review_due_changed(self, value: QtCore.QDate) -> None:
         """Handle review due date updates from the metadata form."""
@@ -1717,7 +1684,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.setEnabled(enabled)
         self.detail_owner.setEnabled(enabled and self._is_admin())
         self.detail_status.setEnabled(enabled)
-        self.detail_expiry.setEnabled(enabled)
         self.detail_review_due.setEnabled(enabled)
         self.detail_review_frequency.setEnabled(enabled)
         self.detail_notes.setEnabled(enabled)
@@ -1765,7 +1731,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Reset policy metadata fields when no version is selected."""
 
         self.detail_status.blockSignals(True)
-        self.detail_expiry.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self.detail_review_frequency.blockSignals(True)
         self.detail_notes.blockSignals(True)
@@ -1776,7 +1741,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_version_action_state(False)
         self.detail_title.setText("")
         self.detail_status.setCurrentIndex(-1)
-        self._set_date_field(self.detail_expiry, None)
         self._set_date_field(self.detail_review_due, None)
         self.detail_review_frequency.setCurrentIndex(0)
         self.detail_review_days_remaining.setText("")
@@ -1787,7 +1751,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
         self.detail_status.blockSignals(False)
-        self.detail_expiry.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
         self.detail_notes.blockSignals(False)
@@ -1931,10 +1894,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if missing_item is not None:
                 missing_item.setFlags(missing_item.flags() & ~QtCore.Qt.ItemIsEnabled)
         self.detail_status.currentTextChanged.connect(self._on_status_changed)
-        self.detail_expiry = QtWidgets.QDateEdit()
-        self.detail_expiry.setCalendarPopup(True)
-        self.detail_expiry.setDisplayFormat("dd/MM/yyyy")
-        self.detail_expiry.dateChanged.connect(self._on_expiry_changed)
         self.detail_review_due = QtWidgets.QDateEdit()
         self.detail_review_due.setCalendarPopup(True)
         self.detail_review_due.setDisplayFormat("dd/MM/yyyy")
@@ -1961,7 +1920,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Category", self.detail_category)
         form.addRow("Owner", self.detail_owner)
         form.addRow("Status", self.detail_status)
-        form.addRow("Expiry", self.detail_expiry)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Review Frequency", self.detail_review_frequency)
         form.addRow("Days Remaining", self.detail_review_days_remaining)

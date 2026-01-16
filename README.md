@@ -6,7 +6,7 @@ Policy Watch is a Windows desktop application for organizing, versioning, and di
 
 - Maintain a catalog of policies with categories, statuses, and traffic-light review indicators.
 - Version policy documents with file integrity checks (SHA-256) and audit logging.
-- Track current versions, ratification status, expiry/review dates, and notes.
+- Track current versions, ratification status, review dates, and notes.
 - Filter and search policies by category, status, traffic status, and ratification.
 - Distribute selected policies via Microsoft Outlook, with per-recipient audit records.
 - Load staff recipient lists from the bundled Access extractor.
