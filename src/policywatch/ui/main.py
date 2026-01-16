@@ -1476,16 +1476,9 @@ class MainWindow(QtWidgets.QMainWindow):
         return mapping.get(months, f"Every {months} months")
 
     def _update_review_schedule_display(self) -> None:
-        """Refresh next review and days remaining labels."""
+        """Refresh days remaining labels."""
 
         review_due_value = self._get_date_field_value(self.detail_review_due)
-        review_due_date = self._parse_date_value(review_due_value)
-        frequency = self.detail_review_frequency.currentData()
-        next_review_display = ""
-        if review_due_date and frequency:
-            next_review_date = self._add_months(review_due_date, frequency)
-            next_review_display = self._format_date_display(next_review_date.isoformat())
-        self.detail_next_review_due.setText(next_review_display)
         self.detail_review_days_remaining.setText(self._format_days_remaining(review_due_value))
 
     def _format_datetime_display(self, value: str) -> str:
@@ -1836,7 +1829,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_date_field(self.detail_expiry, None)
         self._set_date_field(self.detail_review_due, None)
         self.detail_review_frequency.setCurrentIndex(0)
-        self.detail_next_review_due.setText("")
         self.detail_review_days_remaining.setText("")
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
@@ -2002,8 +1994,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_review_frequency = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.detail_review_frequency)
         self.detail_review_frequency.currentIndexChanged.connect(self._on_review_frequency_changed)
-        self.detail_next_review_due = QtWidgets.QLineEdit()
-        self.detail_next_review_due.setReadOnly(True)
         self.detail_review_days_remaining = QtWidgets.QLineEdit()
         self.detail_review_days_remaining.setReadOnly(True)
         self.detail_notes = QtWidgets.QPlainTextEdit()
@@ -2024,7 +2014,6 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Expiry", self.detail_expiry)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Review Frequency", self.detail_review_frequency)
-        form.addRow("Next Review Due", self.detail_next_review_due)
         form.addRow("Days Remaining", self.detail_review_days_remaining)
         form.addRow("Notes", self.detail_notes)
         form.addRow("Ratified", self.detail_ratified)
