@@ -82,6 +82,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._current_policy_title = ""
         self._current_policy_category = ""
+        self._latest_reviewed_at: str | None = None
         self._staff_records: list[dict[str, str]] = []
         self._owner_refreshing = False
 
@@ -769,6 +770,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Load review history for the selected policy version."""
 
         reviews = list_policy_reviews(self.conn, policy_version_id)
+        self._latest_reviewed_at = reviews[0]["reviewed_at"] if reviews else None
         self.review_table.setRowCount(len(reviews))
         for row_index, review in enumerate(reviews):
             reviewed_at = self._format_review_date_display(review["reviewed_at"] or "")
@@ -785,6 +787,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Clear review history table."""
 
         self.review_table.setRowCount(0)
+        self._latest_reviewed_at = None
 
     def _prompt_policy_review(self) -> dict | None:
         """Prompt for review details when recording a no-change review."""
@@ -1154,13 +1157,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_status.setCurrentText(version["status"] or "")
         self._set_date_field(self.detail_expiry, version["expiry_date"])
         self._set_date_field(self.detail_review_due, version["review_due_date"])
-        expiry_value = QtCore.QDate.fromString(version["expiry_date"] or "", "yyyy-MM-dd")
-        if expiry_value.isValid():
-            self.detail_review_due.setMaximumDate(expiry_value)
-            if self.detail_review_due.date() > expiry_value:
-                self.detail_review_due.setDate(expiry_value)
-        else:
-            self.detail_review_due.setMaximumDate(QtCore.QDate(9999, 12, 31))
+        self.detail_review_due.setMaximumDate(QtCore.QDate(9999, 12, 31))
         self._set_review_frequency_selection(version["review_frequency_months"])
         self.detail_notes.setPlainText(version["notes"] or "")
         self.detail_ratified.setText("Yes" if int(version["ratified"] or 0) else "No")
@@ -1282,23 +1279,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if field == "review_frequency_months":
             display_current = self._review_frequency_label(current_value)
             display_value = self._review_frequency_label(value)
-        if field == "review_due_date":
-            expiry_row = self.conn.execute(
-                "SELECT expiry_date FROM policy_versions WHERE id = ?",
-                (current_version_id,),
-            ).fetchone() if current_version_id else self.conn.execute(
-                "SELECT expiry_date FROM policies WHERE id = ?",
-                (self.current_policy_id,),
-            ).fetchone()
-            expiry_value = expiry_row["expiry_date"] if expiry_row else None
-            if expiry_value and display_value and display_value > expiry_value:
-                display_value = expiry_value
-                value = expiry_value
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Review Due Adjusted",
-                    "Review due cannot exceed the expiry date. It has been clamped to the expiry date.",
-                )
         response = QtWidgets.QMessageBox.question(
             self,
             "Confirm Change",
@@ -1312,31 +1292,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"UPDATE policy_versions SET {field} = ? WHERE id = ?",
                 (value, current_version_id),
             )
-            if field == "expiry_date":
-                review_row = self.conn.execute(
-                    "SELECT review_due_date FROM policy_versions WHERE id = ?",
-                    (current_version_id,),
-                ).fetchone()
-                if review_row and review_row["review_due_date"] and review_row["review_due_date"] > value:
-                    self.conn.execute(
-                        "UPDATE policy_versions SET review_due_date = ? WHERE id = ?",
-                        (value, current_version_id),
-                    )
         else:
             self.conn.execute(
                 f"UPDATE policies SET {field} = ? WHERE id = ?",
                 (value, self.current_policy_id),
             )
-            if field == "expiry_date":
-                review_row = self.conn.execute(
-                    "SELECT review_due_date FROM policies WHERE id = ?",
-                    (self.current_policy_id,),
-                ).fetchone()
-                if review_row and review_row["review_due_date"] and review_row["review_due_date"] > value:
-                    self.conn.execute(
-                        "UPDATE policies SET review_due_date = ? WHERE id = ?",
-                        (value, self.current_policy_id),
-                    )
         self.conn.commit()
         audit.append_event_log(
             self.conn,
@@ -1432,16 +1392,22 @@ class MainWindow(QtWidgets.QMainWindow):
             return f"Overdue by {abs(delta_days)} {day_label}"
         return f"{delta_days} {day_label}"
 
-    def _calculate_review_due_value(self, expiry_value: str, frequency: int | None) -> str:
-        """Return a review due date based on frequency and expiry."""
+    def _resolve_review_base_date(self) -> date:
+        """Return the date to use as the base for next review calculations."""
 
+        if self._latest_reviewed_at:
+            parsed = self._parse_date_value(self._latest_reviewed_at)
+            if parsed:
+                return parsed
+        return datetime.now().date()
+
+    def _calculate_review_due_value(self, frequency: int | None, base_date: date | None = None) -> str:
+        """Return a review due date based on last review and frequency."""
+
+        base_date = base_date or self._resolve_review_base_date()
         if not frequency:
-            return expiry_value
-        base_date = datetime.now().date()
+            return base_date.isoformat()
         review_due_date = self._add_months(base_date, int(frequency))
-        expiry_date = self._parse_date_value(expiry_value) if expiry_value else None
-        if expiry_date and review_due_date > expiry_date:
-            review_due_date = expiry_date
         return review_due_date.isoformat()
 
     def _populate_review_frequency_options(self, combo: QtWidgets.QComboBox) -> None:
@@ -1580,20 +1546,15 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addLayout(button_row)
 
         def auto_update_review_due() -> None:
-            min_date = QtCore.QDate(1900, 1, 1)
-            if not expiry_date.isEnabled() or expiry_date.date() == min_date:
-                review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
+            if not review_due_date.isEnabled():
                 return
-            expiry_value = expiry_date.date()
-            review_due_date.setMaximumDate(expiry_value)
             frequency_value = review_frequency.currentData()
+            base_date = QtCore.QDate.currentDate()
             if frequency_value:
-                candidate = QtCore.QDate.currentDate().addMonths(int(frequency_value))
-                if candidate > expiry_value:
-                    candidate = expiry_value
+                candidate = base_date.addMonths(int(frequency_value))
                 review_due_date.setDate(candidate)
                 return
-            review_due_date.setDate(expiry_value)
+            review_due_date.setDate(base_date)
 
         def update_metadata_state(status: str) -> None:
             is_draft = status == "Draft"
@@ -1625,7 +1586,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_frequency.setEnabled(True)
                 auto_update_review_due()
         status_combo.currentTextChanged.connect(update_metadata_state)
-        expiry_date.dateChanged.connect(lambda _: update_metadata_state(status_combo.currentText()))
         review_frequency.currentIndexChanged.connect(auto_update_review_due)
         update_metadata_state(status_combo.currentText())
 
@@ -1653,17 +1613,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         expiry_value = value.toString("yyyy-MM-dd")
         self._update_policy_field("expiry_date", expiry_value)
-        self.detail_review_due.blockSignals(True)
-        self.detail_review_due.setMaximumDate(value)
-        review_due_value = self._calculate_review_due_value(
-            expiry_value,
-            self.detail_review_frequency.currentData(),
-        )
-        if review_due_value:
-            self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))
-            self._update_policy_field("review_due_date", review_due_value)
-        self.detail_review_due.blockSignals(False)
-        self._update_review_schedule_display()
 
     def _on_review_due_changed(self, value: QtCore.QDate) -> None:
         """Handle review due date updates from the metadata form."""
@@ -1677,8 +1626,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         frequency_value = self.detail_review_frequency.currentData()
         self._update_policy_field("review_frequency_months", frequency_value)
-        expiry_value = self._get_date_field_value(self.detail_expiry)
-        review_due_value = self._calculate_review_due_value(expiry_value, frequency_value)
+        review_due_value = self._calculate_review_due_value(frequency_value)
         if review_due_value:
             self.detail_review_due.blockSignals(True)
             self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))

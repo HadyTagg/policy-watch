@@ -58,21 +58,6 @@ def _add_months(source: datetime.date, months: int) -> datetime.date:
     return datetime.date(year, month, day)
 
 
-def _clamp_review_due(review_due_date: str, expiry_date: str | None) -> str:
-    """Clamp the review due date to the expiry date when expiry is earlier."""
-
-    if not expiry_date or not review_due_date:
-        return review_due_date
-    try:
-        review_due = datetime.date.fromisoformat(review_due_date)
-        expiry = datetime.date.fromisoformat(expiry_date)
-    except ValueError:
-        return review_due_date
-    if review_due > expiry:
-        return expiry.isoformat()
-    return review_due_date
-
-
 def set_audit_actor(actor: str | None) -> None:
     """Set the current audit actor for service-layer logging."""
 
@@ -357,11 +342,8 @@ def list_policies(conn) -> list[PolicyRow]:
         review_due = None
         if row["review_due_date"]:
             review_due = datetime.date.fromisoformat(row["review_due_date"])
-        expiry = None
-        if row["expiry_date"]:
-            expiry = datetime.date.fromisoformat(row["expiry_date"])
-        if review_due or expiry:
-            traffic = traffic_light_status(today, review_due, expiry, amber_months)
+        if review_due:
+            traffic = traffic_light_status(today, review_due, amber_months)
             traffic_status = traffic.status
             traffic_reason = traffic.reason
         policies.append(
@@ -448,14 +430,10 @@ def add_policy_review(
         raise ValueError("Policy version not found")
     policy_id = policy_row["policy_id"]
     next_review_due = reviewed_at
-    next_expiry_date = policy_row["expiry_date"]
     review_frequency = policy_row["review_frequency_months"]
     if review_frequency:
         reviewed_date = datetime.date.fromisoformat(reviewed_at)
         next_review_due = _add_months(reviewed_date, int(review_frequency)).isoformat()
-    if policy_row["expiry_date"] and policy_row["review_due_date"] == policy_row["expiry_date"]:
-        next_expiry_date = next_review_due
-    next_review_due = _clamp_review_due(next_review_due, next_expiry_date)
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -472,8 +450,8 @@ def add_policy_review(
         ),
     )
     conn.execute(
-        "UPDATE policy_versions SET review_due_date = ?, expiry_date = ? WHERE id = ?",
-        (next_review_due, next_expiry_date, policy_version_id),
+        "UPDATE policy_versions SET review_due_date = ? WHERE id = ?",
+        (next_review_due, policy_version_id),
     )
     current_row = conn.execute(
         "SELECT current_version_id FROM policies WHERE id = ?",
@@ -481,8 +459,8 @@ def add_policy_review(
     ).fetchone()
     if current_row and current_row["current_version_id"] == policy_version_id:
         conn.execute(
-            "UPDATE policies SET review_due_date = ?, expiry_date = ? WHERE id = ?",
-            (next_review_due, next_expiry_date, policy_id),
+            "UPDATE policies SET review_due_date = ? WHERE id = ?",
+            (next_review_due, policy_id),
         )
     conn.commit()
     details = f"reviewed_at={reviewed_at}"
@@ -510,8 +488,7 @@ def create_policy(
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
     effective_date = expiry or ""
-    review_due_date = review_due_date or expiry or ""
-    review_due_date = _clamp_review_due(review_due_date, expiry or None)
+    review_due_date = review_due_date or ""
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -618,8 +595,7 @@ def add_policy_version(
         if "notes" in metadata:
             notes = metadata["notes"]
     if not review_due_date:
-        review_due_date = expiry_date or ""
-    review_due_date = _clamp_review_due(review_due_date, expiry_date or None)
+        review_due_date = ""
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (

@@ -286,10 +286,7 @@ class PolicyDialog(QtWidgets.QDialog):
             self.review_due_date.setDisplayFormat("dd/MM/yyyy")
             self.review_due_date.setReadOnly(True)
             if self.review_due_date.date() == min_date:
-                if self.expiry_date.date() != min_date:
-                    self.review_due_date.setDate(self.expiry_date.date())
-                else:
-                    self.review_due_date.setDate(QtCore.QDate.currentDate())
+                self.review_due_date.setDate(QtCore.QDate.currentDate())
             self.review_frequency_combo.setEnabled(True)
         self._auto_update_review_due()
 
@@ -316,25 +313,17 @@ class PolicyDialog(QtWidgets.QDialog):
         return self.review_frequency_combo.currentData()
 
     def _auto_update_review_due(self) -> None:
-        """Update review due based on frequency and clamp to expiry."""
+        """Update review due based on frequency."""
 
-        min_date = QtCore.QDate(1900, 1, 1)
-        if not self.expiry_date.isEnabled():
-            self.review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
+        if not self.review_due_date.isEnabled():
             return
-        expiry = self.expiry_date.date()
-        if expiry == min_date:
-            self.review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
-            return
-        self.review_due_date.setMaximumDate(expiry)
         frequency = self.review_frequency_combo.currentData()
+        base_date = QtCore.QDate.currentDate()
         if frequency:
-            candidate = QtCore.QDate.currentDate().addMonths(int(frequency))
-            if candidate > expiry:
-                candidate = expiry
+            candidate = base_date.addMonths(int(frequency))
             self.review_due_date.setDate(candidate)
             return
-        self.review_due_date.setDate(expiry)
+        self.review_due_date.setDate(base_date)
 
     def _populate_review_frequency_options(self, combo: QtWidgets.QComboBox) -> None:
         """Populate review frequency options."""
