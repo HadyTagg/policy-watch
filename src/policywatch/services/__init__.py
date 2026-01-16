@@ -32,6 +32,47 @@ LONDON_TZ = _resolve_london_tz()
 _AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
 
 
+def _add_months(source: datetime.date, months: int) -> datetime.date:
+    """Add months to a date while keeping the day within month bounds."""
+
+    month = source.month - 1 + months
+    year = source.year + month // 12
+    month = month % 12 + 1
+    day = min(
+        source.day,
+        [
+            31,
+            29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month - 1],
+    )
+    return datetime.date(year, month, day)
+
+
+def _clamp_review_due(review_due_date: str, expiry_date: str | None) -> str:
+    """Clamp the review due date to the expiry date when expiry is earlier."""
+
+    if not expiry_date or not review_due_date:
+        return review_due_date
+    try:
+        review_due = datetime.date.fromisoformat(review_due_date)
+        expiry = datetime.date.fromisoformat(expiry_date)
+    except ValueError:
+        return review_due_date
+    if review_due > expiry:
+        return expiry.isoformat()
+    return review_due_date
+
+
 def set_audit_actor(actor: str | None) -> None:
     """Set the current audit actor for service-layer logging."""
 
@@ -89,6 +130,7 @@ class PolicyRow:
     status: str | None
     ratified: bool
     review_due_date: str | None
+    review_frequency_months: int | None
     expiry_date: str | None
     current_version_id: int | None
     current_version_number: int | None
@@ -295,6 +337,7 @@ def list_policies(conn) -> list[PolicyRow]:
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
                CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.expiry_date END AS expiry_date,
                p.current_version_id,
                v.version_number AS current_version_number
@@ -311,9 +354,14 @@ def list_policies(conn) -> list[PolicyRow]:
     for row in rows:
         traffic_status = ""
         traffic_reason = ""
+        review_due = None
+        if row["review_due_date"]:
+            review_due = datetime.date.fromisoformat(row["review_due_date"])
+        expiry = None
         if row["expiry_date"]:
             expiry = datetime.date.fromisoformat(row["expiry_date"])
-            traffic = traffic_light_status(today, expiry, amber_months)
+        if review_due or expiry:
+            traffic = traffic_light_status(today, review_due, expiry, amber_months)
             traffic_status = traffic.status
             traffic_reason = traffic.reason
         policies.append(
@@ -324,6 +372,7 @@ def list_policies(conn) -> list[PolicyRow]:
                 status=row["status"],
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
+                review_frequency_months=row["review_frequency_months"],
                 expiry_date=row["expiry_date"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
@@ -388,12 +437,25 @@ def add_policy_review(
     """Record a policy review that did not create a new version."""
 
     policy_row = conn.execute(
-        "SELECT policy_id, version_number FROM policy_versions WHERE id = ?",
+        """
+        SELECT policy_id, version_number, review_frequency_months, expiry_date, review_due_date
+        FROM policy_versions
+        WHERE id = ?
+        """,
         (policy_version_id,),
     ).fetchone()
     if not policy_row:
         raise ValueError("Policy version not found")
     policy_id = policy_row["policy_id"]
+    next_review_due = reviewed_at
+    next_expiry_date = policy_row["expiry_date"]
+    review_frequency = policy_row["review_frequency_months"]
+    if review_frequency:
+        reviewed_date = datetime.date.fromisoformat(reviewed_at)
+        next_review_due = _add_months(reviewed_date, int(review_frequency)).isoformat()
+    if policy_row["expiry_date"] and policy_row["review_due_date"] == policy_row["expiry_date"]:
+        next_expiry_date = next_review_due
+    next_review_due = _clamp_review_due(next_review_due, next_expiry_date)
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -409,9 +471,23 @@ def add_policy_review(
             1 if no_change else 0,
         ),
     )
+    conn.execute(
+        "UPDATE policy_versions SET review_due_date = ?, expiry_date = ? WHERE id = ?",
+        (next_review_due, next_expiry_date, policy_version_id),
+    )
+    current_row = conn.execute(
+        "SELECT current_version_id FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if current_row and current_row["current_version_id"] == policy_version_id:
+        conn.execute(
+            "UPDATE policies SET review_due_date = ?, expiry_date = ? WHERE id = ?",
+            (next_review_due, next_expiry_date, policy_id),
+        )
     conn.commit()
     details = f"reviewed_at={reviewed_at}"
     details = f"{details} version=v{policy_row['version_number']}"
+    details = f"{details} next_review_due={next_review_due}"
     if no_change:
         details = f"{details} no_change=true"
     _log_event(conn, "record_policy_review", "policy", policy_id, details)
@@ -424,6 +500,8 @@ def create_policy(
     category: str,
     status: str,
     expiry: str,
+    review_due_date: str,
+    review_frequency_months: int | None,
     notes: str | None,
     created_by_user_id: int | None,
 ) -> int:
@@ -432,7 +510,8 @@ def create_policy(
     created_at = datetime.datetime.utcnow().isoformat()
     slug = slugify(title)
     effective_date = expiry or ""
-    review_due_date = expiry or ""
+    review_due_date = review_due_date or expiry or ""
+    review_due_date = _clamp_review_due(review_due_date, expiry or None)
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -448,7 +527,7 @@ def create_policy(
             status,
             effective_date,
             review_due_date,
-            None,
+            review_frequency_months,
             expiry,
             notes,
             created_at,
@@ -519,26 +598,36 @@ def add_policy_version(
     file_size = target_path.stat().st_size
     created_at = datetime.datetime.utcnow().isoformat()
     effective_date = policy_row["effective_date"]
+    review_due_date = policy_row["review_due_date"]
     review_frequency = policy_row["review_frequency_months"]
     expiry_date = policy_row["expiry_date"]
     status = policy_row["status"]
     notes = policy_row["notes"]
+    owner = policy_row["owner"] if "owner" in policy_row.keys() else None
     if metadata:
         if "expiry_date" in metadata:
             expiry_date = metadata["expiry_date"]
+        if "review_due_date" in metadata:
+            review_due_date = metadata["review_due_date"]
         if "status" in metadata:
             status = metadata["status"]
+        if "review_frequency_months" in metadata:
+            review_frequency = metadata["review_frequency_months"]
+        if "owner" in metadata:
+            owner = metadata["owner"]
         if "notes" in metadata:
             notes = metadata["notes"]
-    review_due_date = expiry_date or ""
+    if not review_due_date:
+        review_due_date = expiry_date or ""
+    review_due_date = _clamp_review_due(review_due_date, expiry_date or None)
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
             policy_id, version_number, created_at, created_by_user_id,
             file_path, original_filename, file_size_bytes, sha256_hash,
             ratified, ratified_at, ratified_by_user_id,
-            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?)
+            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes, owner
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             policy_id,
@@ -555,6 +644,7 @@ def add_policy_version(
             review_frequency,
             expiry_date,
             notes,
+            owner,
         ),
     )
     version_id = cursor.lastrowid

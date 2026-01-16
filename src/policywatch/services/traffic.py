@@ -26,16 +26,19 @@ def _add_months(source: date, months: int) -> date:
 
 def traffic_light_status(
     today: date,
-    expiry_date: date,
+    review_due_date: date | None,
+    expiry_date: date | None,
     amber_months: int,
 ) -> TrafficResult:
-    """Return traffic-light status for a policy expiry date."""
+    """Return traffic-light status for review or expiry deadlines."""
 
-    if today > expiry_date:
+    if expiry_date and today > expiry_date:
         return TrafficResult(status="Red", reason="Expired")
 
     amber_threshold = _add_months(today, amber_months)
-    if expiry_date <= amber_threshold:
+    if review_due_date and review_due_date <= amber_threshold:
+        return TrafficResult(status="Amber", reason="Review Due")
+    if expiry_date and expiry_date <= amber_threshold:
         return TrafficResult(status="Amber", reason="Review Due")
 
     return TrafficResult(status="Green", reason="In Date")
