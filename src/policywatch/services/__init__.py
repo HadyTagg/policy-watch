@@ -603,6 +603,7 @@ def add_policy_version(
     expiry_date = policy_row["expiry_date"]
     status = policy_row["status"]
     notes = policy_row["notes"]
+    owner = policy_row["owner"] if "owner" in policy_row.keys() else None
     if metadata:
         if "expiry_date" in metadata:
             expiry_date = metadata["expiry_date"]
@@ -612,6 +613,8 @@ def add_policy_version(
             status = metadata["status"]
         if "review_frequency_months" in metadata:
             review_frequency = metadata["review_frequency_months"]
+        if "owner" in metadata:
+            owner = metadata["owner"]
         if "notes" in metadata:
             notes = metadata["notes"]
     if not review_due_date:
@@ -623,8 +626,8 @@ def add_policy_version(
             policy_id, version_number, created_at, created_by_user_id,
             file_path, original_filename, file_size_bytes, sha256_hash,
             ratified, ratified_at, ratified_by_user_id,
-            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?)
+            status, effective_date, review_due_date, review_frequency_months, expiry_date, notes, owner
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             policy_id,
@@ -641,6 +644,7 @@ def add_policy_version(
             review_frequency,
             expiry_date,
             notes,
+            owner,
         ),
     )
     version_id = cursor.lastrowid

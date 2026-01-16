@@ -121,6 +121,9 @@ class PolicyDialog(QtWidgets.QDialog):
         self.status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
         self.status_combo.currentTextChanged.connect(self._update_metadata_state)
 
+        self.owner_combo = QtWidgets.QComboBox()
+        self.owner_combo.setEditable(False)
+
         self.expiry_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.expiry_date.setCalendarPopup(True)
         self.expiry_date.setDisplayFormat("dd/MM/yyyy")
@@ -151,6 +154,7 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Title", self.title_input)
         form.addRow("Category", self.category_combo)
         form.addRow("Status", self.status_combo)
+        form.addRow("Owner", self.owner_combo)
         form.addRow("Expiry", self.expiry_date)
         form.addRow("Review Due", self.review_due_date)
         form.addRow("Review Frequency", self.review_frequency_combo)
@@ -172,6 +176,7 @@ class PolicyDialog(QtWidgets.QDialog):
         layout.addLayout(button_row)
 
         self._load_categories()
+        self._load_owners()
         self._update_metadata_state(self.status_combo.currentText())
         self._auto_update_review_due()
 
@@ -189,6 +194,17 @@ class PolicyDialog(QtWidgets.QDialog):
                 "Missing Categories",
                 "Create at least one category before adding policies.",
             )
+
+    def _load_owners(self) -> None:
+        """Load owners into the dropdown."""
+
+        rows = self.conn.execute("SELECT username FROM users ORDER BY username").fetchall()
+        self.owner_combo.clear()
+        self.owner_combo.addItem("Unassigned", None)
+        for row in rows:
+            username = row["username"]
+            if username:
+                self.owner_combo.addItem(username, username)
 
     def _save(self) -> None:
         """Persist the policy and its initial version."""
@@ -221,6 +237,7 @@ class PolicyDialog(QtWidgets.QDialog):
                 None,
                 {
                     "status": self.status_combo.currentText(),
+                    "owner": self.owner_combo.currentData(),
                     "expiry_date": self._expiry_value(),
                     "review_due_date": self._review_due_value(),
                     "review_frequency_months": self._review_frequency_value(),
