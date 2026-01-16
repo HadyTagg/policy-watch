@@ -553,14 +553,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_dialog.raise_()
         self.audit_dialog.activateWindow()
 
-    def _select_version_row_by_id(self, version_id: int) -> None:
+    def _select_version_row_by_id(self, version_id: int) -> bool:
         """Select a version row based on the version ID."""
 
         for row_index in range(self.version_table.rowCount()):
             row_version_id = self.version_table.item(row_index, 0).data(QtCore.Qt.UserRole)
             if row_version_id == version_id:
                 self.version_table.selectRow(row_index)
-                break
+                return True
+        return False
 
     def _select_policy_row_by_id(self, policy_id: int) -> bool:
         """Select a policy row based on the policy ID."""
