@@ -1152,9 +1152,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_category_options(self._current_policy_category)
         self._populate_owner_options(version["owner"])
         self.detail_status.setCurrentText(version["status"] or "")
-        self._set_date_field(self.detail_review_due, version["review_due_date"])
+        self._set_date_field(
+            self.detail_review_due,
+            None if (version["status"] or "").lower() == "draft" else version["review_due_date"],
+        )
         self.detail_review_due.setMaximumDate(QtCore.QDate(9999, 12, 31))
-        self._set_review_frequency_selection(version["review_frequency_months"])
+        if (version["status"] or "").lower() == "draft":
+            self.detail_review_frequency.setCurrentIndex(-1)
+        else:
+            self._set_review_frequency_selection(version["review_frequency_months"])
         self.detail_notes.setPlainText(version["notes"] or "")
         self.detail_ratified.setText("Yes" if int(version["ratified"] or 0) else "No")
         self.detail_ratified_at.setText(self._format_datetime_display(version["ratified_at"] or ""))
@@ -1758,7 +1764,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_title.setText("")
         self.detail_status.setCurrentIndex(-1)
         self._set_date_field(self.detail_review_due, None)
-        self.detail_review_frequency.setCurrentIndex(0)
+        self.detail_review_frequency.setCurrentIndex(-1)
         self.detail_review_days_remaining.setText("")
         self.detail_notes.setPlainText("")
         self.detail_category.setCurrentIndex(-1)
