@@ -58,6 +58,21 @@ def _add_months(source: datetime.date, months: int) -> datetime.date:
     return datetime.date(year, month, day)
 
 
+def _clamp_review_due(review_due_date: str, expiry_date: str | None) -> str:
+    """Clamp the review due date to the expiry date when expiry is earlier."""
+
+    if not expiry_date or not review_due_date:
+        return review_due_date
+    try:
+        review_due = datetime.date.fromisoformat(review_due_date)
+        expiry = datetime.date.fromisoformat(expiry_date)
+    except ValueError:
+        return review_due_date
+    if review_due > expiry:
+        return expiry.isoformat()
+    return review_due_date
+
+
 def set_audit_actor(actor: str | None) -> None:
     """Set the current audit actor for service-layer logging."""
 
@@ -423,7 +438,7 @@ def add_policy_review(
 
     policy_row = conn.execute(
         """
-        SELECT policy_id, version_number, review_frequency_months
+        SELECT policy_id, version_number, review_frequency_months, expiry_date
         FROM policy_versions
         WHERE id = ?
         """,
@@ -437,6 +452,7 @@ def add_policy_review(
     if review_frequency:
         reviewed_date = datetime.date.fromisoformat(reviewed_at)
         next_review_due = _add_months(reviewed_date, int(review_frequency)).isoformat()
+    next_review_due = _clamp_review_due(next_review_due, policy_row["expiry_date"])
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -492,6 +508,7 @@ def create_policy(
     slug = slugify(title)
     effective_date = expiry or ""
     review_due_date = review_due_date or expiry or ""
+    review_due_date = _clamp_review_due(review_due_date, expiry or None)
     cursor = conn.execute(
         """
         INSERT INTO policies (
@@ -596,6 +613,7 @@ def add_policy_version(
             notes = metadata["notes"]
     if not review_due_date:
         review_due_date = expiry_date or ""
+    review_due_date = _clamp_review_due(review_due_date, expiry_date or None)
     cursor = conn.execute(
         """
         INSERT INTO policy_versions (
