@@ -1650,15 +1650,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_status = version_row["status"]
                 current_version_id = version_row["id"]
         if (current_status or "").lower() == "active" and (status or "").lower() == "draft":
-            response = QtWidgets.QMessageBox.question(
+            QtWidgets.QMessageBox.warning(
                 self,
-                "Confirm Draft",
-                "This policy is currently active. Do you want to set it back to Draft?",
+                "Change Not Allowed",
+                "Active policies cannot be changed back to Draft.",
             )
-            if response != QtWidgets.QMessageBox.Yes:
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+            return
+        if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
             if self.user_id is None:
                 QtWidgets.QMessageBox.warning(
                     self,
@@ -1671,7 +1671,7 @@ class MainWindow(QtWidgets.QMainWindow):
             password, ok = QtWidgets.QInputDialog.getText(
                 self,
                 "Confirm Password",
-                "Enter your account password to confirm:",
+                "Enter your account password to activate this policy:",
                 QtWidgets.QLineEdit.Password,
             )
             if not ok:
