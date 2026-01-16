@@ -1247,7 +1247,14 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setBackground(QtGui.QColor("#93c5fd"))
             item.setForeground(text_color)
 
-    def _update_policy_field(self, field: str, value, *, confirm: bool = True) -> None:
+    def _update_policy_field(
+        self,
+        field: str,
+        value,
+        *,
+        confirm: bool = True,
+        version_id: int | None = None,
+    ) -> None:
         """Update a policy/version field with optional confirmation and audit logging."""
 
         if not self.current_policy_id:
@@ -1266,10 +1273,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Resolve the file integrity issue before modifying this version.",
             )
             return
-        selected = self.version_table.selectionModel().selectedRows()
-        selected_version_id = None
-        if selected:
-            selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
+        selected_version_id = version_id
+        if selected_version_id is None:
+            selected = self.version_table.selectionModel().selectedRows()
+            if selected:
+                selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         policy_row = self.conn.execute(
             "SELECT current_version_id FROM policies WHERE id = ?",
             (self.current_policy_id,),
@@ -1750,7 +1758,12 @@ class MainWindow(QtWidgets.QMainWindow):
         confirm_change = not (
             (current_status or "").lower() == "draft" and (status or "").lower() == "active"
         )
-        self._update_policy_field("status", status, confirm=confirm_change)
+        self._update_policy_field(
+            "status",
+            status,
+            confirm=confirm_change,
+            version_id=current_version_id,
+        )
         self._apply_status_constraints(status)
         if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
             if current_version_id:
