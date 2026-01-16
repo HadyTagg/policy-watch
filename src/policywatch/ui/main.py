@@ -485,11 +485,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
+                is_draft = (policy.status or "").lower() == "draft"
                 review_due_item = QtWidgets.QTableWidgetItem(
-                    self._format_date_display(policy.review_due_date)
+                    "" if is_draft else self._format_date_display(policy.review_due_date)
                 )
                 days_remaining_item = QtWidgets.QTableWidgetItem(
-                    self._format_days_remaining(policy.review_due_date)
+                    "" if is_draft else self._format_days_remaining(policy.review_due_date)
                 )
                 ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
             else:
@@ -1439,6 +1440,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_review_schedule_display(self) -> None:
         """Refresh days remaining labels."""
 
+        if (self.detail_status.currentText() or "").lower() == "draft":
+            self.detail_review_days_remaining.setText("")
+            return
         review_due_value = self._get_date_field_value(self.detail_review_due)
         self.detail_review_days_remaining.setText(self._format_days_remaining(review_due_value))
 
