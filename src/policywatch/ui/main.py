@@ -1772,6 +1772,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     (current_version_id,),
                 ).fetchone()
                 if updated_status and (updated_status["status"] or "").lower() == "active":
+                    set_current_version(self.conn, self.current_policy_id, current_version_id)
                     reviewed_at = datetime.now().date().isoformat()
                     add_policy_review(
                         self.conn,
