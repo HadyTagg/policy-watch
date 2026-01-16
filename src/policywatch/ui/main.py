@@ -1159,6 +1159,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._populate_category_options(self._current_policy_category)
         self._populate_owner_options(version["owner"])
         self.detail_status.setCurrentText(version["status"] or "")
+        self._apply_status_constraints(version["status"] or "")
         self._set_date_field(
             self.detail_review_due,
             None if (version["status"] or "").lower() == "draft" else version["review_due_date"],
@@ -1199,6 +1200,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 title = "Integrity Issue"
             QtWidgets.QMessageBox.information(self, title, message)
+
+    def _apply_status_constraints(self, status: str) -> None:
+        """Enable or disable status options based on the current status."""
+
+        model = self.detail_status.model()
+        for option in ["Withdrawn", "Archived"]:
+            index = self.detail_status.findText(option)
+            if index < 0:
+                continue
+            item = model.item(index)
+            if item is None:
+                continue
+            if (status or "").lower() == "draft":
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
+            else:
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsEnabled)
 
     def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
         """Apply traffic-light color coding to a policy row."""
@@ -1718,10 +1735,20 @@ class MainWindow(QtWidgets.QMainWindow):
                         "Change Not Allowed",
                         f"Only one active version is allowed. {label} is already active.",
                     )
-                    if self.current_policy_id:
-                        self._load_policy_detail(self.current_policy_id)
-                    return
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
+        if (current_status or "").lower() == "draft" and (status or "").lower() in {"withdrawn", "archived"}:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Change Not Allowed",
+                "Draft policies can only be set to Active.",
+            )
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+            return
         self._update_policy_field("status", status)
+        self._apply_status_constraints(status)
         if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
             if current_version_id:
                 updated_status = self.conn.execute(
@@ -1915,6 +1942,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_version_action_state(False)
         self.detail_title.setText("")
         self.detail_status.setCurrentIndex(-1)
+        self._apply_status_constraints("")
         self._set_date_field(self.detail_review_due, None)
         self.detail_review_frequency.setCurrentIndex(-1)
         self.detail_review_days_remaining.setText("")
