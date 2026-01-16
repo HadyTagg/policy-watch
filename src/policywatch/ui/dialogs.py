@@ -304,7 +304,6 @@ class PolicyDialog(QtWidgets.QDialog):
 
         combo.clear()
         options = [
-            ("None", None),
             ("Annual", 12),
             ("Biannual", 6),
             ("Quarterly", 3),
