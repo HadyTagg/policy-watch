@@ -127,7 +127,7 @@ class PolicyDialog(QtWidgets.QDialog):
         self.review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.review_due_date.setCalendarPopup(True)
         self.review_due_date.setDisplayFormat("dd/MM/yyyy")
-        self.review_due_date.setReadOnly(True)
+        self.review_due_date.setReadOnly(False)
         self.review_due_date.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.review_frequency_combo = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.review_frequency_combo)

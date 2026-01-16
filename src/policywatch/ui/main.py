@@ -765,6 +765,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         reviews = list_policy_reviews(self.conn, policy_version_id)
         self._latest_reviewed_at = reviews[0]["reviewed_at"] if reviews else None
+        self.detail_last_reviewed.setText(
+            self._format_review_date_display(self._latest_reviewed_at or "")
+        )
         self.review_table.setRowCount(len(reviews))
         for row_index, review in enumerate(reviews):
             reviewed_at = self._format_review_date_display(review["reviewed_at"] or "")
@@ -782,6 +785,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.review_table.setRowCount(0)
         self._latest_reviewed_at = None
+        self.detail_last_reviewed.setText("")
 
     def _prompt_policy_review(self) -> dict | None:
         """Prompt for review details when recording a no-change review."""
@@ -1750,6 +1754,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified.setText("")
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
+        self.detail_last_reviewed.setText("")
         self.detail_status.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
@@ -1900,6 +1905,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_review_due.dateChanged.connect(self._on_review_due_changed)
         self.detail_review_due.setReadOnly(True)
         self.detail_review_due.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.detail_last_reviewed = QtWidgets.QLineEdit()
+        self.detail_last_reviewed.setReadOnly(True)
         self.detail_review_frequency = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.detail_review_frequency)
         self.detail_review_frequency.currentIndexChanged.connect(self._on_review_frequency_changed)
@@ -1920,6 +1927,7 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Category", self.detail_category)
         form.addRow("Owner", self.detail_owner)
         form.addRow("Status", self.detail_status)
+        form.addRow("Last Reviewed", self.detail_last_reviewed)
         form.addRow("Review Due", self.detail_review_due)
         form.addRow("Review Frequency", self.detail_review_frequency)
         form.addRow("Days Remaining", self.detail_review_days_remaining)
