@@ -32,6 +32,32 @@ LONDON_TZ = _resolve_london_tz()
 _AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
 
 
+def _add_months(source: datetime.date, months: int) -> datetime.date:
+    """Add months to a date while keeping the day within month bounds."""
+
+    month = source.month - 1 + months
+    year = source.year + month // 12
+    month = month % 12 + 1
+    day = min(
+        source.day,
+        [
+            31,
+            29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month - 1],
+    )
+    return datetime.date(year, month, day)
+
+
 def set_audit_actor(actor: str | None) -> None:
     """Set the current audit actor for service-layer logging."""
 
@@ -396,12 +422,21 @@ def add_policy_review(
     """Record a policy review that did not create a new version."""
 
     policy_row = conn.execute(
-        "SELECT policy_id, version_number FROM policy_versions WHERE id = ?",
+        """
+        SELECT policy_id, version_number, review_frequency_months
+        FROM policy_versions
+        WHERE id = ?
+        """,
         (policy_version_id,),
     ).fetchone()
     if not policy_row:
         raise ValueError("Policy version not found")
     policy_id = policy_row["policy_id"]
+    next_review_due = reviewed_at
+    review_frequency = policy_row["review_frequency_months"]
+    if review_frequency:
+        reviewed_date = datetime.date.fromisoformat(reviewed_at)
+        next_review_due = _add_months(reviewed_date, int(review_frequency)).isoformat()
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -417,9 +452,23 @@ def add_policy_review(
             1 if no_change else 0,
         ),
     )
+    conn.execute(
+        "UPDATE policy_versions SET review_due_date = ? WHERE id = ?",
+        (next_review_due, policy_version_id),
+    )
+    current_row = conn.execute(
+        "SELECT current_version_id FROM policies WHERE id = ?",
+        (policy_id,),
+    ).fetchone()
+    if current_row and current_row["current_version_id"] == policy_version_id:
+        conn.execute(
+            "UPDATE policies SET review_due_date = ? WHERE id = ?",
+            (next_review_due, policy_id),
+        )
     conn.commit()
     details = f"reviewed_at={reviewed_at}"
     details = f"{details} version=v{policy_row['version_number']}"
+    details = f"{details} next_review_due={next_review_due}"
     if no_change:
         details = f"{details} no_change=true"
     _log_event(conn, "record_policy_review", "policy", policy_id, details)
