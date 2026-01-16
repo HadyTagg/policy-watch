@@ -1747,7 +1747,10 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.current_policy_id:
                 self._load_policy_detail(self.current_policy_id)
             return
-        self._update_policy_field("status", status)
+        confirm_change = not (
+            (current_status or "").lower() == "draft" and (status or "").lower() == "active"
+        )
+        self._update_policy_field("status", status, confirm=confirm_change)
         self._apply_status_constraints(status)
         if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
             if current_version_id:
