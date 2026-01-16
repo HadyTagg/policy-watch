@@ -845,6 +845,13 @@ class MainWindow(QtWidgets.QMainWindow):
             "SELECT status FROM policy_versions WHERE id = ?",
             (version_id,),
         ).fetchone()
+        if version_row and (version_row["status"] or "").lower() == "draft":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Review Not Allowed",
+                "Draft policies can only be reviewed when activated.",
+            )
+            return
         if version_row and (version_row["status"] or "").lower() == "missing":
             QtWidgets.QMessageBox.warning(
                 self,
