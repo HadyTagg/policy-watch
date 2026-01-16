@@ -862,6 +862,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_policy_reviews(version_id)
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
+            self._select_version_row_by_id(version_id)
+            self._load_policy_reviews(version_id)
             self._refresh_policies(clear_selection=False)
         self._load_audit_log()
 
