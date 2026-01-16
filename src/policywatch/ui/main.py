@@ -1215,8 +1215,8 @@ class MainWindow(QtWidgets.QMainWindow):
             item.setBackground(QtGui.QColor("#93c5fd"))
             item.setForeground(text_color)
 
-    def _update_policy_field(self, field: str, value) -> None:
-        """Update a policy/version field with confirmation and audit logging."""
+    def _update_policy_field(self, field: str, value, *, confirm: bool = True) -> None:
+        """Update a policy/version field with optional confirmation and audit logging."""
 
         if not self.current_policy_id:
             return
@@ -1272,14 +1272,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if field == "review_frequency_months":
             display_current = self._review_frequency_label(current_value)
             display_value = self._review_frequency_label(value)
-        response = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Change",
-            f"Change {label} from {display_current} to {display_value}?",
-        )
-        if response != QtWidgets.QMessageBox.Yes:
-            self._load_policy_detail(self.current_policy_id)
-            return
+        if confirm:
+            response = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Change",
+                f"Change {label} from {display_current} to {display_value}?",
+            )
+            if response != QtWidgets.QMessageBox.Yes:
+                self._load_policy_detail(self.current_policy_id)
+                return
         if current_version_id:
             self.conn.execute(
                 f"UPDATE policy_versions SET {field} = ? WHERE id = ?",
@@ -1498,7 +1499,7 @@ class MainWindow(QtWidgets.QMainWindow):
         return super().eventFilter(obj, event)
 
     def _prompt_version_metadata(self) -> dict | None:
-        """Prompt for status, review, and notes when adding a version."""
+        """Prompt for status, owner, review, and notes when adding a version."""
 
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle("Version Metadata")
@@ -1507,6 +1508,12 @@ class MainWindow(QtWidgets.QMainWindow):
         form = QtWidgets.QFormLayout()
         status_combo = QtWidgets.QComboBox()
         status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        owner_combo = QtWidgets.QComboBox()
+        owner_combo.setEditable(False)
+        owner_combo.addItem("Unassigned", None)
+        for owner in list_users(self.conn):
+            if owner:
+                owner_combo.addItem(owner, owner)
         review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         review_due_date.setCalendarPopup(True)
         review_due_date.setDisplayFormat("dd/MM/yyyy")
@@ -1518,6 +1525,7 @@ class MainWindow(QtWidgets.QMainWindow):
         notes_input = QtWidgets.QPlainTextEdit()
 
         form.addRow("Status", status_combo)
+        form.addRow("Owner", owner_combo)
         form.addRow("Review Due", review_due_date)
         form.addRow("Review Frequency", review_frequency)
         form.addRow("Notes", notes_input)
@@ -1571,6 +1579,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return None
         return {
             "status": status_combo.currentText(),
+            "owner": owner_combo.currentData(),
             "review_due_date": (
                 ""
                 if not review_due_date.isEnabled()
@@ -1602,7 +1611,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.detail_review_due.blockSignals(True)
             self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))
             self.detail_review_due.blockSignals(False)
-            self._update_policy_field("review_due_date", review_due_value)
+            self._update_policy_field("review_due_date", review_due_value, confirm=False)
         self._update_review_schedule_display()
 
     def _mark_notes_dirty(self) -> None:
