@@ -1430,6 +1430,18 @@ class MainWindow(QtWidgets.QMainWindow):
             return f"Overdue by {abs(delta_days)} {day_label}"
         return f"{delta_days} {day_label}"
 
+    def _calculate_review_due_value(self, expiry_value: str, frequency: int | None) -> str:
+        """Return a review due date based on frequency and expiry."""
+
+        if not frequency:
+            return expiry_value
+        base_date = datetime.now().date()
+        review_due_date = self._add_months(base_date, int(frequency))
+        expiry_date = self._parse_date_value(expiry_value) if expiry_value else None
+        if expiry_date and review_due_date > expiry_date:
+            review_due_date = expiry_date
+        return review_due_date.isoformat()
+
     def _populate_review_frequency_options(self, combo: QtWidgets.QComboBox) -> None:
         """Load review frequency choices into a combo box."""
 
@@ -1549,6 +1561,8 @@ class MainWindow(QtWidgets.QMainWindow):
         review_due_date.setCalendarPopup(True)
         review_due_date.setDisplayFormat("dd/MM/yyyy")
         review_due_date.setMaximumDate(QtCore.QDate(9999, 12, 31))
+        review_due_date.setReadOnly(True)
+        review_due_date.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         review_frequency = QtWidgets.QComboBox()
         self._populate_review_frequency_options(review_frequency)
         notes_input = QtWidgets.QPlainTextEdit()
@@ -1584,8 +1598,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     candidate = expiry_value
                 review_due_date.setDate(candidate)
                 return
-            if review_due_date.date() > expiry_value:
-                review_due_date.setDate(expiry_value)
+            review_due_date.setDate(expiry_value)
 
         def update_metadata_state(status: str) -> None:
             is_draft = status == "Draft"
@@ -1647,9 +1660,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_policy_field("expiry_date", expiry_value)
         self.detail_review_due.blockSignals(True)
         self.detail_review_due.setMaximumDate(value)
-        if self.detail_review_due.date() > value:
-            self.detail_review_due.setDate(value)
-            self._update_policy_field("review_due_date", expiry_value)
+        review_due_value = self._calculate_review_due_value(
+            expiry_value,
+            self.detail_review_frequency.currentData(),
+        )
+        if review_due_value:
+            self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))
+            self._update_policy_field("review_due_date", review_due_value)
         self.detail_review_due.blockSignals(False)
         self._update_review_schedule_display()
 
@@ -1657,12 +1674,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """Handle review due date updates from the metadata form."""
 
         review_value = self._get_date_field_value(self.detail_review_due)
-        max_date = self.detail_review_due.maximumDate()
-        if max_date.isValid() and value > max_date:
-            self.detail_review_due.blockSignals(True)
-            self.detail_review_due.setDate(max_date)
-            self.detail_review_due.blockSignals(False)
-            review_value = max_date.toString("yyyy-MM-dd")
         self._update_policy_field("review_due_date", review_value)
         self._update_review_schedule_display()
 
@@ -1671,6 +1682,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         frequency_value = self.detail_review_frequency.currentData()
         self._update_policy_field("review_frequency_months", frequency_value)
+        expiry_value = self._get_date_field_value(self.detail_expiry)
+        review_due_value = self._calculate_review_due_value(expiry_value, frequency_value)
+        if review_due_value:
+            self.detail_review_due.blockSignals(True)
+            self.detail_review_due.setDate(QtCore.QDate.fromString(review_due_value, "yyyy-MM-dd"))
+            self.detail_review_due.blockSignals(False)
+            self._update_policy_field("review_due_date", review_due_value)
         self._update_review_schedule_display()
 
     def _mark_notes_dirty(self) -> None:
@@ -1979,6 +1997,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_review_due.setCalendarPopup(True)
         self.detail_review_due.setDisplayFormat("dd/MM/yyyy")
         self.detail_review_due.dateChanged.connect(self._on_review_due_changed)
+        self.detail_review_due.setReadOnly(True)
+        self.detail_review_due.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.detail_review_frequency = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.detail_review_frequency)
         self.detail_review_frequency.currentIndexChanged.connect(self._on_review_frequency_changed)

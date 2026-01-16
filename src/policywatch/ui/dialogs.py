@@ -130,6 +130,8 @@ class PolicyDialog(QtWidgets.QDialog):
         self.review_due_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
         self.review_due_date.setCalendarPopup(True)
         self.review_due_date.setDisplayFormat("dd/MM/yyyy")
+        self.review_due_date.setReadOnly(True)
+        self.review_due_date.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.review_frequency_combo = QtWidgets.QComboBox()
         self._populate_review_frequency_options(self.review_frequency_combo)
         self.review_frequency_combo.currentIndexChanged.connect(self._auto_update_review_due)
@@ -254,6 +256,7 @@ class PolicyDialog(QtWidgets.QDialog):
             self.review_due_date.setSpecialValueText("")
             self.review_due_date.setDate(min_date)
             self.review_due_date.setDisplayFormat(" ")
+            self.review_due_date.setReadOnly(True)
             self.review_frequency_combo.setEnabled(False)
         else:
             self.expiry_date.setEnabled(True)
@@ -264,6 +267,7 @@ class PolicyDialog(QtWidgets.QDialog):
             self.review_due_date.setEnabled(True)
             self.review_due_date.setSpecialValueText("")
             self.review_due_date.setDisplayFormat("dd/MM/yyyy")
+            self.review_due_date.setReadOnly(True)
             if self.review_due_date.date() == min_date:
                 if self.expiry_date.date() != min_date:
                     self.review_due_date.setDate(self.expiry_date.date())
@@ -313,8 +317,7 @@ class PolicyDialog(QtWidgets.QDialog):
                 candidate = expiry
             self.review_due_date.setDate(candidate)
             return
-        if self.review_due_date.date() > expiry:
-            self.review_due_date.setDate(expiry)
+        self.review_due_date.setDate(expiry)
 
     def _populate_review_frequency_options(self, combo: QtWidgets.QComboBox) -> None:
         """Populate review frequency options."""
