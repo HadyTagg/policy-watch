@@ -1168,6 +1168,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_review_schedule_display()
         read_only = integrity_issue or is_missing_status
         self._set_policy_metadata_enabled(not read_only)
+        self._apply_review_metadata_state(version["status"] or "", allow_edit=not read_only)
         self._set_version_action_state(not read_only)
         self.detail_status.blockSignals(False)
         self.detail_review_due.blockSignals(False)
@@ -1452,6 +1453,28 @@ class MainWindow(QtWidgets.QMainWindow):
         review_due_value = self._get_date_field_value(self.detail_review_due)
         self.detail_review_days_remaining.setText(self._format_days_remaining(review_due_value))
 
+    def _apply_review_metadata_state(self, status: str, allow_edit: bool = True) -> None:
+        """Adjust review metadata controls based on version status."""
+
+        is_draft = (status or "").lower() == "draft"
+        min_date = QtCore.QDate(1900, 1, 1)
+        self.detail_review_due.setMinimumDate(min_date)
+        if is_draft:
+            self.detail_review_due.setEnabled(False)
+            self.detail_review_due.setSpecialValueText("")
+            self.detail_review_due.setDate(min_date)
+            self.detail_review_due.setDisplayFormat(" ")
+            self.detail_review_frequency.setCurrentIndex(-1)
+            self.detail_review_frequency.setEnabled(False)
+            return
+        self.detail_review_due.setEnabled(allow_edit)
+        self.detail_review_frequency.setEnabled(allow_edit)
+        self.detail_review_due.setSpecialValueText("")
+        if self._get_date_field_value(self.detail_review_due):
+            self.detail_review_due.setDisplayFormat("dd/MM/yyyy")
+        else:
+            self.detail_review_due.setDisplayFormat(" ")
+
     def _format_datetime_display(self, value: str) -> str:
         """Format an ISO datetime string for UI display."""
 
@@ -1602,10 +1625,18 @@ class MainWindow(QtWidgets.QMainWindow):
         """Handle status updates from the metadata form."""
 
         self._update_policy_field("status", status)
+        self.detail_review_frequency.blockSignals(True)
+        self.detail_review_due.blockSignals(True)
+        self._apply_review_metadata_state(status, allow_edit=True)
+        self.detail_review_due.blockSignals(False)
+        self.detail_review_frequency.blockSignals(False)
+        self._update_review_schedule_display()
 
     def _on_review_due_changed(self, value: QtCore.QDate) -> None:
         """Handle review due date updates from the metadata form."""
 
+        if (self.detail_status.currentText() or "").lower() == "draft":
+            return
         review_value = self._get_date_field_value(self.detail_review_due)
         self._update_policy_field("review_due_date", review_value)
         self._update_review_schedule_display()
@@ -1613,6 +1644,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_review_frequency_changed(self) -> None:
         """Handle review frequency updates from the metadata form."""
 
+        if (self.detail_status.currentText() or "").lower() == "draft":
+            return
         frequency_value = self.detail_review_frequency.currentData()
         self._update_policy_field("review_frequency_months", frequency_value)
         review_due_value = self._calculate_review_due_value(frequency_value)
