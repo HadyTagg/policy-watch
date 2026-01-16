@@ -438,7 +438,7 @@ def add_policy_review(
 
     policy_row = conn.execute(
         """
-        SELECT policy_id, version_number, review_frequency_months, expiry_date
+        SELECT policy_id, version_number, review_frequency_months, expiry_date, review_due_date
         FROM policy_versions
         WHERE id = ?
         """,
@@ -448,11 +448,14 @@ def add_policy_review(
         raise ValueError("Policy version not found")
     policy_id = policy_row["policy_id"]
     next_review_due = reviewed_at
+    next_expiry_date = policy_row["expiry_date"]
     review_frequency = policy_row["review_frequency_months"]
     if review_frequency:
         reviewed_date = datetime.date.fromisoformat(reviewed_at)
         next_review_due = _add_months(reviewed_date, int(review_frequency)).isoformat()
-    next_review_due = _clamp_review_due(next_review_due, policy_row["expiry_date"])
+    if policy_row["expiry_date"] and policy_row["review_due_date"] == policy_row["expiry_date"]:
+        next_expiry_date = next_review_due
+    next_review_due = _clamp_review_due(next_review_due, next_expiry_date)
     cursor = conn.execute(
         """
         INSERT INTO policy_reviews (
@@ -469,8 +472,8 @@ def add_policy_review(
         ),
     )
     conn.execute(
-        "UPDATE policy_versions SET review_due_date = ? WHERE id = ?",
-        (next_review_due, policy_version_id),
+        "UPDATE policy_versions SET review_due_date = ?, expiry_date = ? WHERE id = ?",
+        (next_review_due, next_expiry_date, policy_version_id),
     )
     current_row = conn.execute(
         "SELECT current_version_id FROM policies WHERE id = ?",
@@ -478,8 +481,8 @@ def add_policy_review(
     ).fetchone()
     if current_row and current_row["current_version_id"] == policy_version_id:
         conn.execute(
-            "UPDATE policies SET review_due_date = ? WHERE id = ?",
-            (next_review_due, policy_id),
+            "UPDATE policies SET review_due_date = ?, expiry_date = ? WHERE id = ?",
+            (next_review_due, next_expiry_date, policy_id),
         )
     conn.commit()
     details = f"reviewed_at={reviewed_at}"

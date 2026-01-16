@@ -860,6 +860,9 @@ class MainWindow(QtWidgets.QMainWindow):
             review_details["notes"],
         )
         self._load_policy_reviews(version_id)
+        if self.current_policy_id:
+            self._load_policy_detail(self.current_policy_id)
+            self._refresh_policies(clear_selection=False)
         self._load_audit_log()
 
     def _upload_version(self) -> None:
