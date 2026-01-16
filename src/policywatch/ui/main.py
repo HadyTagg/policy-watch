@@ -984,11 +984,17 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        ratified = self.conn.execute(
-            "SELECT ratified FROM policy_versions WHERE id = ?",
+        version_row = self.conn.execute(
+            "SELECT ratified, status FROM policy_versions WHERE id = ?",
             (version_id,),
         ).fetchone()
-        if not ratified or not ratified["ratified"]:
+        if not version_row:
+            QtWidgets.QMessageBox.warning(self, "Unavailable", "Unable to load version details.")
+            return
+        if (version_row["status"] or "").lower() != "active":
+            QtWidgets.QMessageBox.warning(self, "Not Active", "Only active versions can be set as current.")
+            return
+        if not version_row["ratified"]:
             QtWidgets.QMessageBox.warning(self, "Not Ratified", "Version must be ratified first.")
             return
         set_current_version(self.conn, self.current_policy_id, version_id)
@@ -1743,9 +1749,9 @@ class MainWindow(QtWidgets.QMainWindow):
                         "Change Not Allowed",
                         f"Only one active version is allowed. {label} is already active.",
                     )
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
         if (current_status or "").lower() == "draft" and (status or "").lower() in {"withdrawn", "archived"}:
             QtWidgets.QMessageBox.warning(
                 self,
