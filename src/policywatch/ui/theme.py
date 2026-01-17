@@ -113,8 +113,8 @@ def build_stylesheet(font_family: str) -> str:
         border: 1px solid {COLORS['neutral_100']};
         border-radius: 8px;
         gridline-color: transparent;
-        selection-background-color: {COLORS['accent']};
-        selection-color: #ffffff;
+        selection-background-color: {COLORS['neutral_100']};
+        selection-color: {COLORS['neutral_900']};
     }}
     QTableView::item {{
         padding: 8px;
