@@ -1752,6 +1752,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     if self.current_policy_id:
                         self._load_policy_detail(self.current_policy_id)
                     return
+                ratified_row = self.conn.execute(
+                    "SELECT ratified FROM policy_versions WHERE id = ?",
+                    (current_version_id,),
+                ).fetchone()
+                if not ratified_row or not ratified_row["ratified"]:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Not Ratified",
+                        "Version must be ratified before it can be set to Active.",
+                    )
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
         if (current_status or "").lower() == "draft" and (status or "").lower() in {"withdrawn", "archived"}:
             QtWidgets.QMessageBox.warning(
                 self,
