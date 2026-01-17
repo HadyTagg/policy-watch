@@ -145,7 +145,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
                 logo_label.setPixmap(
-                    pixmap.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    pixmap.scaled(72, 72, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                 )
         if logo_label.pixmap() is None:
             logo_label.setText("Martha Trust")
@@ -275,6 +275,8 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_bar = self.tabs.tabBar()
         tab_bar.setFocusPolicy(QtCore.Qt.StrongFocus)
         tab_bar.setElideMode(QtCore.Qt.ElideNone)
+        tab_bar.setExpanding(False)
+        tab_bar.setUsesScrollButtons(False)
         self.tabs.setIconSize(QtCore.QSize(26, 26))
 
         icons = [

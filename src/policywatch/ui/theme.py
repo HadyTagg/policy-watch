@@ -122,6 +122,12 @@ def build_stylesheet(font_family: str) -> str:
     QTableView::item:hover {{
         background-color: {COLORS['neutral_50']};
     }}
+    QTableView::item:selected {{
+        outline: none;
+    }}
+    QTableView::item:focus {{
+        outline: none;
+    }}
     QTabWidget::pane {{
         border: 1px solid {COLORS['neutral_100']};
         border-top: none;
@@ -137,6 +143,7 @@ def build_stylesheet(font_family: str) -> str:
         min-width: 36px;
         min-height: 36px;
         color: {COLORS['neutral_500']};
+        qproperty-alignment: AlignCenter;
     }}
     QTabBar::tab:hover {{
         background: {COLORS['neutral_50']};
