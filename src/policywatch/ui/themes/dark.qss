@@ -72,6 +72,9 @@ QTableView::item {
 QTableView::item:hover {
     background-color: #1f2937;
 }
+QTableView::item:selected:hover {
+    background-color: #1f2937;
+}
 QTableView::item:alternate {
     background-color: #0b1324;
 }
@@ -88,6 +91,9 @@ QTableWidget::item {
     background-color: #111827;
 }
 QTableWidget::item:hover {
+    background-color: #1f2937;
+}
+QTableWidget::item:selected:hover {
     background-color: #1f2937;
 }
 QTableWidget::item:alternate {

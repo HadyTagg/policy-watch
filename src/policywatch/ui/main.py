@@ -268,17 +268,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_policies()
         self._load_settings()
         self._load_audit_log()
-        self._apply_theme_overrides()
         self._run_startup_policy_checks()
-
-    def _apply_theme_overrides(self) -> None:
-        """Apply theme-specific UI tweaks."""
-
-        if self.user_id is None:
-            theme_value = "light"
-        else:
-            theme_value = get_user_theme(self.conn, self.user_id)
-        self.brand_logo.setVisible(theme_value != "dark")
 
     def _run_startup_policy_checks(self) -> None:
         """Repair paths and flag missing or altered policy files on launch."""
@@ -3577,7 +3567,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         set_user_theme(self.conn, self.user_id, theme_value)
         theme.apply_theme(theme_value)
-        self.brand_logo.setVisible(theme_value != "dark")
 
     def _load_settings(self) -> None:
         """Load saved settings into the UI fields."""
