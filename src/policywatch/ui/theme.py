@@ -157,9 +157,6 @@ def build_stylesheet(font_family: str) -> str:
         border-color: {COLORS['neutral_100']};
         color: {COLORS['neutral_900']};
     }}
-    QTabBar::tab:focus {{
-        border: 1px solid {COLORS['accent']};
-    }}
     QFrame#KpiCard {{
         background: #ffffff;
         border: 1px solid {COLORS['neutral_100']};
