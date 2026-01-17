@@ -517,6 +517,7 @@ def add_policy_version(
     original_path: Path,
     created_by_user_id: int | None,
     metadata: dict | None = None,
+    allow_active_version_id: int | None = None,
 ) -> int:
     """Store a new policy version and return its database ID."""
 
@@ -599,7 +600,7 @@ def add_policy_version(
             """,
             (policy_id,),
         ).fetchone()
-        if active_row:
+        if active_row and active_row["id"] != allow_active_version_id:
             raise ValueError("Only one active version is allowed for a policy.")
     cursor = conn.execute(
         """
