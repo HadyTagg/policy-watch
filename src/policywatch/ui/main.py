@@ -365,6 +365,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         replacement_path,
                         None,
                         {"notes": "", "status": original_status},
+                        allow_active_version_id=int(item["version_id"]),
                     )
                     self._append_audit_event(
                         "policy_version_status_copied",
