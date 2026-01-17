@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 from datetime import date, datetime
-from types import SimpleNamespace
 from email.utils import parseaddr
 from pathlib import Path
 
@@ -52,7 +51,6 @@ from policywatch.services import (
     set_audit_actor,
     set_user_theme,
 )
-from policywatch.services.traffic import traffic_light_status
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 from policywatch.ui.widgets import KpiCard, apply_pill_delegate, apply_table_focusless, set_button_icon
@@ -789,26 +787,6 @@ class MainWindow(QtWidgets.QMainWindow):
             "chip": {"label": label, "kind": kind},
         }
 
-    def _build_version_review_status_chip(self, version: dict) -> dict[str, dict[str, str] | str]:
-        """Return review traffic payloads for a specific policy version."""
-
-        amber_months = int(config.get_setting(self.conn, "amber_months", 2) or 2)
-        review_due = self._parse_date_value(version.get("review_due_date"))
-        traffic_status = ""
-        traffic_reason = ""
-        if review_due:
-            traffic = traffic_light_status(datetime.now().date(), review_due, amber_months)
-            traffic_status = traffic.status
-            traffic_reason = traffic.reason
-        proxy = SimpleNamespace(
-            current_version_id=version.get("id"),
-            status=version.get("status"),
-            review_due_date=version.get("review_due_date"),
-            traffic_status=traffic_status,
-            traffic_reason=traffic_reason,
-        )
-        return self._build_review_status_chip(proxy)
-
     def _format_days_badge(self, review_due_date: str | None) -> str:
         """Return a short days remaining label for the review status chip."""
 
@@ -991,10 +969,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "Current",
             "Status",
             "Ratified",
-            "Review Status",
             "Review Due",
             "Last Reviewed",
-            "Review Frequency",
             "Owner",
         ]
         self.version_table.clearContents()
@@ -1029,18 +1005,12 @@ class MainWindow(QtWidgets.QMainWindow):
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
-            review_status_payload = self._build_version_review_status_chip(version)
-            review_status_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
-            review_status_item.setToolTip(review_status_payload["tooltip"])
             is_draft = (version.get("status") or "").lower() == "draft"
             review_due_item = QtWidgets.QTableWidgetItem(
                 "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
             last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
             last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
-            review_frequency_item = QtWidgets.QTableWidgetItem(
-                self._review_frequency_label(version.get("review_frequency_months"))
-            )
             owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
             items = [
                 created_item,
@@ -1050,10 +1020,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_item,
                 status_item,
                 ratified_item,
-                review_status_item,
                 review_due_item,
                 last_reviewed_item,
-                review_frequency_item,
                 owner_item,
             ]
             for column, item in enumerate(items):
@@ -2405,7 +2373,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
-        self.version_table = QtWidgets.QTableWidget(0, 12)
+        self.version_table = QtWidgets.QTableWidget(0, 10)
         self.version_table.setHorizontalHeaderLabels(
             [
                 "Created",
@@ -2415,10 +2383,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Current",
                 "Status",
                 "Ratified",
-                "Review Status",
                 "Review Due",
                 "Last Reviewed",
-                "Review Frequency",
                 "Owner",
             ]
         )
