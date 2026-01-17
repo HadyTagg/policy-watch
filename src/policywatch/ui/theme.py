@@ -159,7 +159,7 @@ def build_stylesheet(font_family: str) -> str:
         font-size: {FONT_SIZES['small']}pt;
     }}
     QLabel#KpiValue {{
-        font-size: {FONT_SIZES['title']}pt;
+        font-size: 36pt;
         font-weight: 700;
         color: {COLORS['neutral_900']};
     }}
