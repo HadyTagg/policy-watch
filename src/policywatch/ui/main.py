@@ -2304,7 +2304,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
+            "QTableWidget::item { color: black;}"
             "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
@@ -2382,7 +2382,7 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setBold(True)
         self.review_table.setFont(review_font)
         self.review_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: black; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
         reviews_layout.addWidget(self.review_table)
@@ -2461,7 +2461,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
         self.policy_send_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
+            "QTableWidget::item { color: black; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -2503,7 +2503,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; font-weight: bold; }"
+            "QTableWidget::item { color: black; font-weight: bold; }"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
@@ -3227,7 +3227,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
+            "QTableWidget::item { color: black;}"
             "QTableWidget::item:selected { background-color: blue; color: white; }"
         )
 
