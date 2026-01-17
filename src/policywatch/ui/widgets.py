@@ -80,6 +80,11 @@ class KpiCard(QtWidgets.QFrame):
         self.setObjectName("KpiCard")
         self.setProperty("active", False)
         self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setMinimumHeight(theme.SPACING["xl"] * 5)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(
@@ -88,16 +93,26 @@ class KpiCard(QtWidgets.QFrame):
             theme.SPACING["md"],
             theme.SPACING["md"],
         )
-        layout.setSpacing(theme.SPACING["xs"])
+        layout.setSpacing(theme.SPACING["sm"])
+        layout.setAlignment(QtCore.Qt.AlignCenter)
 
         self.title_label = QtWidgets.QLabel(title)
         self.title_label.setObjectName("KpiTitle")
+        self.title_label.setAlignment(QtCore.Qt.AlignCenter)
+        title_font = QtGui.QFont(self.title_label.font())
+        title_font.setPointSize(theme.FONT_SIZES["small"])
+        title_font.setWeight(QtGui.QFont.Medium)
+        self.title_label.setFont(title_font)
         self.value_label = QtWidgets.QLabel(value)
         self.value_label.setObjectName("KpiValue")
+        self.value_label.setAlignment(QtCore.Qt.AlignCenter)
+        value_font = QtGui.QFont(self.value_label.font())
+        value_font.setPointSize(36)
+        value_font.setWeight(QtGui.QFont.Bold)
+        self.value_label.setFont(value_font)
 
-        layout.addWidget(self.title_label)
-        layout.addWidget(self.value_label)
-        layout.addStretch()
+        layout.addWidget(self.title_label, alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(self.value_label, alignment=QtCore.Qt.AlignCenter)
 
     def set_value(self, value: int | str) -> None:
         """Update the displayed KPI value."""

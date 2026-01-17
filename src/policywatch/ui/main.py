@@ -21,6 +21,7 @@ from policywatch.integrations import outlook
 from policywatch.services import (
     add_policy_version,
     add_policy_review,
+    count_drafts_awaiting_ratification,
     export_backup,
     get_version_file,
     mark_policy_version_missing,
@@ -34,6 +35,7 @@ from policywatch.services import (
     update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
+    list_drafts_awaiting_ratification,
     list_users,
     list_policies,
     list_policy_reviews,
@@ -512,8 +514,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh the policy table using the current filter settings."""
 
         policies = list_policies(self.conn)
+        drafts_awaiting = (
+            list_drafts_awaiting_ratification(self.conn)
+            if self._kpi_filter == "drafts"
+            else None
+        )
         self._update_kpi_cards(policies)
         filtered = []
+        base_policies = drafts_awaiting if drafts_awaiting is not None else policies
         search_text = self.search_input.text().strip().lower()
         category = self.category_filter.currentText()
         traffic = self.traffic_filter.currentText()
@@ -521,7 +529,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ratified_filter = self.ratified_filter.currentText()
         selected_policy_id = self.current_policy_id
 
-        for policy in policies:
+        for policy in base_policies:
             if search_text and search_text not in policy.title.lower():
                 continue
             if category != "All Categories" and policy.category != category:
@@ -661,7 +669,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "active": 0,
             "due_soon": 0,
             "overdue": 0,
-            "drafts": 0,
+            "drafts": count_drafts_awaiting_ratification(self.conn),
         }
         for policy in policies:
             if self._policy_matches_kpi(policy, "active"):
@@ -670,8 +678,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 counts["due_soon"] += 1
             if self._policy_matches_kpi(policy, "overdue"):
                 counts["overdue"] += 1
-            if self._policy_matches_kpi(policy, "drafts"):
-                counts["drafts"] += 1
         for key, card in self.kpi_cards.items():
             card.set_value(counts.get(key, 0))
             card.set_active(self._kpi_filter == key)

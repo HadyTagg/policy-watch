@@ -312,23 +312,8 @@ def _cleanup_empty_dirs(path: Path, stop_at: Path) -> None:
         current = current.parent
 
 
-def list_policies(conn) -> list[PolicyRow]:
-    """Return policies with derived traffic status information."""
-
-    rows = conn.execute(
-        """
-        SELECT p.id, p.title, p.category,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
-               CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
-               p.current_version_id,
-               v.version_number AS current_version_number
-        FROM policies p
-        LEFT JOIN policy_versions v ON v.id = p.current_version_id
-        ORDER BY p.created_at DESC
-        """
-    ).fetchall()
+def _build_policy_rows(conn, rows) -> list[PolicyRow]:
+    """Build PolicyRow entries with derived traffic status information."""
 
     policies: list[PolicyRow] = []
     today = datetime.datetime.now(LONDON_TZ).date()
@@ -360,6 +345,77 @@ def list_policies(conn) -> list[PolicyRow]:
             )
         )
     return policies
+
+
+def list_policies(conn) -> list[PolicyRow]:
+    """Return policies with derived traffic status information."""
+
+    rows = conn.execute(
+        """
+        SELECT p.id, p.title, p.category,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
+               CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
+               p.current_version_id,
+               v.version_number AS current_version_number
+        FROM policies p
+        LEFT JOIN policy_versions v ON v.id = p.current_version_id
+        ORDER BY p.created_at DESC
+        """
+    ).fetchall()
+
+    return _build_policy_rows(conn, rows)
+
+
+def list_drafts_awaiting_ratification(conn) -> list[PolicyRow]:
+    """Return draft policies awaiting ratification, even without a current version."""
+
+    rows = conn.execute(
+        """
+        SELECT p.id,
+               p.title,
+               p.category,
+               v.status,
+               COALESCE(v.ratified, 0) AS ratified,
+               v.review_due_date,
+               v.review_frequency_months,
+               v.id AS current_version_id,
+               v.version_number AS current_version_number
+        FROM policies p
+        JOIN policy_versions v
+          ON v.id = (
+              SELECT pv.id
+              FROM policy_versions pv
+              WHERE pv.policy_id = p.id
+                AND LOWER(pv.status) = 'draft'
+                AND COALESCE(pv.ratified, 0) = 0
+              ORDER BY pv.version_number DESC, pv.created_at DESC, pv.id DESC
+              LIMIT 1
+          )
+        WHERE LOWER(p.status) NOT IN ('archived', 'withdrawn')
+        ORDER BY p.created_at DESC
+        """
+    ).fetchall()
+
+    return _build_policy_rows(conn, rows)
+
+
+def count_drafts_awaiting_ratification(conn) -> int:
+    """Return the number of draft policies awaiting ratification."""
+
+    row = conn.execute(
+        """
+        SELECT COUNT(DISTINCT p.id) AS draft_count
+        FROM policies p
+        JOIN policy_versions v
+          ON v.policy_id = p.id
+        WHERE LOWER(p.status) NOT IN ('archived', 'withdrawn')
+          AND LOWER(v.status) = 'draft'
+          AND COALESCE(v.ratified, 0) = 0
+        """
+    ).fetchone()
+    return int(row["draft_count"] or 0)
 
 
 def list_versions(conn, policy_id: int) -> list[dict]:
