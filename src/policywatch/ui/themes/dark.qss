@@ -71,19 +71,23 @@ QTableView::item {
 }
 QTableView::item:hover {
     background-color: #1f2937;
+    padding-left: 12px;
 }
 QTableView::item:selected:hover {
     background-color: #1f2937;
+    padding-left: 12px;
 }
 QTableView::item:alternate {
     background-color: #0b1324;
 }
 QTableView::item:alternate:hover {
     background-color: #162033;
+    padding-left: 12px;
 }
 QTableView::item:selected {
     background-color: #1e293b;
     color: #f8fafc;
+    padding-left: 12px;
 }
 QTableWidget::item {
     padding: 8px;
@@ -92,19 +96,23 @@ QTableWidget::item {
 }
 QTableWidget::item:hover {
     background-color: #1f2937;
+    padding-left: 12px;
 }
 QTableWidget::item:selected:hover {
     background-color: #1f2937;
+    padding-left: 12px;
 }
 QTableWidget::item:alternate {
     background-color: #0b1324;
 }
 QTableWidget::item:alternate:hover {
     background-color: #162033;
+    padding-left: 12px;
 }
 QTableWidget::item:selected {
     background-color: #1e293b;
     color: #f8fafc;
+    padding-left: 12px;
 }
 QTabWidget::pane {
     border: 1px solid #1e293b;
