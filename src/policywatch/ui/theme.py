@@ -134,6 +134,9 @@ def build_stylesheet(font_family: str) -> str:
         border-bottom-left-radius: 8px;
         border-bottom-right-radius: 8px;
     }}
+    QTabWidget::tab-bar {{
+        alignment: center;
+    }}
     QTabBar::tab {{
         background: transparent;
         border: 1px solid transparent;

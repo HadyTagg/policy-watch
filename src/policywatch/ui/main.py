@@ -277,6 +277,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tab_bar.setElideMode(QtCore.Qt.ElideNone)
         tab_bar.setExpanding(False)
         tab_bar.setUsesScrollButtons(False)
+        tab_bar.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.tabs.setIconSize(QtCore.QSize(26, 26))
 
         icons = [
