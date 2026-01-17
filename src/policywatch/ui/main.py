@@ -2364,7 +2364,12 @@ class MainWindow(QtWidgets.QMainWindow):
         versions_layout.addWidget(self.version_table)
 
         summary = QtWidgets.QGroupBox("Policy Metadata")
-        form = QtWidgets.QFormLayout(summary)
+        summary.setCheckable(True)
+        summary.setChecked(True)
+        summary_layout = QtWidgets.QVBoxLayout(summary)
+        summary_contents = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(summary_contents)
+        summary_layout.addWidget(summary_contents)
         self.detail_title = QtWidgets.QLineEdit()
         self.detail_title.setReadOnly(False)
         self.detail_title.textChanged.connect(self._mark_title_dirty)
@@ -2419,6 +2424,8 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Ratified", self.detail_ratified)
         form.addRow("Ratified At", self.detail_ratified_at)
         form.addRow("Ratified By", self.detail_ratified_by)
+
+        summary.toggled.connect(summary_contents.setVisible)
 
         reviews = QtWidgets.QGroupBox("Reviews (No Changes)")
         reviews_layout = QtWidgets.QVBoxLayout(reviews)
