@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from policywatch.ui.widgets import set_button_icon
+
 
 class LoginWindow(QtWidgets.QDialog):
     """Simple login dialog with username/password inputs."""
@@ -31,6 +33,7 @@ class LoginWindow(QtWidgets.QDialog):
         form.addRow("Password", self.password_input)
 
         button = QtWidgets.QPushButton("Login")
+        set_button_icon(button, "login")
         button.clicked.connect(self._handle_login)
 
         layout = QtWidgets.QVBoxLayout(self)
