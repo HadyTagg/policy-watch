@@ -960,6 +960,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
 
         versions = list_versions(self.conn, policy_id)
+        versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
         headers = [
             "Created",
             "Category",
@@ -1048,6 +1049,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Load review history for the selected policy version."""
 
         reviews = list_policy_reviews(self.conn, policy_version_id)
+        reviews.sort(key=lambda review: review.get("reviewed_at") or "", reverse=True)
         self._latest_reviewed_at = reviews[0]["reviewed_at"] if reviews else None
         self.detail_last_reviewed.setText(
             self._format_review_date_display(self._latest_reviewed_at or "")
@@ -2657,6 +2659,14 @@ class MainWindow(QtWidgets.QMainWindow):
             ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
+        rows = sorted(
+            rows,
+            key=lambda row: (
+                (row["category"] or "").lower(),
+                (row["title"] or "").lower(),
+                row["version_number"] or 0,
+            ),
+        )
         self.policy_send_table.blockSignals(True)
         self.policy_send_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
