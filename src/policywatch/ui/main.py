@@ -49,7 +49,7 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import CHIP_DATA_ROLE, KpiCard, StatusChipDelegate
+from policywatch.ui.widgets import KpiCard, apply_pill_delegate
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -200,8 +200,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
-        self.table.setItemDelegateForColumn(2, StatusChipDelegate(self.table))
-        self.table.setItemDelegateForColumn(5, StatusChipDelegate(self.table))
+        apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
@@ -529,7 +528,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if policy.current_version_id:
                 status_payload = self._build_status_chip(policy.status or "")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
-                status_item.setData(CHIP_DATA_ROLE, status_payload["chip"])
                 status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
@@ -540,19 +538,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
-                days_remaining_item.setData(CHIP_DATA_ROLE, review_status_payload["chip"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
-                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
+                ratified_item = QtWidgets.QTableWidgetItem(
+                    "Ratified" if policy.ratified else "Awaiting"
+                )
             else:
                 status_payload = self._build_status_chip("No version")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
-                status_item.setData(CHIP_DATA_ROLE, status_payload["chip"])
                 status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
-                days_remaining_item.setData(CHIP_DATA_ROLE, review_status_payload["chip"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
@@ -928,7 +925,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
-            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
+            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             stored_filename = ""
@@ -2307,6 +2304,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "QTableWidget::item { color: black;}"
             "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
+        apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
