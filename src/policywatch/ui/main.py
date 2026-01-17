@@ -1696,6 +1696,15 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.current_policy_id:
                 self._load_policy_detail(self.current_policy_id)
             return
+        if (current_status or "").lower() != "draft" and (status or "").lower() == "draft":
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Change Not Allowed",
+                "Only new versions can be saved as Draft.",
+            )
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+            return
         if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
             if self.user_id is None:
                 QtWidgets.QMessageBox.warning(
