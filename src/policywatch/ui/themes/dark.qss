@@ -66,9 +66,13 @@ QTableView {
 }
 QTableView::item {
     padding: 8px;
+    color: #e2e8f0;
 }
 QTableView::item:hover {
     background-color: #1f2937;
+}
+QTableView::item:alternate {
+    background-color: #0b1324;
 }
 QTabWidget::pane {
     border: 1px solid #1e293b;
