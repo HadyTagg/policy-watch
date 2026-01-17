@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextvars
 import datetime
+import logging
 import hashlib
 import os
 import shutil
@@ -27,6 +28,7 @@ def _resolve_london_tz() -> datetime.tzinfo:
 
 
 LONDON_TZ = _resolve_london_tz()
+LOGGER = logging.getLogger(__name__)
 
 
 _AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
@@ -360,6 +362,82 @@ def list_policies(conn) -> list[PolicyRow]:
             )
         )
     return policies
+
+
+def _policy_matches_kpi(policy: PolicyRow, key: str, today: datetime.date) -> bool:
+    """Return True when a policy matches a KPI definition."""
+
+    status = (policy.status or "").lower()
+    review_due = (
+        datetime.date.fromisoformat(policy.review_due_date)
+        if policy.review_due_date
+        else None
+    )
+
+    if key == "due_soon":
+        if status in {"archived", "withdrawn", "draft"}:
+            return False
+        if not review_due:
+            return False
+        delta_days = (review_due - today).days
+        return 0 <= delta_days <= 30
+    if key == "overdue":
+        if status != "active":
+            return False
+        if not review_due:
+            return False
+        return review_due < today
+    if key == "drafts":
+        return status == "draft" and not policy.ratified
+    return False
+
+
+def get_kpi_due_30_days_count(conn, policies: list[PolicyRow] | None = None) -> int:
+    """Return the number of non-archived policies due within 30 days (drafts excluded)."""
+
+    policies = policies or list_policies(conn)
+    today = datetime.datetime.now().date()
+    count = sum(1 for policy in policies if _policy_matches_kpi(policy, "due_soon", today))
+    LOGGER.debug(
+        "KPI due_soon count=%s criteria=review_due within 30 days, excluding draft/archived/withdrawn",
+        count,
+    )
+    return count
+
+
+def get_kpi_overdue_count(conn, policies: list[PolicyRow] | None = None) -> int:
+    """Return the number of active policies with overdue review dates."""
+
+    policies = policies or list_policies(conn)
+    today = datetime.datetime.now().date()
+    count = sum(1 for policy in policies if _policy_matches_kpi(policy, "overdue", today))
+    LOGGER.debug(
+        "KPI overdue count=%s criteria=active with review_due before today",
+        count,
+    )
+    return count
+
+
+def get_kpi_drafts_awaiting_ratification_count(
+    conn,
+    policies: list[PolicyRow] | None = None,
+) -> int:
+    """Return the number of draft policies that are not yet ratified."""
+
+    policies = policies or list_policies(conn)
+    today = datetime.datetime.now().date()
+    count = sum(1 for policy in policies if _policy_matches_kpi(policy, "drafts", today))
+    LOGGER.debug(
+        "KPI drafts count=%s criteria=status draft and ratified=false",
+        count,
+    )
+    return count
+
+
+def policy_matches_kpi(policy: PolicyRow, key: str, today: datetime.date | None = None) -> bool:
+    """Public helper for KPI filtering to keep UI and counts aligned."""
+
+    return _policy_matches_kpi(policy, key, today or datetime.datetime.now().date())
 
 
 def list_versions(conn, policy_id: int) -> list[dict]:

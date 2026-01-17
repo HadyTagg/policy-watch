@@ -38,6 +38,10 @@ from policywatch.services import (
     list_policies,
     list_policy_reviews,
     list_versions,
+    get_kpi_due_30_days_count,
+    get_kpi_overdue_count,
+    get_kpi_drafts_awaiting_ratification_count,
+    policy_matches_kpi,
     mark_version_ratified,
     unmark_version_ratified,
     set_current_version,
@@ -518,7 +522,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 continue
             if ratified_filter == "Not Ratified" and policy.ratified:
                 continue
-            if self._kpi_filter and not self._policy_matches_kpi(policy, self._kpi_filter):
+            if self._kpi_filter and not policy_matches_kpi(policy, self._kpi_filter):
                 continue
             filtered.append(policy)
 
@@ -622,41 +626,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """Update KPI card counts and active state."""
 
         counts = {
-            "active": 0,
-            "due_soon": 0,
-            "overdue": 0,
-            "drafts": 0,
+            "active": sum(1 for policy in policies if (policy.status or "").lower() == "active"),
+            "due_soon": get_kpi_due_30_days_count(self.conn, policies),
+            "overdue": get_kpi_overdue_count(self.conn, policies),
+            "drafts": get_kpi_drafts_awaiting_ratification_count(self.conn, policies),
         }
-        for policy in policies:
-            if self._policy_matches_kpi(policy, "active"):
-                counts["active"] += 1
-            if self._policy_matches_kpi(policy, "due_soon"):
-                counts["due_soon"] += 1
-            if self._policy_matches_kpi(policy, "overdue"):
-                counts["overdue"] += 1
-            if self._policy_matches_kpi(policy, "drafts"):
-                counts["drafts"] += 1
         for key, card in self.kpi_cards.items():
             card.set_value(counts.get(key, 0))
             card.set_active(self._kpi_filter == key)
-
-    def _policy_matches_kpi(self, policy, key: str) -> bool:
-        """Return True when a policy matches the KPI filter."""
-
-        status = (policy.status or "").lower()
-        today = datetime.now().date()
-        review_due = self._parse_date_value(policy.review_due_date)
-
-        if key == "active":
-            return status == "active"
-        if key == "drafts":
-            return status == "draft" and not policy.ratified
-        if key in {"due_soon", "overdue"} and review_due:
-            delta_days = (review_due - today).days
-            if key == "due_soon":
-                return 0 <= delta_days <= 30
-            return delta_days < 0
-        return False
 
     def _build_status_chip(self, status: str) -> dict[str, dict[str, str] | str]:
         """Return chip payloads for policy status."""
