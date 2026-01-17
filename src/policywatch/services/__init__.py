@@ -116,6 +116,7 @@ class PolicyRow:
     ratified: bool
     review_due_date: str | None
     review_frequency_months: int | None
+    owner: str | None
     current_version_id: int | None
     current_version_number: int | None
     traffic_status: str
@@ -338,6 +339,7 @@ def _build_policy_rows(conn, rows) -> list[PolicyRow]:
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
                 review_frequency_months=row["review_frequency_months"],
+                owner=row["owner"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
                 traffic_status=traffic_status,
@@ -357,6 +359,7 @@ def list_policies(conn) -> list[PolicyRow]:
                CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.owner END AS owner,
                p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
@@ -380,6 +383,7 @@ def list_drafts_awaiting_ratification(conn) -> list[PolicyRow]:
                COALESCE(v.ratified, 0) AS ratified,
                v.review_due_date,
                v.review_frequency_months,
+               v.owner AS owner,
                v.id AS current_version_id,
                v.version_number AS current_version_number
         FROM policies p
@@ -429,6 +433,7 @@ def list_versions(conn, policy_id: int) -> list[dict]:
                v.sha256_hash,
                v.ratified,
                v.status,
+               v.review_frequency_months,
                v.original_filename,
                v.file_path,
                v.file_size_bytes,
