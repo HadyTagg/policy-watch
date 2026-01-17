@@ -433,6 +433,7 @@ def list_versions(conn, policy_id: int) -> list[dict]:
                v.sha256_hash,
                v.ratified,
                v.status,
+               v.review_due_date,
                v.review_frequency_months,
                v.original_filename,
                v.file_path,
