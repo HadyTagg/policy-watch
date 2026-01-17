@@ -116,6 +116,7 @@ class PolicyRow:
     ratified: bool
     review_due_date: str | None
     review_frequency_months: int | None
+    owner: str | None
     current_version_id: int | None
     current_version_number: int | None
     traffic_status: str
@@ -338,6 +339,7 @@ def _build_policy_rows(conn, rows) -> list[PolicyRow]:
                 ratified=bool(row["ratified"]),
                 review_due_date=row["review_due_date"],
                 review_frequency_months=row["review_frequency_months"],
+                owner=row["owner"],
                 current_version_id=row["current_version_id"],
                 current_version_number=row["current_version_number"],
                 traffic_status=traffic_status,
@@ -357,6 +359,7 @@ def list_policies(conn) -> list[PolicyRow]:
                CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
                CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
+               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.owner END AS owner,
                p.current_version_id,
                v.version_number AS current_version_number
         FROM policies p
@@ -380,6 +383,7 @@ def list_drafts_awaiting_ratification(conn) -> list[PolicyRow]:
                COALESCE(v.ratified, 0) AS ratified,
                v.review_due_date,
                v.review_frequency_months,
+               v.owner AS owner,
                v.id AS current_version_id,
                v.version_number AS current_version_number
         FROM policies p
@@ -423,11 +427,37 @@ def list_versions(conn, policy_id: int) -> list[dict]:
 
     rows = conn.execute(
         """
-        SELECT id, version_number, created_at, sha256_hash, ratified,
-               status, original_filename, file_path, file_size_bytes
-        FROM policy_versions
-        WHERE policy_id = ?
-        ORDER BY version_number DESC
+        SELECT v.id,
+               v.version_number,
+               v.created_at,
+               v.sha256_hash,
+               v.ratified,
+               v.status,
+               v.review_due_date,
+               v.review_frequency_months,
+               v.original_filename,
+               v.file_path,
+               v.file_size_bytes,
+               v.owner,
+               p.category,
+               p.title,
+               pr.last_reviewed
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        LEFT JOIN (
+            SELECT version_id, MAX(reviewed_at) AS last_reviewed
+            FROM (
+                SELECT policy_version_id AS version_id, reviewed_at
+                FROM policy_reviews
+                UNION ALL
+                SELECT pc.replacement_version_id AS version_id, pr.reviewed_at
+                FROM policy_review_carryovers pc
+                JOIN policy_reviews pr ON pr.policy_version_id = pc.source_version_id
+            )
+            GROUP BY version_id
+        ) pr ON pr.version_id = v.id
+        WHERE v.policy_id = ?
+        ORDER BY v.version_number DESC
         """,
         (policy_id,),
     ).fetchall()

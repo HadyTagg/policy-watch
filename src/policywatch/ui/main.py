@@ -197,16 +197,17 @@ class MainWindow(QtWidgets.QMainWindow):
         filter_row.addWidget(self.status_filter, 1)
         filter_row.addWidget(self.ratified_filter, 1)
 
-        self.table = QtWidgets.QTableWidget(0, 7)
+        self.table = QtWidgets.QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
                 "Category",
                 "Title",
                 "Status",
-                "Current Version",
-                "Review Due",
-                "Review Status",
                 "Ratified",
+                "Review Status",
+                "Review Due",
+                "Current Version",
+                "Owner",
             ]
         )
         header_view = self.table.horizontalHeader()
@@ -562,17 +563,19 @@ class MainWindow(QtWidgets.QMainWindow):
                 continue
             filtered.append(policy)
 
+        filtered.sort(key=lambda item: (item.category.lower(), item.title.lower()))
+
         self.table.setRowCount(len(filtered))
         for row_index, policy in enumerate(filtered):
             category_item = QtWidgets.QTableWidgetItem(policy.category)
             title_item = QtWidgets.QTableWidgetItem(policy.title)
             if policy.current_version_id:
-                status_payload = self._build_status_chip(policy.status or "")
-                status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
-                status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
+                status_payload = self._build_status_chip(policy.status or "")
+                status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
+                status_item.setToolTip(status_payload["tooltip"])
                 is_draft = (policy.status or "").lower() == "draft"
                 review_due_item = QtWidgets.QTableWidgetItem(
                     "" if is_draft else self._format_date_display(policy.review_due_date)
@@ -583,24 +586,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item = QtWidgets.QTableWidgetItem(
                     "Ratified" if policy.ratified else "Awaiting Ratification"
                 )
+                owner_item = QtWidgets.QTableWidgetItem(policy.owner or "Unassigned")
             else:
+                current_version_item = QtWidgets.QTableWidgetItem("")
                 status_payload = self._build_status_chip("No version")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
                 status_item.setToolTip(status_payload["tooltip"])
-                current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem("")
+                owner_item = QtWidgets.QTableWidgetItem("")
             items = [
                 category_item,
                 title_item,
                 status_item,
-                current_version_item,
-                review_due_item,
-                days_remaining_item,
                 ratified_item,
+                days_remaining_item,
+                review_due_item,
+                current_version_item,
+                owner_item,
             ]
             for column, item in enumerate(items):
                 self.table.setItem(row_index, column, item)
@@ -954,7 +960,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
 
         versions = list_versions(self.conn, policy_id)
-        headers = ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
+        versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
+        headers = [
+            "Created",
+            "Version",
+            "Category",
+            "Title",
+            "Current",
+            "Status",
+            "Ratified",
+            "Review Due",
+            "Last Reviewed",
+            "Owner",
+        ]
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
@@ -980,30 +998,31 @@ class MainWindow(QtWidgets.QMainWindow):
             created_item = QtWidgets.QTableWidgetItem(
                 self._format_datetime_display(version["created_at"])
             )
-            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
+            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
+            category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
+            title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
+            status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
-            status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
-            stored_filename = ""
-            if version.get("file_path"):
-                stored_filename = Path(version["file_path"]).name
-            filename_item = QtWidgets.QTableWidgetItem(
-                stored_filename or version["original_filename"] or ""
+            is_draft = (version.get("status") or "").lower() == "draft"
+            review_due_item = QtWidgets.QTableWidgetItem(
+                "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
-            size_item = QtWidgets.QTableWidgetItem(
-                self._format_file_size(version["file_size_bytes"])
-            )
-            hash_item = QtWidgets.QTableWidgetItem(version["sha256_hash"])
+            last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
+            last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
+            owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
             items = [
                 created_item,
                 version_item,
+                category_item,
+                title_item,
                 current_item,
-                ratified_item,
                 status_item,
-                filename_item,
-                size_item,
-                hash_item,
+                ratified_item,
+                review_due_item,
+                last_reviewed_item,
+                owner_item,
             ]
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
@@ -1031,6 +1050,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """Load review history for the selected policy version."""
 
         reviews = list_policy_reviews(self.conn, policy_version_id)
+        reviews.sort(key=lambda review: review.get("reviewed_at") or "", reverse=True)
         self._latest_reviewed_at = reviews[0]["reviewed_at"] if reviews else None
         self.detail_last_reviewed.setText(
             self._format_review_date_display(self._latest_reviewed_at or "")
@@ -2353,9 +2373,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
-        self.version_table = QtWidgets.QTableWidget(0, 8)
+        self.version_table = QtWidgets.QTableWidget(0, 10)
         self.version_table.setHorizontalHeaderLabels(
-            ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
+            [
+                "Created",
+                "Version",
+                "Category",
+                "Title",
+                "Current",
+                "Status",
+                "Ratified",
+                "Review Due",
+                "Last Reviewed",
+                "Owner",
+            ]
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -2535,7 +2566,7 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_layout.addWidget(self.policy_send_search)
         self.policy_send_table = QtWidgets.QTableWidget(0, 5)
         self.policy_send_table.setHorizontalHeaderLabels(
-            ["Select", "Title", "Version", "Category", "Size"]
+            ["Select", "Category", "Title", "Version", "Size"]
         )
         self.policy_send_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
 
@@ -2629,6 +2660,14 @@ class MainWindow(QtWidgets.QMainWindow):
             ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
+        rows = sorted(
+            rows,
+            key=lambda row: (
+                (row["category"] or "").lower(),
+                (row["title"] or "").lower(),
+                row["version_number"] or 0,
+            ),
+        )
         self.policy_send_table.blockSignals(True)
         self.policy_send_table.setRowCount(len(rows))
         for row_index, row in enumerate(rows):
@@ -2642,9 +2681,9 @@ class MainWindow(QtWidgets.QMainWindow):
             checkbox.setCheckState(QtCore.Qt.Unchecked)
             checkbox.setData(QtCore.Qt.UserRole + 1, row["file_size_bytes"] or 0)
             self.policy_send_table.setItem(row_index, 0, checkbox)
-            self.policy_send_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["title"]))
-            self.policy_send_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(str(row["version_number"])))
-            self.policy_send_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(row["category"]))
+            self.policy_send_table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["category"]))
+            self.policy_send_table.setItem(row_index, 2, QtWidgets.QTableWidgetItem(row["title"]))
+            self.policy_send_table.setItem(row_index, 3, QtWidgets.QTableWidgetItem(str(row["version_number"])))
             self.policy_send_table.setItem(
                 row_index,
                 4,
@@ -2660,8 +2699,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         text = text.lower().strip()
         for row in range(self.policy_send_table.rowCount()):
-            title = self.policy_send_table.item(row, 1).text().lower()
-            category = self.policy_send_table.item(row, 3).text().lower()
+            category = self.policy_send_table.item(row, 1).text().lower()
+            title = self.policy_send_table.item(row, 2).text().lower()
             match = text in title or text in category
             self.policy_send_table.setRowHidden(row, not match if text else False)
         self._sync_send_policy_select_all()
