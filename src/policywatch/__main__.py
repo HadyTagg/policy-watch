@@ -16,6 +16,7 @@ from PyQt5 import QtGui, QtWidgets
 from policywatch.core import config, security
 from policywatch.data import db
 from policywatch.services import evacuate_untracked_policy_files
+from policywatch.ui import theme
 from policywatch.ui.login import LoginWindow
 from policywatch.ui.main import MainWindow
 
@@ -32,91 +33,11 @@ class PolicyWatchApp:
         config.ensure_defaults(self.conn)
         evacuate_untracked_policy_files(self.conn)
         self._app: QtWidgets.QApplication | None = None
-        self._dark_stylesheet = """
-            QWidget {
-                background-color: #2b2b2b;
-                color: #f0f0f0;
-            }
-            QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QDateEdit, QComboBox {
-                background-color: #3a3a3a;
-                border: 1px solid #555;
-                padding: 4px;
-                selection-background-color: #5a5a5a;
-            }
-            QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QSpinBox:focus,
-            QDoubleSpinBox:focus, QDateEdit:focus, QComboBox:focus {
-                border: 1px solid #6aa9ff;
-            }
-            QPushButton {
-                background-color: #3d3d3d;
-                border: 1px solid #555;
-                padding: 6px 10px;
-            }
-            QPushButton:hover {
-                background-color: #4a4a4a;
-            }
-            QPushButton:pressed {
-                background-color: #2f2f2f;
-            }
-            QGroupBox {
-                border: 1px solid #555;
-                margin-top: 10px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 3px;
-            }
-            QHeaderView::section {
-                background-color: #3a3a3a;
-                padding: 4px;
-                border: 1px solid #555;
-            }
-            QTableWidget, QTableView {
-                gridline-color: #555;
-                selection-background-color: #4a4a4a;
-                selection-color: #ffffff;
-            }
-            QTabBar::tab {
-                background: #3a3a3a;
-                padding: 6px 12px;
-                border: 1px solid #555;
-            }
-            QTabBar::tab:selected {
-                background: #2b2b2b;
-                border-bottom-color: #2b2b2b;
-            }
-            QMenuBar {
-                background-color: #2b2b2b;
-            }
-            QMenuBar::item:selected {
-                background-color: #3a3a3a;
-            }
-            QMenu {
-                background-color: #2b2b2b;
-                border: 1px solid #555;
-            }
-            QMenu::item:selected {
-                background-color: #3a3a3a;
-            }
-        """
 
-    def _apply_dark_mode(self, app: QtWidgets.QApplication) -> None:
-        """Apply the dark theme palette and stylesheet."""
+    def _apply_theme(self, app: QtWidgets.QApplication) -> None:
+        """Apply the Policy Watch theme tokens and stylesheet."""
 
-        app.setStyle("Fusion")
-        palette = app.palette()
-        palette.setColor(palette.Window, QtGui.QColor("#2b2b2b"))
-        palette.setColor(palette.WindowText, QtGui.QColor("#f0f0f0"))
-        palette.setColor(palette.Base, QtGui.QColor("#3a3a3a"))
-        palette.setColor(palette.AlternateBase, QtGui.QColor("#2f2f2f"))
-        palette.setColor(palette.Text, QtGui.QColor("#f0f0f0"))
-        palette.setColor(palette.Button, QtGui.QColor("#3d3d3d"))
-        palette.setColor(palette.ButtonText, QtGui.QColor("#f0f0f0"))
-        palette.setColor(palette.Highlight, QtGui.QColor("#6aa9ff"))
-        palette.setColor(palette.HighlightedText, QtGui.QColor("#1a1a1a"))
-        app.setPalette(palette)
-        app.setStyleSheet(self._dark_stylesheet)
+        theme.apply_theme(app)
 
     def _resolve_icon_path(self) -> Path | None:
         """Resolve the application icon path for local and frozen builds."""
@@ -176,7 +97,7 @@ class PolicyWatchApp:
 
         app = QtWidgets.QApplication([])
         self._app = app
-        self._apply_dark_mode(app)
+        self._apply_theme(app)
         icon = self._load_app_icon()
         if icon and not icon.isNull():
             app.setWindowIcon(icon)
