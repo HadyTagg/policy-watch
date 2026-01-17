@@ -140,11 +140,11 @@ def build_stylesheet(font_family: str) -> str:
     QTabBar::tab {{
         background: transparent;
         border: 1px solid transparent;
-        padding: 8px;
+        padding: 0px;
         margin-right: 8px;
         border-radius: 12px;
-        min-width: 36px;
-        min-height: 36px;
+        min-width: 44px;
+        min-height: 44px;
         color: {COLORS['neutral_500']};
         qproperty-alignment: AlignCenter;
     }}
