@@ -153,8 +153,6 @@ def build_stylesheet(font_family: str) -> str:
         color: {COLORS['neutral_700']};
     }}
     QTabBar::tab:selected {{
-        background: #ffffff;
-        border-color: {COLORS['neutral_100']};
         color: {COLORS['neutral_900']};
     }}
     QFrame#KpiCard {{
