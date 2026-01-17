@@ -49,7 +49,7 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import CHIP_DATA_ROLE, KpiCard, StatusChipDelegate
+from policywatch.ui.widgets import KpiCard, apply_pill_delegate, set_button_icon
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -200,8 +200,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
-        self.table.setItemDelegateForColumn(2, StatusChipDelegate(self.table))
-        self.table.setItemDelegateForColumn(5, StatusChipDelegate(self.table))
+        apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
 
@@ -529,7 +528,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if policy.current_version_id:
                 status_payload = self._build_status_chip(policy.status or "")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
-                status_item.setData(CHIP_DATA_ROLE, status_payload["chip"])
                 status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
@@ -540,19 +538,18 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
-                days_remaining_item.setData(CHIP_DATA_ROLE, review_status_payload["chip"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
-                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
+                ratified_item = QtWidgets.QTableWidgetItem(
+                    "Ratified" if policy.ratified else "Awaiting"
+                )
             else:
                 status_payload = self._build_status_chip("No version")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
-                status_item.setData(CHIP_DATA_ROLE, status_payload["chip"])
                 status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
-                days_remaining_item.setData(CHIP_DATA_ROLE, review_status_payload["chip"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
@@ -928,7 +925,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
-            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
+            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             stored_filename = ""
@@ -1016,6 +1013,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         save_button = QtWidgets.QPushButton("Save")
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(save_button, "save")
+        set_button_icon(cancel_button, "cancel")
         save_button.clicked.connect(dialog.accept)
         cancel_button.clicked.connect(dialog.reject)
         button_row.addStretch(1)
@@ -1792,6 +1791,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         save_button = QtWidgets.QPushButton("Save")
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(save_button, "save")
+        set_button_icon(cancel_button, "cancel")
         save_button.clicked.connect(dialog.accept)
         cancel_button.clicked.connect(dialog.reject)
         button_row.addStretch(1)
@@ -2307,6 +2308,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "QTableWidget::item { color: black;}"
             "QTableWidget::item:selected { background-color: blue; color: white;}"
         )
+        apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
@@ -2389,24 +2391,32 @@ class MainWindow(QtWidgets.QMainWindow):
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
         self.review_button = QtWidgets.QPushButton("Record Review")
+        set_button_icon(self.review_button, "edit")
         self.review_button.clicked.connect(self._record_policy_review)
         review_button_row.addWidget(self.review_button)
         reviews_layout.addLayout(review_button_row)
 
         button_row = QtWidgets.QHBoxLayout()
         self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
+        set_button_icon(self.ratify_button, "approve")
         self.ratify_button.clicked.connect(self._mark_ratified)
         self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
+        set_button_icon(self.unratify_button, "cancel")
         self.unratify_button.clicked.connect(self._mark_unratified)
         self.set_current_button = QtWidgets.QPushButton("Set Current")
+        set_button_icon(self.set_current_button, "select")
         self.set_current_button.clicked.connect(self._set_current)
         self.set_not_current_button = QtWidgets.QPushButton("Set Not Current")
+        set_button_icon(self.set_not_current_button, "deselect")
         self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
+        set_button_icon(self.open_location_button, "open")
         self.open_location_button.clicked.connect(self._open_file_location)
         self.print_document_button = QtWidgets.QPushButton("Print Policy Document")
+        set_button_icon(self.print_document_button, "print")
         self.print_document_button.clicked.connect(self._print_policy_document)
         self.add_version_button = QtWidgets.QPushButton("Add Version")
+        set_button_icon(self.add_version_button, "add")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
         button_row.addStretch(2)
@@ -2435,9 +2445,11 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
         select_controls = QtWidgets.QHBoxLayout()
         self.policy_send_select_all = QtWidgets.QPushButton("Select All Shown")
+        set_button_icon(self.policy_send_select_all, "select")
         self.policy_send_select_all.clicked.connect(self._toggle_all_send_policies)
         select_controls.addWidget(self.policy_send_select_all)
         self.policy_send_deselect_all = QtWidgets.QPushButton("Deselect All Shown")
+        set_button_icon(self.policy_send_deselect_all, "deselect")
         self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
         select_controls.addWidget(self.policy_send_deselect_all)
         select_controls.addStretch()
@@ -2473,9 +2485,11 @@ class MainWindow(QtWidgets.QMainWindow):
         recipient_layout = QtWidgets.QVBoxLayout(recipient_group)
         recipient_controls = QtWidgets.QHBoxLayout()
         self.staff_select_all = QtWidgets.QPushButton("Select All Shown")
+        set_button_icon(self.staff_select_all, "select")
         self.staff_select_all.clicked.connect(self._select_all_staff)
         recipient_controls.addWidget(self.staff_select_all)
         self.staff_deselect_all = QtWidgets.QPushButton("Deselect All shown")
+        set_button_icon(self.staff_deselect_all, "deselect")
         self.staff_deselect_all.clicked.connect(self._deselect_all_staff)
         recipient_controls.addWidget(self.staff_deselect_all)
         recipient_controls.addStretch()
@@ -2509,6 +2523,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
+        set_button_icon(load_staff_button, "refresh")
         load_staff_button.clicked.connect(self._load_staff)
         recipient_layout.addWidget(load_staff_button)
         self.manual_emails = QtWidgets.QLineEdit()
@@ -2522,6 +2537,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_layout.addRow("Total attachment size", self.total_attachment_label)
         send_layout.addRow("Split plan", self.split_plan_label)
         send_button = QtWidgets.QPushButton("Send")
+        set_button_icon(send_button, "send")
         send_button.clicked.connect(self._send_email)
         send_layout.addRow("", send_button)
 
@@ -3233,12 +3249,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export All Logs")
+        set_button_icon(export_button, "export")
         export_button.clicked.connect(self._export_audit_csv)
         export_visible_button = QtWidgets.QPushButton("Export Logs Shown")
+        set_button_icon(export_visible_button, "export")
         export_visible_button.clicked.connect(self._export_audit_csv_shown)
         verify_button = QtWidgets.QPushButton("Verify Log Integrity")
+        set_button_icon(verify_button, "approve")
         verify_button.clicked.connect(self._verify_audit)
         refresh_button = QtWidgets.QPushButton("Refresh Logs")
+        set_button_icon(refresh_button, "refresh")
         refresh_button.clicked.connect(self._load_audit_log)
         button_row.addWidget(export_button)
         button_row.addWidget(export_visible_button)
@@ -3414,6 +3434,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.policy_root_input = QtWidgets.QLineEdit(form_container)
         browse_root = QtWidgets.QPushButton("Browse", form_container)
+        set_button_icon(browse_root, "folder")
         browse_root.clicked.connect(self._browse_policy_root)
         policy_root_row = QtWidgets.QHBoxLayout()
         policy_root_row.addWidget(self.policy_root_input)
@@ -3434,12 +3455,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings_form.addRow("Max attachment MB", self.max_attachment_input)
 
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
+        set_button_icon(save_button, "save")
         save_button.clicked.connect(self._save_settings)
 
         backup_row = QtWidgets.QHBoxLayout()
         open_data = QtWidgets.QPushButton("Open data folder", wrapper)
+        set_button_icon(open_data, "open")
         open_data.clicked.connect(self._open_data_folder)
         backup = QtWidgets.QPushButton("Backup/Export", wrapper)
+        set_button_icon(backup, "backup")
         backup.clicked.connect(self._backup_export)
         backup_row.addWidget(open_data)
         backup_row.addWidget(backup)
