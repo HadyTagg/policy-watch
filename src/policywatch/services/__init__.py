@@ -444,10 +444,17 @@ def list_versions(conn, policy_id: int) -> list[dict]:
         FROM policy_versions v
         JOIN policies p ON p.id = v.policy_id
         LEFT JOIN (
-            SELECT policy_version_id, MAX(reviewed_at) AS last_reviewed
-            FROM policy_reviews
-            GROUP BY policy_version_id
-        ) pr ON pr.policy_version_id = v.id
+            SELECT version_id, MAX(reviewed_at) AS last_reviewed
+            FROM (
+                SELECT policy_version_id AS version_id, reviewed_at
+                FROM policy_reviews
+                UNION ALL
+                SELECT pc.replacement_version_id AS version_id, pr.reviewed_at
+                FROM policy_review_carryovers pc
+                JOIN policy_reviews pr ON pr.policy_version_id = pc.source_version_id
+            )
+            GROUP BY version_id
+        ) pr ON pr.version_id = v.id
         WHERE v.policy_id = ?
         ORDER BY v.version_number DESC
         """,
