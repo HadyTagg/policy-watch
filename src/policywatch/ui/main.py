@@ -202,11 +202,11 @@ class MainWindow(QtWidgets.QMainWindow):
             [
                 "Category",
                 "Title",
-                "Current Version",
                 "Status",
                 "Ratified",
                 "Review Status",
                 "Review Due",
+                "Current Version",
                 "Owner",
             ]
         )
@@ -599,11 +599,11 @@ class MainWindow(QtWidgets.QMainWindow):
             items = [
                 category_item,
                 title_item,
-                current_version_item,
                 status_item,
                 ratified_item,
                 days_remaining_item,
                 review_due_item,
+                current_version_item,
                 owner_item,
             ]
             for column, item in enumerate(items):
