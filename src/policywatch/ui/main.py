@@ -147,7 +147,7 @@ class MainWindow(QtWidgets.QMainWindow):
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
                 self.brand_logo.setPixmap(
-                    pixmap.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    pixmap.scaled(120, 120, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                 )
         if self.brand_logo.pixmap() is None:
             self.brand_logo.setText("Martha Trust")
