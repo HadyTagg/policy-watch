@@ -138,7 +138,7 @@ class MainWindow(QtWidgets.QMainWindow):
         logo_label.setObjectName("BrandLogo")
         logo_label.setAccessibleName("Martha Trust logo")
         logo_label.setToolTip("Martha Trust")
-        logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.ppm"
+        logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
         if logo_path.exists():
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
