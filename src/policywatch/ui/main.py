@@ -3517,6 +3517,19 @@ class MainWindow(QtWidgets.QMainWindow):
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
         set_button_icon(save_button, "save")
         save_button.clicked.connect(self._save_settings)
+        is_admin = self._is_admin()
+        if not is_admin:
+            restriction_message = "Admin role required to edit settings."
+            for widget in (
+                self.policy_root_input,
+                browse_root,
+                self.amber_months_input,
+                self.overdue_days_input,
+                self.max_attachment_input,
+                save_button,
+            ):
+                widget.setEnabled(False)
+                widget.setToolTip(restriction_message)
 
         backup_row = QtWidgets.QHBoxLayout()
         open_data = QtWidgets.QPushButton("Open data folder", wrapper)
@@ -3544,6 +3557,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _save_settings(self) -> None:
         """Persist settings from the UI to the config table."""
 
+        if not self._is_admin():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Restricted",
+                "Only admins can update settings.",
+            )
+            return
         current_policy_root = config.get_setting(self.conn, "policy_root", "")
         current_amber_months = config.get_setting(self.conn, "amber_months", 2)
         current_overdue_days = config.get_setting(self.conn, "overdue_grace_days", 0)
