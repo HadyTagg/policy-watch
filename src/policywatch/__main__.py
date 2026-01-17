@@ -15,7 +15,7 @@ from PyQt5 import QtGui, QtWidgets
 
 from policywatch.core import config, security
 from policywatch.data import db
-from policywatch.services import evacuate_untracked_policy_files
+from policywatch.services import evacuate_untracked_policy_files, get_user_theme
 from policywatch.ui import theme
 from policywatch.ui.login import LoginWindow
 from policywatch.ui.main import MainWindow
@@ -34,10 +34,10 @@ class PolicyWatchApp:
         evacuate_untracked_policy_files(self.conn)
         self._app: QtWidgets.QApplication | None = None
 
-    def _apply_theme(self, app: QtWidgets.QApplication) -> None:
-        """Apply the Policy Watch theme tokens and stylesheet."""
+    def _apply_base_theme(self, app: QtWidgets.QApplication) -> None:
+        """Apply the Policy Watch base theme tokens and stylesheet."""
 
-        theme.apply_theme(app)
+        theme.apply_base_theme(app)
 
     def _resolve_icon_path(self) -> Path | None:
         """Resolve the application icon path for local and frozen builds."""
@@ -97,14 +97,21 @@ class PolicyWatchApp:
 
         app = QtWidgets.QApplication([])
         self._app = app
-        self._apply_theme(app)
+        self._apply_base_theme(app)
         icon = self._load_app_icon()
         if icon and not icon.isNull():
             app.setWindowIcon(icon)
         self._ensure_admin()
         login = LoginWindow(self.authenticate, icon=icon)
         if login.exec() == QtWidgets.QDialog.Accepted:
-            main = MainWindow(login.username_input.text(), self.conn, icon=icon)
+            username = login.username_input.text()
+            row = self.conn.execute(
+                "SELECT id FROM users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            if row:
+                theme.apply_theme(get_user_theme(self.conn, row["id"]))
+            main = MainWindow(username, self.conn, icon=icon)
             main.resize(800, 600)
             main.show()
             app.exec()

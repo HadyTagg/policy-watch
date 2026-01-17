@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt5 import QtGui, QtWidgets
 
 FONT_FALLBACKS = ["Inter", "Segoe UI", "Arial"]
@@ -119,8 +121,16 @@ def build_stylesheet(font_family: str) -> str:
     QTableView::item {{
         padding: 8px;
     }}
+    QTableView::item:focus {{
+        outline: none;
+        border: none;
+    }}
     QTableView::item:hover {{
         background-color: {COLORS['neutral_50']};
+    }}
+    QTableWidget::item:focus {{
+        outline: none;
+        border: none;
     }}
     QTabWidget::pane {{
         border: 1px solid {COLORS['neutral_100']};
@@ -166,8 +176,8 @@ def build_stylesheet(font_family: str) -> str:
     """
 
 
-def apply_theme(app: QtWidgets.QApplication) -> None:
-    """Apply the Policy Watch theme to the application."""
+def apply_base_theme(app: QtWidgets.QApplication) -> None:
+    """Apply the base Policy Watch theme tokens and palette."""
 
     font_family = resolve_font_family()
     app.setStyle("Fusion")
@@ -184,4 +194,28 @@ def apply_theme(app: QtWidgets.QApplication) -> None:
     palette.setColor(palette.Highlight, QtGui.QColor(COLORS["accent"]))
     palette.setColor(palette.HighlightedText, QtGui.QColor("#ffffff"))
     app.setPalette(palette)
-    app.setStyleSheet(build_stylesheet(font_family))
+    base_stylesheet = build_stylesheet(font_family)
+    app.setProperty("policywatch_base_stylesheet", base_stylesheet)
+    app.setStyleSheet(base_stylesheet)
+
+
+def load_dark_qss() -> str:
+    """Load the dark mode stylesheet from disk."""
+
+    theme_path = Path(__file__).resolve().parent / "themes" / "dark.qss"
+    return theme_path.read_text(encoding="utf-8")
+
+
+def apply_theme(theme: str) -> None:
+    """Apply the requested theme stylesheet globally."""
+
+    app = QtWidgets.QApplication.instance()
+    if not app:
+        return
+    base_stylesheet = app.property("policywatch_base_stylesheet") or ""
+    if theme == "light":
+        app.setStyleSheet(base_stylesheet)
+        return
+    dark_stylesheet = load_dark_qss()
+    combined = "\n".join(part for part in [base_stylesheet, dark_stylesheet] if part)
+    app.setStyleSheet(combined)

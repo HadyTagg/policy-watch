@@ -47,7 +47,9 @@ from policywatch.services import (
     update_policy_category,
     update_policy_version_owner,
     update_policy_title,
+    get_user_theme,
     set_audit_actor,
+    set_user_theme,
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
@@ -136,20 +138,20 @@ class MainWindow(QtWidgets.QMainWindow):
         header_font.setWeight(QtGui.QFont.DemiBold)
         header.setFont(header_font)
 
-        logo_label = QtWidgets.QLabel()
-        logo_label.setObjectName("BrandLogo")
-        logo_label.setAccessibleName("Martha Trust logo")
-        logo_label.setToolTip("Martha Trust")
+        self.brand_logo = QtWidgets.QLabel()
+        self.brand_logo.setObjectName("BrandLogo")
+        self.brand_logo.setAccessibleName("Martha Trust logo")
+        self.brand_logo.setToolTip("Martha Trust")
         logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
         if logo_path.exists():
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
-                logo_label.setPixmap(
+                self.brand_logo.setPixmap(
                     pixmap.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                 )
-        if logo_label.pixmap() is None:
-            logo_label.setText("Martha Trust")
-            logo_label.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
+        if self.brand_logo.pixmap() is None:
+            self.brand_logo.setText("Martha Trust")
+            self.brand_logo.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
 
         kpi_row = QtWidgets.QHBoxLayout()
         kpi_row.setSpacing(theme.SPACING["md"])
@@ -236,7 +238,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dashboard = QtWidgets.QWidget()
         header_row = QtWidgets.QHBoxLayout()
-        header_row.addWidget(logo_label)
+        header_row.addWidget(self.brand_logo)
         header_row.addWidget(header)
         header_row.addStretch(1)
 
@@ -2357,11 +2359,6 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
-        self.version_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']};}}"
-        )
         apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2437,11 +2434,6 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setPointSize(9)
         review_font.setBold(True)
         self.review_table.setFont(review_font)
-        self.review_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
@@ -2527,11 +2519,6 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setPointSize(9)
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
-        self.policy_send_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2572,11 +2559,6 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
 
-        self.staff_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; font-weight: bold; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
@@ -3299,11 +3281,6 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
 
-        self.audit_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export All Logs")
@@ -3506,11 +3483,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.overdue_days_input.setRange(0, 365)
         self.max_attachment_input = QtWidgets.QSpinBox(form_container)
         self.max_attachment_input.setRange(0, 500)
+        self.appearance_input = QtWidgets.QComboBox(form_container)
+        self.appearance_input.addItem("Light", "light")
+        self.appearance_input.addItem("Dark", "dark")
+        self.appearance_input.currentIndexChanged.connect(self._on_theme_changed)
 
         self.settings_form.addRow("Policy root folder", policy_root_container)
         self.settings_form.addRow("Amber months", self.amber_months_input)
         self.settings_form.addRow("Overdue grace days", self.overdue_days_input)
         self.settings_form.addRow("Max attachment MB", self.max_attachment_input)
+        self.settings_form.addRow("Appearance", self.appearance_input)
 
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
         set_button_icon(save_button, "save")
@@ -3575,6 +3557,17 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         QtWidgets.QMessageBox.information(self, "Saved", "Settings updated.")
 
+    def _on_theme_changed(self) -> None:
+        """Persist and apply the selected appearance theme."""
+
+        if self.user_id is None:
+            return
+        theme_value = self.appearance_input.currentData()
+        if not theme_value:
+            return
+        set_user_theme(self.conn, self.user_id, theme_value)
+        theme.apply_theme(theme_value)
+
     def _load_settings(self) -> None:
         """Load saved settings into the UI fields."""
 
@@ -3582,6 +3575,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.amber_months_input.setValue(int(config.get_setting(self.conn, "amber_months", 2) or 2))
         self.overdue_days_input.setValue(int(config.get_setting(self.conn, "overdue_grace_days", 0) or 0))
         self.max_attachment_input.setValue(int(config.get_setting(self.conn, "max_attachment_mb", 0) or 0))
+        if self.user_id is not None:
+            theme_value = get_user_theme(self.conn, self.user_id)
+            index = self.appearance_input.findData(theme_value)
+            self.appearance_input.blockSignals(True)
+            if index >= 0:
+                self.appearance_input.setCurrentIndex(index)
+            self.appearance_input.blockSignals(False)
 
     def _open_data_folder(self) -> None:
         """Open the application's data directory."""
