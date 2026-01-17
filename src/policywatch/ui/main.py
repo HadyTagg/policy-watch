@@ -53,7 +53,7 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import KpiCard, apply_pill_delegate, set_button_icon
+from policywatch.ui.widgets import KpiCard, apply_pill_delegate, apply_table_focusless, set_button_icon
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -219,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
+        apply_table_focusless(self.table)
         apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
@@ -953,7 +954,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
 
         versions = list_versions(self.conn, policy_id)
-        headers = ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
+        headers = [
+            "Created",
+            "Category",
+            "Title",
+            "Version",
+            "Status",
+            "Ratified",
+            "Current",
+            "Owner",
+            "Last Reviewed",
+        ]
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
@@ -979,30 +990,26 @@ class MainWindow(QtWidgets.QMainWindow):
             created_item = QtWidgets.QTableWidgetItem(
                 self._format_datetime_display(version["created_at"])
             )
+            category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
+            title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
             version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
-            current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
+            status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
-            status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
-            stored_filename = ""
-            if version.get("file_path"):
-                stored_filename = Path(version["file_path"]).name
-            filename_item = QtWidgets.QTableWidgetItem(
-                stored_filename or version["original_filename"] or ""
-            )
-            size_item = QtWidgets.QTableWidgetItem(
-                self._format_file_size(version["file_size_bytes"])
-            )
-            hash_item = QtWidgets.QTableWidgetItem(version["sha256_hash"])
+            current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
+            owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
+            last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
+            last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
             items = [
                 created_item,
+                category_item,
+                title_item,
                 version_item,
-                current_item,
-                ratified_item,
                 status_item,
-                filename_item,
-                size_item,
-                hash_item,
+                ratified_item,
+                current_item,
+                owner_item,
+                last_reviewed_item,
             ]
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
@@ -2352,9 +2359,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
-        self.version_table = QtWidgets.QTableWidget(0, 8)
+        self.version_table = QtWidgets.QTableWidget(0, 9)
         self.version_table.setHorizontalHeaderLabels(
-            ["Created", "Version", "Current", "Ratified", "Status", "File Name", "Size", "Hash"]
+            [
+                "Created",
+                "Category",
+                "Title",
+                "Version",
+                "Status",
+                "Ratified",
+                "Current",
+                "Owner",
+                "Last Reviewed",
+            ]
         )
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
@@ -2364,6 +2381,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
+        apply_table_focusless(self.version_table)
         apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2459,6 +2477,7 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setPointSize(9)
         review_font.setBold(True)
         self.review_table.setFont(review_font)
+        apply_table_focusless(self.review_table)
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
@@ -2544,6 +2563,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setPointSize(9)
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
+        apply_table_focusless(self.policy_send_table)
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2583,6 +2603,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setPointSize(9)
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
+        apply_table_focusless(self.staff_table)
 
 
         recipient_layout.addWidget(self.staff_table)
@@ -3305,6 +3326,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setPointSize(9)
         audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
+        apply_table_focusless(self.audit_table)
 
 
         button_row = QtWidgets.QHBoxLayout()

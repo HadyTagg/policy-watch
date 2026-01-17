@@ -176,11 +176,30 @@ def build_stylesheet(font_family: str) -> str:
     """
 
 
+class FocuslessTableStyle(QtWidgets.QProxyStyle):
+    """Proxy style to suppress table focus rectangles."""
+
+    def drawPrimitive(
+        self,
+        element: QtWidgets.QStyle.PrimitiveElement,
+        option: QtWidgets.QStyleOption,
+        painter: QtGui.QPainter,
+        widget: QtWidgets.QWidget | None = None,
+    ) -> None:
+        if element == QtWidgets.QStyle.PE_FrameFocusRect:
+            if isinstance(widget, QtWidgets.QAbstractItemView):
+                return
+            if widget and isinstance(widget.parent(), QtWidgets.QAbstractItemView):
+                return
+        super().drawPrimitive(element, option, painter, widget)
+
+
 def apply_base_theme(app: QtWidgets.QApplication) -> None:
     """Apply the base Policy Watch theme tokens and palette."""
 
     font_family = resolve_font_family()
     app.setStyle("Fusion")
+    app.setStyle(FocuslessTableStyle(app.style()))
     app.setFont(QtGui.QFont(font_family, FONT_SIZES["base"]))
 
     palette = app.palette()

@@ -7,6 +7,19 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from policywatch.ui import theme
 from policywatch.ui.styles import PILL_STYLES
 
+
+FOCUSLESS_TABLE_STYLES = """
+QTableView::item:focus {
+    outline: none;
+    border: none;
+}
+QTableWidget::item:focus {
+    outline: none;
+    border: none;
+}
+""".strip()
+
+
 def _standard_pixmap(name: str, fallback: QtWidgets.QStyle.StandardPixmap) -> QtWidgets.QStyle.StandardPixmap:
     """Return a standard pixmap if available, otherwise a fallback."""
 
@@ -226,3 +239,14 @@ def apply_pill_delegate(
                 break
         if match_index is not None:
             table.setItemDelegateForColumn(match_index, delegate)
+
+
+def apply_table_focusless(table: QtWidgets.QAbstractItemView) -> None:
+    """Ensure table views do not draw a focus rectangle around cells."""
+
+    table.setStyle(theme.FocuslessTableStyle(table.style()))
+    current_stylesheet = table.styleSheet()
+    if FOCUSLESS_TABLE_STYLES in current_stylesheet:
+        return
+    combined = "\n".join(part for part in [current_stylesheet, FOCUSLESS_TABLE_STYLES] if part)
+    table.setStyleSheet(combined)

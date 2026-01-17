@@ -423,11 +423,28 @@ def list_versions(conn, policy_id: int) -> list[dict]:
 
     rows = conn.execute(
         """
-        SELECT id, version_number, created_at, sha256_hash, ratified,
-               status, original_filename, file_path, file_size_bytes
-        FROM policy_versions
-        WHERE policy_id = ?
-        ORDER BY version_number DESC
+        SELECT v.id,
+               v.version_number,
+               v.created_at,
+               v.sha256_hash,
+               v.ratified,
+               v.status,
+               v.original_filename,
+               v.file_path,
+               v.file_size_bytes,
+               v.owner,
+               p.category,
+               p.title,
+               pr.last_reviewed
+        FROM policy_versions v
+        JOIN policies p ON p.id = v.policy_id
+        LEFT JOIN (
+            SELECT policy_version_id, MAX(reviewed_at) AS last_reviewed
+            FROM policy_reviews
+            GROUP BY policy_version_id
+        ) pr ON pr.policy_version_id = v.id
+        WHERE v.policy_id = ?
+        ORDER BY v.version_number DESC
         """,
         (policy_id,),
     ).fetchall()
