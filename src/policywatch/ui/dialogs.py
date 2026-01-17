@@ -52,6 +52,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.table.setHorizontalHeaderLabels(["ID", "Name"])
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
 
