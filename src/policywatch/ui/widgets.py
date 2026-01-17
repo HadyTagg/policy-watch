@@ -15,6 +15,7 @@ PILL_STYLE_MAP = {
     "no version": theme.STATUS_COLORS["neutral"],
     "ratified": theme.STATUS_COLORS["info"],
     "awaiting": theme.STATUS_COLORS["warning"],
+    "not ratified": theme.STATUS_COLORS["warning"],
     "overdue": theme.STATUS_COLORS["danger"],
     "due soon": theme.STATUS_COLORS["warning"],
     "in date": theme.STATUS_COLORS["info"],

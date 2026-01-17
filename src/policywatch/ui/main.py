@@ -134,6 +134,21 @@ class MainWindow(QtWidgets.QMainWindow):
         header_font.setWeight(QtGui.QFont.DemiBold)
         header.setFont(header_font)
 
+        logo_label = QtWidgets.QLabel()
+        logo_label.setObjectName("BrandLogo")
+        logo_label.setAccessibleName("Martha Trust logo")
+        logo_label.setToolTip("Martha Trust")
+        logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
+        if logo_path.exists():
+            pixmap = QtGui.QPixmap(str(logo_path))
+            if not pixmap.isNull():
+                logo_label.setPixmap(
+                    pixmap.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                )
+        if logo_label.pixmap() is None:
+            logo_label.setText("Martha Trust")
+            logo_label.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
+
         kpi_row = QtWidgets.QHBoxLayout()
         kpi_row.setSpacing(theme.SPACING["md"])
 
@@ -203,6 +218,8 @@ class MainWindow(QtWidgets.QMainWindow):
         apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
+        self.table.doubleClicked.connect(self.open_policy_detail_from_index)
+        self.table.activated.connect(self.open_policy_detail_from_index)
 
         self.empty_state = QtWidgets.QLabel(
             "No policies yet. Use the toolbar to add policies, then upload versions from Policy Detail."
@@ -216,8 +233,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_stack.setCurrentIndex(0)
 
         dashboard = QtWidgets.QWidget()
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.addWidget(logo_label)
+        header_row.addWidget(header)
+        header_row.addStretch(1)
+
         dashboard_layout = QtWidgets.QVBoxLayout(dashboard)
-        dashboard_layout.addWidget(header)
+        dashboard_layout.addLayout(header_row)
         dashboard_layout.addLayout(kpi_row)
         dashboard_layout.addLayout(filter_row)
         dashboard_layout.addWidget(self.table_stack)
@@ -584,6 +606,23 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_id = self.table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
+
+    def open_policy_detail_from_index(self, index: QtCore.QModelIndex) -> None:
+        """Open the policy detail tab for the selected policy row."""
+
+        if not index.isValid():
+            return
+        row = index.row()
+        id_item = self.table.item(row, 0)
+        if not id_item:
+            return
+        policy_id = id_item.data(QtCore.Qt.UserRole)
+        if not policy_id:
+            return
+        self.current_policy_id = policy_id
+        self._load_policy_detail(policy_id)
+        self.tabs.setCurrentIndex(self.policy_detail_index)
+        self.tabs.setFocus(QtCore.Qt.TabFocusReason)
 
     def _apply_table_row_alignment(self, row_index: int) -> None:
         """Apply alignment and hierarchy styling for a table row."""
@@ -2305,8 +2344,9 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableWidget::item { color: black;}"
-            "QTableWidget::item:selected { background-color: blue; color: white;}"
+            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
+            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
+            f"color: {theme.COLORS['neutral_900']};}}"
         )
         apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
@@ -2384,8 +2424,9 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setBold(True)
         self.review_table.setFont(review_font)
         self.review_table.setStyleSheet(
-            "QTableWidget::item { color: black; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
+            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
+            f"color: {theme.COLORS['neutral_900']}; }}"
         )
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
@@ -2473,8 +2514,9 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
         self.policy_send_table.setStyleSheet(
-            "QTableWidget::item { color: black; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
+            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
+            f"color: {theme.COLORS['neutral_900']}; }}"
         )
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
@@ -2517,8 +2559,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: black; font-weight: bold; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; font-weight: bold; }}"
+            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
+            f"color: {theme.COLORS['neutral_900']}; }}"
         )
 
         recipient_layout.addWidget(self.staff_table)
@@ -3243,8 +3286,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: black;}"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
+            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
+            f"color: {theme.COLORS['neutral_900']}; }}"
         )
 
         button_row = QtWidgets.QHBoxLayout()
