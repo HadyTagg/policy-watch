@@ -80,6 +80,11 @@ class KpiCard(QtWidgets.QFrame):
         self.setObjectName("KpiCard")
         self.setProperty("active", False)
         self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setMinimumHeight(theme.SPACING["xl"] * 5)
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Expanding,
+        )
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(
