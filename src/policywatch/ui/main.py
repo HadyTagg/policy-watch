@@ -563,6 +563,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 continue
             filtered.append(policy)
 
+        filtered.sort(key=lambda item: (item.category.lower(), item.title.lower()))
+
         self.table.setRowCount(len(filtered))
         for row_index, policy in enumerate(filtered):
             category_item = QtWidgets.QTableWidgetItem(policy.category)
