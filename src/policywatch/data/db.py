@@ -58,7 +58,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 ratified_by_user_id INTEGER,
                 effective_date TEXT NOT NULL,
                 review_due_date TEXT NOT NULL,
-                expiry_date TEXT NOT NULL,
+                review_frequency_months INTEGER,
                 notes TEXT,
                 current_version_id INTEGER,
                 created_at TEXT NOT NULL,
@@ -80,6 +80,12 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 ratified INTEGER NOT NULL DEFAULT 0,
                 ratified_at TEXT,
                 ratified_by_user_id INTEGER,
+                status TEXT,
+                effective_date TEXT,
+                review_due_date TEXT,
+                review_frequency_months INTEGER,
+                notes TEXT,
+                replacement_accepted INTEGER,
                 owner TEXT,
                 FOREIGN KEY (policy_id) REFERENCES policies(id),
                 FOREIGN KEY (created_by_user_id) REFERENCES users(id),
@@ -179,6 +185,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         )
     _ensure_policy_version_metadata(conn)
     _ensure_policy_metadata(conn)
+    _remove_expiry_columns(conn)
 
 
 def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
@@ -190,7 +197,6 @@ def _ensure_policy_version_metadata(conn: sqlite3.Connection) -> None:
         ("effective_date", "TEXT"),
         ("review_due_date", "TEXT"),
         ("review_frequency_months", "INTEGER"),
-        ("expiry_date", "TEXT"),
         ("notes", "TEXT"),
         ("replacement_accepted", "INTEGER"),
         ("owner", "TEXT"),
@@ -206,6 +212,105 @@ def _ensure_policy_metadata(conn: sqlite3.Connection) -> None:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(policies)").fetchall()}
     if "review_frequency_months" not in columns:
         conn.execute("ALTER TABLE policies ADD COLUMN review_frequency_months INTEGER")
+
+
+def _remove_expiry_columns(conn: sqlite3.Connection) -> None:
+    """Remove legacy expiry date columns from policy tables."""
+
+    policies_columns = {row["name"] for row in conn.execute("PRAGMA table_info(policies)").fetchall()}
+    versions_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(policy_versions)").fetchall()
+    }
+    needs_policy_migration = "expiry_date" in policies_columns
+    needs_version_migration = "expiry_date" in versions_columns
+    if not needs_policy_migration and not needs_version_migration:
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        with conn:
+            if needs_policy_migration:
+                conn.executescript(
+                    """
+                    CREATE TABLE policies_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        slug TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        ratified INTEGER NOT NULL DEFAULT 0,
+                        ratified_at TEXT,
+                        ratified_by_user_id INTEGER,
+                        effective_date TEXT NOT NULL,
+                        review_due_date TEXT NOT NULL,
+                        review_frequency_months INTEGER,
+                        notes TEXT,
+                        current_version_id INTEGER,
+                        created_at TEXT NOT NULL,
+                        created_by_user_id INTEGER,
+                        FOREIGN KEY (ratified_by_user_id) REFERENCES users(id),
+                        FOREIGN KEY (created_by_user_id) REFERENCES users(id)
+                    );
+                    INSERT INTO policies_new (
+                        id, title, slug, category, status, ratified, ratified_at,
+                        ratified_by_user_id, effective_date, review_due_date,
+                        review_frequency_months, notes, current_version_id, created_at,
+                        created_by_user_id
+                    )
+                    SELECT
+                        id, title, slug, category, status, ratified, ratified_at,
+                        ratified_by_user_id, effective_date, review_due_date,
+                        review_frequency_months, notes, current_version_id, created_at,
+                        created_by_user_id
+                    FROM policies;
+                    DROP TABLE policies;
+                    ALTER TABLE policies_new RENAME TO policies;
+                    """
+                )
+            if needs_version_migration:
+                conn.executescript(
+                    """
+                    CREATE TABLE policy_versions_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        policy_id INTEGER NOT NULL,
+                        version_number INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        created_by_user_id INTEGER,
+                        file_path TEXT NOT NULL,
+                        original_filename TEXT NOT NULL,
+                        file_size_bytes INTEGER NOT NULL,
+                        sha256_hash TEXT NOT NULL,
+                        ratified INTEGER NOT NULL DEFAULT 0,
+                        ratified_at TEXT,
+                        ratified_by_user_id INTEGER,
+                        status TEXT,
+                        effective_date TEXT,
+                        review_due_date TEXT,
+                        review_frequency_months INTEGER,
+                        notes TEXT,
+                        replacement_accepted INTEGER,
+                        owner TEXT,
+                        FOREIGN KEY (policy_id) REFERENCES policies(id),
+                        FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+                        FOREIGN KEY (ratified_by_user_id) REFERENCES users(id)
+                    );
+                    INSERT INTO policy_versions_new (
+                        id, policy_id, version_number, created_at, created_by_user_id,
+                        file_path, original_filename, file_size_bytes, sha256_hash,
+                        ratified, ratified_at, ratified_by_user_id, status, effective_date,
+                        review_due_date, review_frequency_months, notes, replacement_accepted, owner
+                    )
+                    SELECT
+                        id, policy_id, version_number, created_at, created_by_user_id,
+                        file_path, original_filename, file_size_bytes, sha256_hash,
+                        ratified, ratified_at, ratified_by_user_id, status, effective_date,
+                        review_due_date, review_frequency_months, notes, replacement_accepted, owner
+                    FROM policy_versions;
+                    DROP TABLE policy_versions;
+                    ALTER TABLE policy_versions_new RENAME TO policy_versions;
+                    """
+                )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
 
 
 @contextmanager
