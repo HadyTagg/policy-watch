@@ -28,6 +28,39 @@ PILL_STYLE_MAP = {
     "no": theme.STATUS_COLORS["warning"],
 }
 
+STANDARD_ICON_MAP = {
+    "add": QtWidgets.QStyle.SP_FileDialogNewFolder,
+    "edit": QtWidgets.QStyle.SP_FileDialogDetailedView,
+    "delete": QtWidgets.QStyle.SP_TrashIcon,
+    "archive": QtWidgets.QStyle.SP_DialogDiscardButton,
+    "save": QtWidgets.QStyle.SP_DialogSaveButton,
+    "export": QtWidgets.QStyle.SP_ArrowDown,
+    "backup": QtWidgets.QStyle.SP_DialogSaveButton,
+    "send": QtWidgets.QStyle.SP_ArrowRight,
+    "refresh": QtWidgets.QStyle.SP_BrowserReload,
+    "search": QtWidgets.QStyle.SP_FileDialogContentsView,
+    "open": QtWidgets.QStyle.SP_DialogOpenButton,
+    "view": QtWidgets.QStyle.SP_FileDialogInfoView,
+    "approve": QtWidgets.QStyle.SP_DialogApplyButton,
+    "cancel": QtWidgets.QStyle.SP_DialogCancelButton,
+    "print": QtWidgets.QStyle.SP_PrinterIcon,
+    "login": QtWidgets.QStyle.SP_DialogOkButton,
+    "select": QtWidgets.QStyle.SP_DialogYesButton,
+    "deselect": QtWidgets.QStyle.SP_DialogNoButton,
+    "folder": QtWidgets.QStyle.SP_DirOpenIcon,
+}
+
+
+def set_button_icon(button: QtWidgets.QAbstractButton, icon_name: str, size: int = 16) -> None:
+    """Assign a standard icon to a button using a shared name map."""
+
+    pixmap = STANDARD_ICON_MAP.get(icon_name)
+    if pixmap is None:
+        return
+    icon = button.style().standardIcon(pixmap)
+    button.setIcon(icon)
+    button.setIconSize(QtCore.QSize(size, size))
+
 
 class KpiCard(QtWidgets.QFrame):
     """Clickable KPI card for dashboard filters."""

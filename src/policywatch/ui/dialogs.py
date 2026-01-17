@@ -17,6 +17,7 @@ from policywatch.services import (
     delete_category,
     update_user_password,
 )
+from policywatch.ui.widgets import set_button_icon
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -35,9 +36,11 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.category_input.setPlaceholderText("New category name")
 
         add_button = QtWidgets.QPushButton("Add")
+        set_button_icon(add_button, "add")
         add_button.clicked.connect(self._add_category)
 
         delete_button = QtWidgets.QPushButton("Delete Selected")
+        set_button_icon(delete_button, "delete")
         delete_button.clicked.connect(self._delete_selected)
 
         input_row = QtWidgets.QHBoxLayout()
@@ -137,6 +140,7 @@ class PolicyDialog(QtWidgets.QDialog):
         self.file_path_input = QtWidgets.QLineEdit()
         self.file_path_input.setReadOnly(True)
         browse_button = QtWidgets.QPushButton("Browse")
+        set_button_icon(browse_button, "open")
         browse_button.clicked.connect(self._browse_file)
         file_row = QtWidgets.QHBoxLayout()
         file_row.addWidget(self.file_path_input)
@@ -155,8 +159,10 @@ class PolicyDialog(QtWidgets.QDialog):
         form.addRow("Policy File", file_container)
 
         self.save_button = QtWidgets.QPushButton("Save")
+        set_button_icon(self.save_button, "save")
         self.save_button.clicked.connect(self._save)
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(cancel_button, "cancel")
         cancel_button.clicked.connect(self.reject)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -341,8 +347,10 @@ class AccountCreationDialog(QtWidgets.QDialog):
         form.addRow("Confirm Password", self.confirm_input)
 
         create_button = QtWidgets.QPushButton("Create")
+        set_button_icon(create_button, "add")
         create_button.clicked.connect(self._create_account)
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(cancel_button, "cancel")
         cancel_button.clicked.connect(self.reject)
 
         button_row = QtWidgets.QHBoxLayout()
@@ -405,8 +413,10 @@ class PasswordChangeDialog(QtWidgets.QDialog):
         form.addRow("Confirm New Password", self.confirm_input)
 
         save_button = QtWidgets.QPushButton("Save")
+        set_button_icon(save_button, "save")
         save_button.clicked.connect(self._change_password)
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(cancel_button, "cancel")
         cancel_button.clicked.connect(self.reject)
 
         button_row = QtWidgets.QHBoxLayout()
