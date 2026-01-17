@@ -1195,40 +1195,41 @@ def mark_policy_version_missing(
         version_id,
         "replacement_notes_applied",
     )
+    if replacement_version_id is not None:
+        new_version_number = replacement_version_number
+        if new_version_number is None:
+            replacement_row = conn.execute(
+                "SELECT version_number FROM policy_versions WHERE id = ?",
+                (replacement_version_id,),
+            ).fetchone()
+            if replacement_row:
+                new_version_number = replacement_row["version_number"]
+        existing_carryover = conn.execute(
+            """
+            SELECT 1
+            FROM policy_review_carryovers
+            WHERE source_version_id = ? AND replacement_version_id = ?
+            """,
+            (version_id, replacement_version_id),
+        ).fetchone()
+        if not existing_carryover:
+            conn.execute(
+                """
+                INSERT INTO policy_review_carryovers (
+                    source_version_id, replacement_version_id, carried_at
+                ) VALUES (?, ?, ?)
+                """,
+                (version_id, replacement_version_id, datetime.datetime.utcnow().isoformat()),
+            )
+            _log_event(
+                conn,
+                "policy_review_carryover_added",
+                "policy_version",
+                replacement_version_id,
+                f"carried_reviews_from_version={row['version_number']}",
+            )
     if row["current_version_id"] == version_id:
         if replacement_version_id is not None:
-            new_version_number = replacement_version_number
-            if new_version_number is None:
-                replacement_row = conn.execute(
-                    "SELECT version_number FROM policy_versions WHERE id = ?",
-                    (replacement_version_id,),
-                ).fetchone()
-                if replacement_row:
-                    new_version_number = replacement_row["version_number"]
-            existing_carryover = conn.execute(
-                """
-                SELECT 1
-                FROM policy_review_carryovers
-                WHERE source_version_id = ? AND replacement_version_id = ?
-                """,
-                (version_id, replacement_version_id),
-            ).fetchone()
-            if not existing_carryover:
-                conn.execute(
-                    """
-                    INSERT INTO policy_review_carryovers (
-                        source_version_id, replacement_version_id, carried_at
-                    ) VALUES (?, ?, ?)
-                    """,
-                    (version_id, replacement_version_id, datetime.datetime.utcnow().isoformat()),
-                )
-                _log_event(
-                    conn,
-                    "policy_review_carryover_added",
-                    "policy_version",
-                    replacement_version_id,
-                    f"carried_reviews_from_version={row['version_number']}",
-                )
             conn.execute(
                 "UPDATE policy_versions SET owner = ? WHERE id = ?",
                 (row["owner"], replacement_version_id),
