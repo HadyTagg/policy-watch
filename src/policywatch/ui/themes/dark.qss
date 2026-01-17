@@ -1,0 +1,112 @@
+QWidget {
+    background-color: #0f172a;
+    color: #e2e8f0;
+}
+QMainWindow {
+    background-color: #0f172a;
+}
+QToolBar {
+    background: #0f172a;
+    border-bottom: 1px solid #1e293b;
+    spacing: 8px;
+}
+QToolButton {
+    background: #0f172a;
+    border: 1px solid transparent;
+    padding: 6px 10px;
+    border-radius: 6px;
+}
+QToolButton:hover {
+    background: #1e293b;
+    border-color: #334155;
+}
+QLineEdit, QComboBox, QDateEdit, QTextEdit, QPlainTextEdit {
+    background-color: #111827;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 8px;
+    color: #e2e8f0;
+}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border: 1px solid #60a5fa;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+QPushButton {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 6px 12px;
+    color: #e2e8f0;
+}
+QPushButton:hover {
+    background-color: #1e293b;
+    border-color: #475569;
+}
+QPushButton:disabled {
+    color: #94a3b8;
+}
+QHeaderView::section {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: none;
+    border-bottom: 1px solid #334155;
+    padding: 8px 6px;
+    font-weight: 600;
+}
+QTableView {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    gridline-color: transparent;
+    selection-background-color: #1e293b;
+    selection-color: #f8fafc;
+}
+QTableView::item {
+    padding: 8px;
+}
+QTableView::item:hover {
+    background-color: #1f2937;
+}
+QTabWidget::pane {
+    border: 1px solid #1e293b;
+    border-top: none;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+QTabBar::tab {
+    background: #1e293b;
+    border: 1px solid #1e293b;
+    border-bottom: none;
+    padding: 8px 12px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-right: 4px;
+}
+QTabBar::tab:selected {
+    background: #111827;
+    border-color: #334155;
+}
+QFrame#KpiCard {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+}
+QFrame#KpiCard:hover {
+    background: #1e293b;
+    border-color: #60a5fa;
+}
+QFrame#KpiCard[active="true"] {
+    background: #1e293b;
+    border-color: #60a5fa;
+}
+QLabel#KpiTitle {
+    color: #94a3b8;
+}
+QLabel#KpiValue {
+    font-size: 36pt;
+    font-weight: 700;
+    color: #f8fafc;
+}

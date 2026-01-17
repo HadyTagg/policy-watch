@@ -1444,6 +1444,43 @@ def update_user_password(conn, user_id: int, password: str) -> None:
     _log_event(conn, "update_user_password", "user", user_id, None)
 
 
+def get_user_theme(conn, user_id: int) -> str:
+    """Return the stored theme for a user, defaulting to light."""
+
+    row = conn.execute(
+        "SELECT theme FROM user_settings WHERE user_id = ?",
+        (str(user_id),),
+    ).fetchone()
+    if row:
+        return row["theme"]
+    theme_value = "light"
+    updated_at = datetime.datetime.utcnow().isoformat()
+    conn.execute(
+        "INSERT OR IGNORE INTO user_settings (user_id, theme, updated_at) VALUES (?, ?, ?)",
+        (str(user_id), theme_value, updated_at),
+    )
+    conn.commit()
+    return theme_value
+
+
+def set_user_theme(conn, user_id: int, theme_value: str) -> None:
+    """Persist the user's theme preference."""
+
+    if theme_value not in {"light", "dark"}:
+        raise ValueError("theme must be 'light' or 'dark'")
+    updated_at = datetime.datetime.utcnow().isoformat()
+    conn.execute(
+        """
+        INSERT INTO user_settings (user_id, theme, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id)
+        DO UPDATE SET theme = excluded.theme, updated_at = excluded.updated_at
+        """,
+        (str(user_id), theme_value, updated_at),
+    )
+    conn.commit()
+
+
 def export_backup(conn, destination: Path, include_files: bool) -> None:
     """Export the database and optionally policy files to a zip archive."""
 
