@@ -2484,8 +2484,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.print_document_button)
 
         layout.addWidget(versions)
-        layout.addWidget(summary)
         layout.addWidget(reviews)
+        layout.addWidget(summary)
         layout.addLayout(button_row)
         return wrapper
 
