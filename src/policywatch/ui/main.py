@@ -53,7 +53,7 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import KpiCard, apply_pill_delegate, set_button_icon
+from policywatch.ui.widgets import KpiCard, apply_pill_delegate, apply_table_focusless, set_button_icon
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -219,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
+        apply_table_focusless(self.table)
         apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
@@ -2364,6 +2365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
+        apply_table_focusless(self.version_table)
         apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2459,6 +2461,7 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setPointSize(9)
         review_font.setBold(True)
         self.review_table.setFont(review_font)
+        apply_table_focusless(self.review_table)
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
@@ -2544,6 +2547,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setPointSize(9)
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
+        apply_table_focusless(self.policy_send_table)
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2583,6 +2587,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setPointSize(9)
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
+        apply_table_focusless(self.staff_table)
 
 
         recipient_layout.addWidget(self.staff_table)
@@ -3305,6 +3310,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setPointSize(9)
         audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
+        apply_table_focusless(self.audit_table)
 
 
         button_row = QtWidgets.QHBoxLayout()

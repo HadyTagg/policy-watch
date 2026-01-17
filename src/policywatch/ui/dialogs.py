@@ -17,7 +17,7 @@ from policywatch.services import (
     delete_category,
     update_user_password,
 )
-from policywatch.ui.widgets import set_button_icon
+from policywatch.ui.widgets import apply_table_focusless, set_button_icon
 
 
 class CategoryManagerDialog(QtWidgets.QDialog):
@@ -55,6 +55,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
+        apply_table_focusless(self.table)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(input_row)
