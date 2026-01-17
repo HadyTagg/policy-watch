@@ -68,10 +68,25 @@ QTableView::item {
     padding: 8px;
     color: #e2e8f0;
 }
+QTableView::item:selected {
+    background-color: #1e293b;
+    color: #f8fafc;
+}
 QTableView::item:hover {
     background-color: #1f2937;
 }
 QTableView::item:alternate {
+    background-color: #0b1324;
+}
+QTableWidget::item {
+    padding: 8px;
+    color: #e2e8f0;
+}
+QTableWidget::item:selected {
+    background-color: #1e293b;
+    color: #f8fafc;
+}
+QTableWidget::item:alternate {
     background-color: #0b1324;
 }
 QTabWidget::pane {

@@ -2359,11 +2359,6 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
-        self.version_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']};}}"
-        )
         apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2439,11 +2434,6 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setPointSize(9)
         review_font.setBold(True)
         self.review_table.setFont(review_font)
-        self.review_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
@@ -2529,11 +2519,6 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setPointSize(9)
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
-        self.policy_send_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2574,11 +2559,6 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
 
-        self.staff_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']}; font-weight: bold; }}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
@@ -3301,11 +3281,6 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
 
-        self.audit_table.setStyleSheet(
-            f"QTableWidget::item {{ color: {theme.COLORS['neutral_900']};}}"
-            f"QTableWidget::item:selected {{ background-color: {theme.COLORS['neutral_100']}; "
-            f"color: {theme.COLORS['neutral_900']}; }}"
-        )
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export All Logs")
