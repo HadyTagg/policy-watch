@@ -69,6 +69,10 @@ QTableView::item {
     color: #e2e8f0;
     background-color: #111827;
 }
+QTableView::item:focus {
+    outline: none;
+    border: none;
+}
 QTableView::item:hover {
     background-color: #1f2937;
     padding-left: 12px;
@@ -91,6 +95,10 @@ QTableView::item:selected {
 QTableWidget::item {
     color: #e2e8f0;
     background-color: #111827;
+}
+QTableWidget::item:focus {
+    outline: none;
+    border: none;
 }
 QTableWidget::item:hover {
     background-color: #1f2937;
