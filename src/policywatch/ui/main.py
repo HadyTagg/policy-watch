@@ -613,7 +613,8 @@ class MainWindow(QtWidgets.QMainWindow):
         elif selected_policy_id:
             if not self._select_policy_row_by_id(selected_policy_id):
                 self.table.clearSelection()
-                self.current_policy_id = None
+                if self.tabs.currentIndex() != self.policy_detail_index:
+                    self.current_policy_id = None
 
     def _on_policy_selected(self) -> None:
         """Load the policy detail panel when the table selection changes."""
@@ -1015,6 +1016,10 @@ class MainWindow(QtWidgets.QMainWindow):
             selected = self._select_version_row_by_id(selected_version_id)
         if not selected and policy["current_version_id"]:
             selected = self._select_version_row_by_id(policy["current_version_id"])
+        if not selected and versions:
+            self.version_table.setCurrentCell(0, 0)
+            self.version_table.selectRow(0)
+            selected = True
         if selected:
             version_id = self.version_table.item(self.version_table.currentRow(), 0).data(QtCore.Qt.UserRole)
             self._load_policy_reviews(version_id)
