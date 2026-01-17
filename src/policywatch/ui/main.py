@@ -2363,10 +2363,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
-        summary = QtWidgets.QGroupBox("Policy Metadata")
-        summary.setCheckable(True)
-        summary.setChecked(True)
+        summary = QtWidgets.QGroupBox()
         summary_layout = QtWidgets.QVBoxLayout(summary)
+        summary_header = QtWidgets.QHBoxLayout()
+        summary_toggle = QtWidgets.QToolButton()
+        summary_toggle.setCheckable(True)
+        summary_toggle.setChecked(True)
+        summary_toggle.setText("-")
+        summary_title = QtWidgets.QLabel("Policy Metadata")
+        summary_header.addWidget(summary_toggle)
+        summary_header.addWidget(summary_title)
+        summary_header.addStretch()
+        summary_layout.addLayout(summary_header)
         summary_contents = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(summary_contents)
         summary_layout.addWidget(summary_contents)
@@ -2425,7 +2433,11 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Ratified At", self.detail_ratified_at)
         form.addRow("Ratified By", self.detail_ratified_by)
 
-        summary.toggled.connect(summary_contents.setVisible)
+        def toggle_summary_contents(checked: bool) -> None:
+            summary_contents.setVisible(checked)
+            summary_toggle.setText("-" if checked else "+")
+
+        summary_toggle.toggled.connect(toggle_summary_contents)
 
         reviews = QtWidgets.QGroupBox("Reviews (No Changes)")
         reviews_layout = QtWidgets.QVBoxLayout(reviews)
