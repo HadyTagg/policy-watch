@@ -613,7 +613,8 @@ class MainWindow(QtWidgets.QMainWindow):
         elif selected_policy_id:
             if not self._select_policy_row_by_id(selected_policy_id):
                 self.table.clearSelection()
-                self.current_policy_id = None
+                if self.tabs.currentIndex() != self.policy_detail_index:
+                    self.current_policy_id = None
 
     def _on_policy_selected(self) -> None:
         """Load the policy detail panel when the table selection changes."""
