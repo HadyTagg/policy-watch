@@ -530,8 +530,16 @@ class MainWindow(QtWidgets.QMainWindow):
         selected_policy_id = self.current_policy_id
 
         for policy in base_policies:
-            if search_text and search_text not in policy.title.lower():
-                continue
+            if search_text:
+                search_candidates = [
+                    policy.title,
+                    policy.category,
+                    str(getattr(policy, "code", "") or ""),
+                    str(getattr(policy, "reference", "") or ""),
+                    str(policy.current_version_number or ""),
+                ]
+                if not any(search_text in candidate.lower() for candidate in search_candidates):
+                    continue
             if category != "All Categories" and policy.category != category:
                 continue
             if traffic != "All":
@@ -570,7 +578,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem(
-                    "Ratified" if policy.ratified else "Awaiting"
+                    "Ratified" if policy.ratified else "Awaiting Ratification"
                 )
             else:
                 status_payload = self._build_status_chip("No version")
@@ -751,8 +759,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         days_label = self._format_days_badge(policy.review_due_date)
         traffic_map = {
-            "Green": ("In date", "✓", "info"),
-            "Amber": ("Review due", "⏳", "warning"),
+            "Green": ("OK", "✓", "info"),
+            "Amber": ("Due Soon", "⏳", "warning"),
             "Red": ("Overdue", "⚠", "danger"),
         }
         status_text, icon, kind = traffic_map.get(
@@ -970,7 +978,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
-            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting"
+            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             stored_filename = ""

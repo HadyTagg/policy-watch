@@ -5,29 +5,7 @@ from __future__ import annotations
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch.ui import theme
-
-PILL_STYLE_MAP = {
-    "draft": theme.STATUS_COLORS["neutral"],
-    "active": theme.STATUS_COLORS["info"],
-    "withdrawn": theme.STATUS_COLORS["warning"],
-    "missing": theme.STATUS_COLORS["danger"],
-    "archived": theme.STATUS_COLORS["neutral"],
-    "no version": theme.STATUS_COLORS["neutral"],
-    "ratified": theme.STATUS_COLORS["info"],
-    "awaiting": theme.STATUS_COLORS["warning"],
-    "not ratified": theme.STATUS_COLORS["warning"],
-    "overdue": theme.STATUS_COLORS["danger"],
-    "due soon": theme.STATUS_COLORS["warning"],
-    "in date": theme.STATUS_COLORS["info"],
-    "review due": theme.STATUS_COLORS["warning"],
-    "review scheduled": theme.STATUS_COLORS["neutral"],
-    "ok": theme.STATUS_COLORS["info"],
-    "no schedule": theme.STATUS_COLORS["neutral"],
-    "current": theme.STATUS_COLORS["info"],
-    "not current": theme.STATUS_COLORS["neutral"],
-    "yes": theme.STATUS_COLORS["info"],
-    "no": theme.STATUS_COLORS["warning"],
-}
+from policywatch.ui.styles import PILL_STYLES
 
 def _standard_pixmap(name: str, fallback: QtWidgets.QStyle.StandardPixmap) -> QtWidgets.QStyle.StandardPixmap:
     """Return a standard pixmap if available, otherwise a fallback."""
@@ -235,7 +213,7 @@ def apply_pill_delegate(
 
     if isinstance(columns, (int, str)):
         columns = [columns]
-    delegate = PillDelegate(style_map or PILL_STYLE_MAP, table, default_style=default_style)
+    delegate = PillDelegate(style_map or PILL_STYLES, table, default_style=default_style)
     for column in columns:
         if isinstance(column, int):
             table.setItemDelegateForColumn(column, delegate)
