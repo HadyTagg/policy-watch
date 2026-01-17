@@ -89,7 +89,6 @@ QTableView::item:selected {
     color: #f8fafc;
 }
 QTableWidget::item {
-    padding: 8px;
     color: #e2e8f0;
     background-color: #111827;
 }
