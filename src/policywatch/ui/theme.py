@@ -125,21 +125,26 @@ def build_stylesheet(font_family: str) -> str:
     QTabWidget::pane {{
         border: 1px solid {COLORS['neutral_100']};
         border-top: none;
-        border-bottom-left-radius: 6px;
-        border-bottom-right-radius: 6px;
+        border-bottom-left-radius: 8px;
+        border-bottom-right-radius: 8px;
     }}
     QTabBar::tab {{
+        background: transparent;
+        border: 1px solid transparent;
+        padding: 8px;
+        margin-right: 8px;
+        border-radius: 12px;
+        min-width: 36px;
+        min-height: 36px;
+    }}
+    QTabBar::tab:hover {{
         background: {COLORS['neutral_50']};
-        border: 1px solid {COLORS['neutral_100']};
-        border-bottom: none;
-        padding: 8px 12px;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        margin-right: 4px;
     }}
     QTabBar::tab:selected {{
-        background: #ffffff;
-        border-color: {COLORS['neutral_300']};
+        background: {COLORS['neutral_100']};
+    }}
+    QTabBar::tab:focus {{
+        border: 1px solid {COLORS['accent']};
     }}
     QFrame#KpiCard {{
         background: #ffffff;

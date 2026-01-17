@@ -249,9 +249,10 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_detail = self._build_policy_detail()
         email_compose = self._build_email_compose()
         self.tabs = QtWidgets.QTabWidget()
-        self.tabs.addTab(dashboard, "Dashboard")
-        self.policy_detail_index = self.tabs.addTab(policy_detail, "Policy Detail")
-        self.policy_distributor_index = self.tabs.addTab(email_compose, "Policy Distributor")
+        self.tabs.addTab(dashboard, "")
+        self.policy_detail_index = self.tabs.addTab(policy_detail, "")
+        self.policy_distributor_index = self.tabs.addTab(email_compose, "")
+        self._configure_tab_navigation()
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self.audit_dialog = self._build_audit_dialog()
@@ -267,6 +268,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_settings()
         self._load_audit_log()
         self._run_startup_policy_checks()
+
+    def _configure_tab_navigation(self) -> None:
+        """Configure icon-based navigation for the main tab widget."""
+
+        tab_bar = self.tabs.tabBar()
+        tab_bar.setFocusPolicy(QtCore.Qt.StrongFocus)
+        tab_bar.setElideMode(QtCore.Qt.ElideNone)
+        self.tabs.setIconSize(QtCore.QSize(26, 26))
+
+        icons = [
+            (QtWidgets.QStyle.SP_ComputerIcon, "Dashboard"),
+            (QtWidgets.QStyle.SP_FileIcon, "Policy Detail"),
+            (QtWidgets.QStyle.SP_ArrowRight, "Policy Distributor"),
+        ]
+        for index, (icon_type, tooltip) in enumerate(icons):
+            icon = self.style().standardIcon(icon_type)
+            self.tabs.setTabIcon(index, icon)
+            self.tabs.setTabToolTip(index, tooltip)
 
     def _run_startup_policy_checks(self) -> None:
         """Repair paths and flag missing or altered policy files on launch."""
