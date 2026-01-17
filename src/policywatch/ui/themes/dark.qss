@@ -87,7 +87,6 @@ QTableView::item:alternate:hover {
 QTableView::item:selected {
     background-color: #1e293b;
     color: #f8fafc;
-    padding-left: 12px;
 }
 QTableWidget::item {
     padding: 8px;
@@ -112,7 +111,6 @@ QTableWidget::item:alternate:hover {
 QTableWidget::item:selected {
     background-color: #1e293b;
     color: #f8fafc;
-    padding-left: 12px;
 }
 QTabWidget::pane {
     border: 1px solid #1e293b;
