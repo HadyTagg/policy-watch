@@ -2363,8 +2363,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
-        summary = QtWidgets.QGroupBox("Policy Metadata")
-        form = QtWidgets.QFormLayout(summary)
+        summary = QtWidgets.QGroupBox()
+        summary_layout = QtWidgets.QVBoxLayout(summary)
+        summary_header = QtWidgets.QHBoxLayout()
+        summary_toggle = QtWidgets.QToolButton()
+        summary_toggle.setCheckable(True)
+        summary_toggle.setChecked(False)
+        summary_toggle.setText("+")
+        summary_title = QtWidgets.QLabel("Policy Metadata")
+        summary_header.addWidget(summary_toggle)
+        summary_header.addWidget(summary_title)
+        summary_header.addStretch()
+        summary_layout.addLayout(summary_header)
+        summary_contents = QtWidgets.QWidget()
+        form = QtWidgets.QFormLayout(summary_contents)
+        summary_layout.addWidget(summary_contents)
+        summary_contents.setVisible(False)
         self.detail_title = QtWidgets.QLineEdit()
         self.detail_title.setReadOnly(False)
         self.detail_title.textChanged.connect(self._mark_title_dirty)
@@ -2419,6 +2433,12 @@ class MainWindow(QtWidgets.QMainWindow):
         form.addRow("Ratified", self.detail_ratified)
         form.addRow("Ratified At", self.detail_ratified_at)
         form.addRow("Ratified By", self.detail_ratified_by)
+
+        def toggle_summary_contents(checked: bool) -> None:
+            summary_contents.setVisible(checked)
+            summary_toggle.setText("-" if checked else "+")
+
+        summary_toggle.toggled.connect(toggle_summary_contents)
 
         reviews = QtWidgets.QGroupBox("Reviews (No Changes)")
         reviews_layout = QtWidgets.QVBoxLayout(reviews)
@@ -2477,8 +2497,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.print_document_button)
 
         layout.addWidget(versions)
-        layout.addWidget(summary)
         layout.addWidget(reviews)
+        layout.addWidget(summary)
         layout.addLayout(button_row)
         return wrapper
 
@@ -3497,6 +3517,18 @@ class MainWindow(QtWidgets.QMainWindow):
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
         set_button_icon(save_button, "save")
         save_button.clicked.connect(self._save_settings)
+        is_admin = self._is_admin()
+        if not is_admin:
+            restriction_message = "Admin role required to edit settings."
+            for widget in (
+                self.policy_root_input,
+                browse_root,
+                self.amber_months_input,
+                self.overdue_days_input,
+                self.max_attachment_input,
+            ):
+                widget.setEnabled(False)
+                widget.setToolTip(restriction_message)
 
         backup_row = QtWidgets.QHBoxLayout()
         open_data = QtWidgets.QPushButton("Open data folder", wrapper)
@@ -3524,6 +3556,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _save_settings(self) -> None:
         """Persist settings from the UI to the config table."""
 
+        if not self._is_admin():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Theme Saved",
+                "Your theme changes are saved automatically. Other settings require admin access.",
+            )
+            return
         current_policy_root = config.get_setting(self.conn, "policy_root", "")
         current_amber_months = config.get_setting(self.conn, "amber_months", 2)
         current_overdue_days = config.get_setting(self.conn, "overdue_grace_days", 0)
