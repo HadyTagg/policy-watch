@@ -110,12 +110,23 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
+        if option.rect.width() <= 8 or option.rect.height() <= 8:
+            super().paint(painter, option, index)
+            return
+
         painter.save()
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
         style_option = QtWidgets.QStyleOptionViewItem(option)
-        style = style_option.widget.style() if style_option.widget else QtWidgets.QApplication.style()
-        style.drawPrimitive(QtWidgets.QStyle.PE_PanelItemViewItem, style_option, painter, style_option.widget)
+        widget_style = (
+            style_option.widget.style() if style_option.widget else QtWidgets.QApplication.style()
+        )
+        widget_style.drawPrimitive(
+            QtWidgets.QStyle.PE_PanelItemViewItem,
+            style_option,
+            painter,
+            style_option.widget,
+        )
 
         font = QtGui.QFont(option.font)
         font.setPointSize(theme.FONT_SIZES["small"])
@@ -126,10 +137,18 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
         padding_x = theme.SPACING["sm"]
         padding_y = theme.SPACING["xs"]
         max_text_width = max(0, option.rect.width() - padding_x * 2 - 8)
+        if max_text_width <= 0:
+            painter.restore()
+            super().paint(painter, option, index)
+            return
         elided_label = metrics.elidedText(label, QtCore.Qt.ElideRight, max_text_width)
         text_width = metrics.horizontalAdvance(elided_label)
         chip_width = min(text_width + padding_x * 2, option.rect.width() - 6)
         chip_height = min(metrics.height() + padding_y * 2, option.rect.height() - 6)
+        if chip_width <= 0 or chip_height <= 0:
+            painter.restore()
+            super().paint(painter, option, index)
+            return
 
         chip_rect = QtCore.QRect(option.rect)
         chip_rect.setWidth(chip_width)
