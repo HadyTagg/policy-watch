@@ -1,7 +1,7 @@
 <RCC>
   <qresource prefix="/icons">
-    <file>icons/house.svg</file>
-    <file>icons/mail.svg</file>
-    <file>icons/scroll.svg</file>
+    <file>icons/bar-chart-3.svg</file>
+    <file>icons/file-search.svg</file>
+    <file>icons/share-2.svg</file>
   </qresource>
 </RCC>

@@ -141,15 +141,20 @@ class MainWindow(QtWidgets.QMainWindow):
         logo_label.setAccessibleName("Martha Trust logo")
         logo_label.setToolTip("Martha Trust")
         logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
+        logo_height = 26
         if logo_path.exists():
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
                 logo_label.setPixmap(
-                    pixmap.scaled(72, 72, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                    pixmap.scaledToHeight(
+                        logo_height, QtCore.Qt.SmoothTransformation
+                    )
                 )
+                logo_label.setFixedHeight(logo_height)
         if logo_label.pixmap() is None:
             logo_label.setText("Martha Trust")
             logo_label.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
+            logo_label.setFixedHeight(logo_height)
 
         kpi_row = QtWidgets.QHBoxLayout()
         kpi_row.setSpacing(theme.SPACING["md"])
@@ -281,9 +286,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.setIconSize(QtCore.QSize(26, 26))
 
         icons = [
-            ("house.svg", "Dashboard"),
-            ("scroll.svg", "Policy Detail"),
-            ("mail.svg", "Policy Distributor"),
+            ("bar-chart-3.svg", "Dashboard"),
+            ("file-search.svg", "Policy Detail"),
+            ("share-2.svg", "Policy Distributor"),
         ]
         for index, (icon_name, tooltip) in enumerate(icons):
             self.tabs.setTabIcon(index, self._load_nav_icon(icon_name))
