@@ -2281,8 +2281,8 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         self.version_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
-            "QTableWidget::item:selected { background-color: blue; color: white;}"
+            "QTableWidget::item { color: black;}"
+            "QTableWidget::item:selected { background-color: grey; color: black;}"
         )
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2359,8 +2359,8 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setBold(True)
         self.review_table.setFont(review_font)
         self.review_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            "QTableWidget::item { color: black; }"
+            "QTableWidget::item:selected { background-color: grey; color: black; }"
         )
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
@@ -2438,8 +2438,8 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
         self.policy_send_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            "QTableWidget::item { color: black; }"
+            "QTableWidget::item:selected { background-color: grey; color: black; }"
         )
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
@@ -2480,8 +2480,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.staff_table.setFont(audit_font)
 
         self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; font-weight: bold; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            "QTableWidget::item { color: black; font-weight: bold; }"
+            "QTableWidget::item:selected { background-color: grey; color: black; }"
         )
 
         recipient_layout.addWidget(self.staff_table)
@@ -3204,8 +3204,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.audit_table.setFont(audit_font)
 
         self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
+            "QTableWidget::item { color: black;}"
+            "QTableWidget::item:selected { background-color: grey; color: black; }"
         )
 
         button_row = QtWidgets.QHBoxLayout()
