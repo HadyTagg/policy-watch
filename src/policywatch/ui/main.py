@@ -352,7 +352,12 @@ class MainWindow(QtWidgets.QMainWindow):
                     timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%SZ")
                     original_status_row = self.conn.execute(
                         """
-                        SELECT status, ratified, ratified_at, ratified_by_user_id
+                        SELECT status,
+                               ratified,
+                               ratified_at,
+                               ratified_by_user_id,
+                               review_due_date,
+                               review_frequency_months
                         FROM policy_versions
                         WHERE id = ?
                         """,
@@ -364,7 +369,21 @@ class MainWindow(QtWidgets.QMainWindow):
                         int(item["policy_id"]),
                         replacement_path,
                         None,
-                        {"notes": "", "status": original_status},
+                        {
+                            "notes": "",
+                            "status": original_status,
+                            "review_due_date": (
+                                original_status_row["review_due_date"]
+                                if original_status_row
+                                else None
+                            ),
+                            "review_frequency_months": (
+                                original_status_row["review_frequency_months"]
+                                if original_status_row
+                                else None
+                            ),
+                        },
+                        allow_active_version_id=int(item["version_id"]),
                     )
                     self._append_audit_event(
                         "policy_version_status_copied",
