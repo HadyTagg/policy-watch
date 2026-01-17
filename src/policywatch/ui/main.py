@@ -278,14 +278,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.setIconSize(QtCore.QSize(26, 26))
 
         icons = [
-            (QtWidgets.QStyle.SP_ComputerIcon, "Dashboard"),
-            (QtWidgets.QStyle.SP_FileIcon, "Policy Detail"),
-            (QtWidgets.QStyle.SP_ArrowRight, "Policy Distributor"),
+            ("house.svg", "Dashboard"),
+            ("scroll.svg", "Policy Detail"),
+            ("mail.svg", "Policy Distributor"),
         ]
-        for index, (icon_type, tooltip) in enumerate(icons):
-            icon = self.style().standardIcon(icon_type)
-            self.tabs.setTabIcon(index, icon)
+        for index, (icon_name, tooltip) in enumerate(icons):
+            self.tabs.setTabIcon(index, self._load_nav_icon(icon_name))
             self.tabs.setTabToolTip(index, tooltip)
+
+    def _load_nav_icon(self, icon_name: str) -> QtGui.QIcon:
+        """Load an SVG navigation icon from Qt resources or disk."""
+
+        resource_icon = QtGui.QIcon(f":/icons/{icon_name}")
+        if not resource_icon.isNull():
+            return resource_icon
+        repo_root = Path(__file__).resolve().parents[3]
+        icon_path = repo_root / "resources" / "icons" / icon_name
+        return QtGui.QIcon(str(icon_path))
 
     def _run_startup_policy_checks(self) -> None:
         """Repair paths and flag missing or altered policy files on launch."""

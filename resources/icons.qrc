@@ -1,0 +1,7 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file>icons/house.svg</file>
+    <file>icons/mail.svg</file>
+    <file>icons/scroll.svg</file>
+  </qresource>
+</RCC>

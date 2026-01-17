@@ -136,12 +136,16 @@ def build_stylesheet(font_family: str) -> str:
         border-radius: 12px;
         min-width: 36px;
         min-height: 36px;
+        color: {COLORS['neutral_500']};
     }}
     QTabBar::tab:hover {{
         background: {COLORS['neutral_50']};
+        color: {COLORS['neutral_700']};
     }}
     QTabBar::tab:selected {{
-        background: {COLORS['neutral_100']};
+        background: #ffffff;
+        border-color: {COLORS['neutral_100']};
+        color: {COLORS['neutral_900']};
     }}
     QTabBar::tab:focus {{
         border: 1px solid {COLORS['accent']};
