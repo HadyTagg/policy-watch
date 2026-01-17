@@ -49,6 +49,16 @@ STANDARD_ICON_MAP = {
 }
 
 
+def _current_theme_colors() -> dict[str, str]:
+    """Return theme-aware color tokens for the active application theme."""
+
+    app = QtWidgets.QApplication.instance()
+    theme_name = app.property("policywatch_theme") if app else "light"
+    if theme_name == "dark":
+        return theme.DARK_COLORS
+    return theme.COLORS
+
+
 def set_button_icon(button: QtWidgets.QAbstractButton, icon_name: str, size: int = 16) -> None:
     """Assign a standard icon to a button using a shared name map."""
 
@@ -214,6 +224,184 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
         size = super().sizeHint(option, index)
         return QtCore.QSize(size.width(), max(size.height(), 28))
+
+
+class TimelineStepWidget(QtWidgets.QWidget):
+    """Single step widget for the policy lifecycle timeline."""
+
+    def __init__(self, label: str, icon: str, parent=None) -> None:
+        super().__init__(parent)
+        self._label_text = label
+        self._icon_text = icon
+        self._state = "upcoming"
+        self._diameter = theme.SPACING["xl"] + theme.SPACING["sm"]
+        self._border_width = 2
+
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+
+        self.circle = QtWidgets.QLabel(self._icon_text)
+        self.circle.setObjectName("TimelineStepCircle")
+        self.circle.setAlignment(QtCore.Qt.AlignCenter)
+        self.circle.setFixedSize(self._diameter, self._diameter)
+        self.circle.setFocusPolicy(QtCore.Qt.NoFocus)
+
+        self.label = QtWidgets.QLabel(self._label_text)
+        self.label.setAlignment(QtCore.Qt.AlignCenter)
+        self.label.setWordWrap(False)
+        self.label.setFocusPolicy(QtCore.Qt.NoFocus)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(theme.SPACING["xs"])
+        layout.addWidget(self.circle, alignment=QtCore.Qt.AlignCenter)
+        layout.addWidget(self.label, alignment=QtCore.Qt.AlignCenter)
+
+        self.apply_state(self._state)
+
+    def apply_state(self, state: str) -> None:
+        """Apply styling for the requested state."""
+
+        self._state = state
+        colors = _current_theme_colors()
+        base_color = QtGui.QColor(colors["neutral_0"])
+        text_color = QtGui.QColor(colors["neutral_900"])
+        muted_text = QtGui.QColor(colors["neutral_500"])
+        border_color = QtGui.QColor(colors["neutral_200"])
+        accent_color = QtGui.QColor(colors["accent"])
+        highlight_text = QtGui.QColor(colors["neutral_0"])
+
+        if state == "completed":
+            circle_bg = accent_color
+            circle_border = accent_color
+            icon_color = highlight_text
+            label_color = text_color
+            label_weight = QtGui.QFont.Medium
+        elif state == "current":
+            circle_bg = base_color
+            circle_border = accent_color
+            icon_color = accent_color
+            label_color = accent_color
+            label_weight = QtGui.QFont.Bold
+        else:
+            circle_bg = base_color
+            circle_border = border_color
+            icon_color = muted_text
+            label_color = muted_text
+            label_weight = QtGui.QFont.Medium
+
+        radius = self._diameter // 2
+        self.circle.setStyleSheet(
+            f"""
+            QLabel#TimelineStepCircle {{
+                background-color: {circle_bg.name()};
+                border: {self._border_width}px solid {circle_border.name()};
+                border-radius: {radius}px;
+                color: {icon_color.name()};
+            }}
+            """.strip()
+        )
+        label_font = QtGui.QFont(self.label.font())
+        label_font.setWeight(label_weight)
+        label_font.setPointSize(theme.FONT_SIZES["small"])
+        self.label.setFont(label_font)
+        self.label.setStyleSheet(f"color: {label_color.name()};")
+
+
+class TimelineConnector(QtWidgets.QFrame):
+    """Connector line between timeline steps."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.setFixedHeight(2)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+    def apply_state(self, state: str) -> None:
+        """Apply styling for the connector state."""
+
+        colors = _current_theme_colors()
+        border_color = QtGui.QColor(colors["neutral_200"])
+        accent_color = QtGui.QColor(colors["accent"])
+        line_color = accent_color if state == "completed" else border_color
+        self.setStyleSheet(f"background-color: {line_color.name()};")
+
+
+class PolicyLifecycleTimeline(QtWidgets.QWidget):
+    """Visual timeline for the policy version lifecycle."""
+
+    steps = [
+        ("Draft", "✎"),
+        ("Ratified", "✓"),
+        ("Active", "⚡"),
+        ("Withdrawn", "⛔"),
+        ("Archived", "🗃"),
+    ]
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        self._stage = None
+
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(theme.SPACING["md"], theme.SPACING["sm"], theme.SPACING["md"], theme.SPACING["sm"])
+        layout.setSpacing(theme.SPACING["sm"])
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        self._step_widgets: list[TimelineStepWidget] = []
+        self._connector_widgets: list[TimelineConnector] = []
+
+        for index, (label, icon) in enumerate(self.steps):
+            step = TimelineStepWidget(label, icon, self)
+            self._step_widgets.append(step)
+            layout.addWidget(step)
+            if index < len(self.steps) - 1:
+                connector = TimelineConnector(self)
+                self._connector_widgets.append(connector)
+                layout.addWidget(connector)
+
+        self.setMinimumHeight(theme.SPACING["xl"] * 3 + theme.SPACING["sm"])
+        self.set_stage(None)
+
+    def set_stage(self, stage: str | None) -> None:
+        """Update the timeline to reflect the current lifecycle stage."""
+
+        self._stage = stage
+        self._apply_styles()
+
+    def _apply_styles(self) -> None:
+        stages = [label for label, _ in self.steps]
+        if self._stage in stages:
+            current_index = stages.index(self._stage)
+        else:
+            current_index = None
+
+        for index, step in enumerate(self._step_widgets):
+            if current_index is None:
+                state = "upcoming"
+            elif index < current_index:
+                state = "completed"
+            elif index == current_index:
+                state = "current"
+            else:
+                state = "upcoming"
+            step.apply_state(state)
+
+        for index, connector in enumerate(self._connector_widgets):
+            if current_index is None:
+                state = "upcoming"
+            elif index < current_index:
+                state = "completed"
+            else:
+                state = "upcoming"
+            connector.apply_state(state)
+
+    def changeEvent(self, event: QtCore.QEvent) -> None:
+        """Refresh styles on theme or palette changes."""
+
+        if event.type() in (QtCore.QEvent.PaletteChange, QtCore.QEvent.StyleChange):
+            self._apply_styles()
+        super().changeEvent(event)
 
 
 def apply_pill_delegate(
