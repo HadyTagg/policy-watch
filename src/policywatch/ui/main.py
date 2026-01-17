@@ -21,6 +21,7 @@ from policywatch.integrations import outlook
 from policywatch.services import (
     add_policy_version,
     add_policy_review,
+    count_drafts_awaiting_ratification,
     export_backup,
     get_version_file,
     mark_policy_version_missing,
@@ -34,6 +35,7 @@ from policywatch.services import (
     update_policy_version_notes,
     scan_policy_file_integrity,
     list_categories,
+    list_drafts_awaiting_ratification,
     list_users,
     list_policies,
     list_policy_reviews,
@@ -45,9 +47,13 @@ from policywatch.services import (
     update_policy_category,
     update_policy_version_owner,
     update_policy_title,
+    get_user_theme,
     set_audit_actor,
+    set_user_theme,
 )
+from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
+from policywatch.ui.widgets import KpiCard, apply_pill_delegate, set_button_icon
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -85,6 +91,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._latest_reviewed_at: str | None = None
         self._staff_records: list[dict[str, str]] = []
         self._owner_refreshing = False
+        self._kpi_filter: str | None = None
 
         set_audit_actor(username)
         self._load_user_context()
@@ -105,7 +112,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         create_account_action = QtWidgets.QAction("Create Account", self)
         create_account_action.triggered.connect(self._open_account_creation)
-        create_account_action.setEnabled(self._is_admin())
+        is_admin = self._is_admin()
+        create_account_action.setEnabled(is_admin)
+        if not is_admin:
+            create_account_action.setToolTip("Admin role required to create user accounts.")
         toolbar.addAction(create_account_action)
 
         change_password_action = QtWidgets.QAction("Change Password", self)
@@ -124,7 +134,41 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar.addAction(settings_action)
 
         header = QtWidgets.QLabel(f"Welcome, {username}.")
-        header.setStyleSheet("font-size: 16px; font-weight: 600;")
+        header_font = QtGui.QFont(theme.resolve_font_family(), theme.FONT_SIZES["title"])
+        header_font.setWeight(QtGui.QFont.DemiBold)
+        header.setFont(header_font)
+
+        self.brand_logo = QtWidgets.QLabel()
+        self.brand_logo.setObjectName("BrandLogo")
+        self.brand_logo.setAccessibleName("Martha Trust logo")
+        self.brand_logo.setToolTip("Martha Trust")
+        logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
+        if logo_path.exists():
+            pixmap = QtGui.QPixmap(str(logo_path))
+            if not pixmap.isNull():
+                self.brand_logo.setPixmap(
+                    pixmap.scaled(120, 120, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+                )
+        if self.brand_logo.pixmap() is None:
+            self.brand_logo.setText("Martha Trust")
+            self.brand_logo.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
+
+        kpi_row = QtWidgets.QHBoxLayout()
+        kpi_row.setSpacing(theme.SPACING["md"])
+
+        self.kpi_cards = {
+            "active": KpiCard("active", "Active policies"),
+            "due_soon": KpiCard("due_soon", "Due in 30 days"),
+            "overdue": KpiCard("overdue", "Overdue"),
+            "drafts": KpiCard("drafts", "Drafts awaiting ratification"),
+        }
+        self.kpi_cards["active"].setToolTip("Filter to policies marked active.")
+        self.kpi_cards["due_soon"].setToolTip("Filter to reviews due within 30 days.")
+        self.kpi_cards["overdue"].setToolTip("Filter to reviews past their due date.")
+        self.kpi_cards["drafts"].setToolTip("Filter to draft policies awaiting ratification.")
+        for card in self.kpi_cards.values():
+            card.clicked.connect(self._set_kpi_filter)
+            kpi_row.addWidget(card, 1)
 
         self.search_input = QtWidgets.QLineEdit()
         self.search_input.setPlaceholderText("Search policies...")
@@ -161,26 +205,25 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Status",
                 "Current Version",
                 "Review Due",
-                "Days Remaining",
+                "Review Status",
                 "Ratified",
             ]
         )
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        header_view = self.table.horizontalHeader()
+        header_view.setStretchLastSection(True)
+        header_view.setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        table_font = self.table.font()
-        table_font.setPointSize(9)
-        table_font.setBold(True)
-        self.table.setFont(table_font)
-        self.table.setStyleSheet(
-            "QTableWidget::item { color: black;}"
-            "QTableWidget::item:selected { background-color: blue; color: white;}"
-        )
-
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(44)
+        apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
+        self.table.doubleClicked.connect(self.open_policy_detail_from_index)
+        self.table.activated.connect(self.open_policy_detail_from_index)
 
         self.empty_state = QtWidgets.QLabel(
             "No policies yet. Use the toolbar to add policies, then upload versions from Policy Detail."
@@ -194,8 +237,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table_stack.setCurrentIndex(0)
 
         dashboard = QtWidgets.QWidget()
+        header_row = QtWidgets.QHBoxLayout()
+        header_row.addWidget(self.brand_logo)
+        header_row.addWidget(header)
+        header_row.addStretch(1)
+
         dashboard_layout = QtWidgets.QVBoxLayout(dashboard)
-        dashboard_layout.addWidget(header)
+        dashboard_layout.addLayout(header_row)
+        dashboard_layout.addLayout(kpi_row)
         dashboard_layout.addLayout(filter_row)
         dashboard_layout.addWidget(self.table_stack)
 
@@ -467,7 +516,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh the policy table using the current filter settings."""
 
         policies = list_policies(self.conn)
+        drafts_awaiting = (
+            list_drafts_awaiting_ratification(self.conn)
+            if self._kpi_filter == "drafts"
+            else None
+        )
+        self._update_kpi_cards(policies)
         filtered = []
+        base_policies = drafts_awaiting if drafts_awaiting is not None else policies
         search_text = self.search_input.text().strip().lower()
         category = self.category_filter.currentText()
         traffic = self.traffic_filter.currentText()
@@ -475,9 +531,17 @@ class MainWindow(QtWidgets.QMainWindow):
         ratified_filter = self.ratified_filter.currentText()
         selected_policy_id = self.current_policy_id
 
-        for policy in policies:
-            if search_text and search_text not in policy.title.lower():
-                continue
+        for policy in base_policies:
+            if search_text:
+                search_candidates = [
+                    policy.title,
+                    policy.category,
+                    str(getattr(policy, "code", "") or ""),
+                    str(getattr(policy, "reference", "") or ""),
+                    str(policy.current_version_number or ""),
+                ]
+                if not any(search_text in candidate.lower() for candidate in search_candidates):
+                    continue
             if category != "All Categories" and policy.category != category:
                 continue
             if traffic != "All":
@@ -493,6 +557,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 continue
             if ratified_filter == "Not Ratified" and policy.ratified:
                 continue
+            if self._kpi_filter and not self._policy_matches_kpi(policy, self._kpi_filter):
+                continue
             filtered.append(policy)
 
         self.table.setRowCount(len(filtered))
@@ -500,7 +566,9 @@ class MainWindow(QtWidgets.QMainWindow):
             category_item = QtWidgets.QTableWidgetItem(policy.category)
             title_item = QtWidgets.QTableWidgetItem(policy.title)
             if policy.current_version_id:
-                status_item = QtWidgets.QTableWidgetItem(policy.status or "")
+                status_payload = self._build_status_chip(policy.status or "")
+                status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
+                status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
@@ -508,15 +576,21 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_due_item = QtWidgets.QTableWidgetItem(
                     "" if is_draft else self._format_date_display(policy.review_due_date)
                 )
-                days_remaining_item = QtWidgets.QTableWidgetItem(
-                    "" if is_draft else self._format_days_remaining(policy.review_due_date)
+                review_status_payload = self._build_review_status_chip(policy)
+                days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
+                days_remaining_item.setToolTip(review_status_payload["tooltip"])
+                ratified_item = QtWidgets.QTableWidgetItem(
+                    "Ratified" if policy.ratified else "Awaiting Ratification"
                 )
-                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
             else:
-                status_item = QtWidgets.QTableWidgetItem("")
+                status_payload = self._build_status_chip("No version")
+                status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
+                status_item.setToolTip(status_payload["tooltip"])
                 current_version_item = QtWidgets.QTableWidgetItem("")
                 review_due_item = QtWidgets.QTableWidgetItem("")
-                days_remaining_item = QtWidgets.QTableWidgetItem("")
+                review_status_payload = self._build_review_status_chip(policy)
+                days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
+                days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem("")
             items = [
                 category_item,
@@ -529,10 +603,7 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
             for column, item in enumerate(items):
                 self.table.setItem(row_index, column, item)
-            if policy.current_version_id:
-                self._apply_traffic_row_color(row_index, policy.traffic_status, policy.traffic_reason)
-            else:
-                self._apply_no_current_row_color(row_index)
+            self._apply_table_row_alignment(row_index)
             self.table.item(row_index, 0).setData(QtCore.Qt.UserRole, policy.id)
 
         self.table_stack.setCurrentIndex(1 if filtered else 0)
@@ -553,6 +624,176 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_id = self.table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
         self.current_policy_id = policy_id
         self._load_policy_detail(policy_id)
+
+    def open_policy_detail_from_index(self, index: QtCore.QModelIndex) -> None:
+        """Open the policy detail tab for the selected policy row."""
+
+        if not index.isValid():
+            return
+        row = index.row()
+        id_item = self.table.item(row, 0)
+        if not id_item:
+            return
+        policy_id = id_item.data(QtCore.Qt.UserRole)
+        if not policy_id:
+            return
+        self.current_policy_id = policy_id
+        self._load_policy_detail(policy_id)
+        self.tabs.setCurrentIndex(self.policy_detail_index)
+        self.tabs.setFocus(QtCore.Qt.TabFocusReason)
+
+    def _apply_table_row_alignment(self, row_index: int) -> None:
+        """Apply alignment and hierarchy styling for a table row."""
+
+        title_item = self.table.item(row_index, 1)
+        if title_item:
+            title_font = QtGui.QFont(theme.resolve_font_family(), theme.FONT_SIZES["heading"])
+            title_font.setWeight(QtGui.QFont.DemiBold)
+            title_item.setFont(title_font)
+
+        current_version_item = self.table.item(row_index, 3)
+        if current_version_item:
+            current_font = QtGui.QFont(self.table.font())
+            current_font.setWeight(QtGui.QFont.Medium)
+            current_version_item.setFont(current_font)
+
+        for column in range(self.table.columnCount()):
+            item = self.table.item(row_index, column)
+            if not item:
+                continue
+            if column in {0, 1}:
+                item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignLeft)
+            else:
+                item.setTextAlignment(QtCore.Qt.AlignVCenter | QtCore.Qt.AlignHCenter)
+
+    def _set_kpi_filter(self, key: str) -> None:
+        """Toggle a KPI filter and refresh the policy list."""
+
+        self._kpi_filter = None if self._kpi_filter == key else key
+        self._refresh_policies()
+
+    def _update_kpi_cards(self, policies) -> None:
+        """Update KPI card counts and active state."""
+
+        counts = {
+            "active": 0,
+            "due_soon": 0,
+            "overdue": 0,
+            "drafts": count_drafts_awaiting_ratification(self.conn),
+        }
+        for policy in policies:
+            if self._policy_matches_kpi(policy, "active"):
+                counts["active"] += 1
+            if self._policy_matches_kpi(policy, "due_soon"):
+                counts["due_soon"] += 1
+            if self._policy_matches_kpi(policy, "overdue"):
+                counts["overdue"] += 1
+        for key, card in self.kpi_cards.items():
+            card.set_value(counts.get(key, 0))
+            card.set_active(self._kpi_filter == key)
+
+    def _policy_matches_kpi(self, policy, key: str) -> bool:
+        """Return True when a policy matches the KPI filter."""
+
+        status = (policy.status or "").lower()
+        today = datetime.now().date()
+        review_due = self._parse_date_value(policy.review_due_date)
+
+        if key == "active":
+            return status == "active"
+        if key == "drafts":
+            return status == "draft" and not policy.ratified
+        if key in {"due_soon", "overdue"} and review_due:
+            delta_days = (review_due - today).days
+            if key == "due_soon":
+                return 0 <= delta_days <= 30
+            return delta_days < 0
+        return False
+
+    def _build_status_chip(self, status: str) -> dict[str, dict[str, str] | str]:
+        """Return chip payloads for policy status."""
+
+        normalized = (status or "").strip() or "Unknown"
+        status_map = {
+            "draft": ("Draft", "✎", "neutral", "Draft policy awaiting activation."),
+            "active": ("Active", "✓", "info", "Active policy currently in force."),
+            "withdrawn": ("Withdrawn", "⏸", "warning", "Withdrawn policy kept for reference."),
+            "missing": ("Missing", "⚠", "danger", "Policy file is missing."),
+            "archived": ("Archived", "🗄", "neutral", "Archived policy for historical use."),
+            "no version": ("No version", "○", "neutral", "Policy has no current version."),
+        }
+        key = normalized.lower()
+        label_text, icon, kind, tooltip = status_map.get(
+            key,
+            (normalized, "•", "neutral", "Status updated from policy metadata."),
+        )
+        label = f"{icon} {label_text}".strip()
+        return {
+            "text": label_text,
+            "tooltip": tooltip,
+            "chip": {"label": label, "kind": kind},
+        }
+
+    def _build_review_status_chip(self, policy) -> dict[str, dict[str, str] | str]:
+        """Return chip payloads for review traffic status."""
+
+        if not policy.current_version_id:
+            label = "○ No version"
+            return {
+                "text": "No version",
+                "tooltip": "Policy has no current version on record.",
+                "chip": {"label": label, "kind": "neutral"},
+            }
+        if (policy.status or "").lower() == "draft":
+            label = "✎ Draft"
+            return {
+                "text": "Draft",
+                "tooltip": "Drafts do not have review schedules yet.",
+                "chip": {"label": label, "kind": "neutral"},
+            }
+        if not policy.review_due_date:
+            label = "• No schedule"
+            return {
+                "text": "No schedule",
+                "tooltip": "Set a review due date to track compliance timing.",
+                "chip": {"label": label, "kind": "neutral"},
+            }
+
+        days_label = self._format_days_badge(policy.review_due_date)
+        traffic_map = {
+            "Green": ("OK", "✓", "info"),
+            "Amber": ("Due Soon", "⏳", "warning"),
+            "Red": ("Overdue", "⚠", "danger"),
+        }
+        status_text, icon, kind = traffic_map.get(
+            policy.traffic_status,
+            ("Review scheduled", "•", "neutral"),
+        )
+        label = f"{icon} {status_text}"
+        if days_label:
+            label = f"{label} · {days_label}"
+        tooltip = policy.traffic_reason or self._format_days_remaining(policy.review_due_date)
+        return {
+            "text": status_text,
+            "tooltip": tooltip or "Review schedule is up to date.",
+            "chip": {"label": label, "kind": kind},
+        }
+
+    def _format_days_badge(self, review_due_date: str | None) -> str:
+        """Return a short days remaining label for the review status chip."""
+
+        if not review_due_date:
+            return ""
+        due_date = self._parse_date_value(review_due_date)
+        if not due_date:
+            return ""
+        today = datetime.now().date()
+        delta_days = (due_date - today).days
+        if delta_days == 0:
+            return "Due today"
+        if delta_days < 0:
+            return f"{abs(delta_days)}d overdue"
+        return f"{delta_days}d left"
 
     def _open_settings(self) -> None:
         """Open the settings dialog."""
@@ -739,7 +980,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
-            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
+            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             stored_filename = ""
@@ -827,6 +1068,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         save_button = QtWidgets.QPushButton("Save")
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(save_button, "save")
+        set_button_icon(cancel_button, "cancel")
         save_button.clicked.connect(dialog.accept)
         cancel_button.clicked.connect(dialog.reject)
         button_row.addStretch(1)
@@ -1242,36 +1485,6 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEnabled)
 
-    def _apply_traffic_row_color(self, row_index: int, status: str, reason: str) -> None:
-        """Apply traffic-light color coding to a policy row."""
-
-        color_map = {
-            "Green": QtGui.QColor("#27f149"),
-            "Amber": QtGui.QColor("#ffff1a"),
-            "Red": QtGui.QColor("#e11d48"),
-        }
-        color = color_map.get(status)
-        text_color = QtGui.QColor("#1f1f1f")
-        for column in range(self.table.columnCount()):
-            item = self.table.item(row_index, column)
-            if not item:
-                continue
-            if color:
-                item.setBackground(color)
-                item.setForeground(text_color)
-                item.setToolTip(reason)
-
-    def _apply_no_current_row_color(self, row_index: int) -> None:
-        """Apply a distinct color for policies without a current version."""
-
-        text_color = QtGui.QColor("#1f1f1f")
-        for column in range(self.table.columnCount()):
-            item = self.table.item(row_index, column)
-            if not item:
-                continue
-            item.setBackground(QtGui.QColor("#93c5fd"))
-            item.setForeground(text_color)
-
     def _update_policy_field(
         self,
         field: str,
@@ -1523,9 +1736,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.detail_review_due.setDisplayFormat(" ")
             self.detail_review_frequency.setCurrentIndex(-1)
             self.detail_review_frequency.setEnabled(False)
+            reason = "Review metadata is disabled for draft versions."
+            self.detail_review_due.setToolTip(reason)
+            self.detail_review_frequency.setToolTip(reason)
             return
         self.detail_review_due.setEnabled(allow_edit)
         self.detail_review_frequency.setEnabled(allow_edit)
+        if not allow_edit:
+            reason = "Review metadata is locked for this version."
+            self.detail_review_due.setToolTip(reason)
+            self.detail_review_frequency.setToolTip(reason)
+        else:
+            self.detail_review_due.setToolTip("")
+            self.detail_review_frequency.setToolTip("")
         self.detail_review_due.setSpecialValueText("")
         if self._get_date_field_value(self.detail_review_due):
             self.detail_review_due.setDisplayFormat("dd/MM/yyyy")
@@ -1623,6 +1846,8 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row = QtWidgets.QHBoxLayout()
         save_button = QtWidgets.QPushButton("Save")
         cancel_button = QtWidgets.QPushButton("Cancel")
+        set_button_icon(save_button, "save")
+        set_button_icon(cancel_button, "cancel")
         save_button.clicked.connect(dialog.accept)
         cancel_button.clicked.connect(dialog.reject)
         button_row.addStretch(1)
@@ -2134,10 +2359,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
-        self.version_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
-            "QTableWidget::item:selected { background-color: blue; color: white;}"
-        )
+        apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
@@ -2212,32 +2434,36 @@ class MainWindow(QtWidgets.QMainWindow):
         review_font.setPointSize(9)
         review_font.setBold(True)
         self.review_table.setFont(review_font)
-        self.review_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
-        )
         reviews_layout.addWidget(self.review_table)
         review_button_row = QtWidgets.QHBoxLayout()
         review_button_row.addStretch(1)
         self.review_button = QtWidgets.QPushButton("Record Review")
+        set_button_icon(self.review_button, "edit")
         self.review_button.clicked.connect(self._record_policy_review)
         review_button_row.addWidget(self.review_button)
         reviews_layout.addLayout(review_button_row)
 
         button_row = QtWidgets.QHBoxLayout()
         self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
+        set_button_icon(self.ratify_button, "approve")
         self.ratify_button.clicked.connect(self._mark_ratified)
         self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
+        set_button_icon(self.unratify_button, "cancel")
         self.unratify_button.clicked.connect(self._mark_unratified)
         self.set_current_button = QtWidgets.QPushButton("Set Current")
+        set_button_icon(self.set_current_button, "select")
         self.set_current_button.clicked.connect(self._set_current)
         self.set_not_current_button = QtWidgets.QPushButton("Set Not Current")
+        set_button_icon(self.set_not_current_button, "deselect")
         self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
+        set_button_icon(self.open_location_button, "open")
         self.open_location_button.clicked.connect(self._open_file_location)
         self.print_document_button = QtWidgets.QPushButton("Print Policy Document")
+        set_button_icon(self.print_document_button, "print")
         self.print_document_button.clicked.connect(self._print_policy_document)
         self.add_version_button = QtWidgets.QPushButton("Add Version")
+        set_button_icon(self.add_version_button, "add")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
         button_row.addStretch(2)
@@ -2266,9 +2492,11 @@ class MainWindow(QtWidgets.QMainWindow):
         policy_layout = QtWidgets.QVBoxLayout(policy_group)
         select_controls = QtWidgets.QHBoxLayout()
         self.policy_send_select_all = QtWidgets.QPushButton("Select All Shown")
+        set_button_icon(self.policy_send_select_all, "select")
         self.policy_send_select_all.clicked.connect(self._toggle_all_send_policies)
         select_controls.addWidget(self.policy_send_select_all)
         self.policy_send_deselect_all = QtWidgets.QPushButton("Deselect All Shown")
+        set_button_icon(self.policy_send_deselect_all, "deselect")
         self.policy_send_deselect_all.clicked.connect(self._deselect_all_send_policies)
         select_controls.addWidget(self.policy_send_deselect_all)
         select_controls.addStretch()
@@ -2291,10 +2519,6 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setPointSize(9)
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
-        self.policy_send_table.setStyleSheet(
-            "QTableWidget::item { color: white; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
-        )
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2304,9 +2528,11 @@ class MainWindow(QtWidgets.QMainWindow):
         recipient_layout = QtWidgets.QVBoxLayout(recipient_group)
         recipient_controls = QtWidgets.QHBoxLayout()
         self.staff_select_all = QtWidgets.QPushButton("Select All Shown")
+        set_button_icon(self.staff_select_all, "select")
         self.staff_select_all.clicked.connect(self._select_all_staff)
         recipient_controls.addWidget(self.staff_select_all)
         self.staff_deselect_all = QtWidgets.QPushButton("Deselect All shown")
+        set_button_icon(self.staff_deselect_all, "deselect")
         self.staff_deselect_all.clicked.connect(self._deselect_all_staff)
         recipient_controls.addWidget(self.staff_deselect_all)
         recipient_controls.addStretch()
@@ -2333,13 +2559,10 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
 
-        self.staff_table.setStyleSheet(
-            "QTableWidget::item { color: white; font-weight: bold; }"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
-        )
 
         recipient_layout.addWidget(self.staff_table)
         load_staff_button = QtWidgets.QPushButton("Load Staff")
+        set_button_icon(load_staff_button, "refresh")
         load_staff_button.clicked.connect(self._load_staff)
         recipient_layout.addWidget(load_staff_button)
         self.manual_emails = QtWidgets.QLineEdit()
@@ -2353,6 +2576,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_layout.addRow("Total attachment size", self.total_attachment_label)
         send_layout.addRow("Split plan", self.split_plan_label)
         send_button = QtWidgets.QPushButton("Send")
+        set_button_icon(send_button, "send")
         send_button.clicked.connect(self._send_email)
         send_layout.addRow("", send_button)
 
@@ -2428,6 +2652,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not visible_rows:
             self.policy_send_select_all.setEnabled(False)
             self.policy_send_deselect_all.setEnabled(False)
+            self.policy_send_select_all.setToolTip("No policies available to select.")
+            self.policy_send_deselect_all.setToolTip("No policies selected to deselect.")
             return
         self.policy_send_select_all.setEnabled(True)
         any_checked = False
@@ -2440,6 +2666,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 any_checked = True
         self.policy_send_select_all.setEnabled(not all_checked)
         self.policy_send_deselect_all.setEnabled(any_checked)
+        self.policy_send_select_all.setToolTip(
+            "All visible policies are already selected." if all_checked else ""
+        )
+        self.policy_send_deselect_all.setToolTip(
+            "Select at least one policy to enable deselect." if not any_checked else ""
+        )
 
     def _toggle_all_send_policies(self, _: bool) -> None:
         """Select all visible policies in the send table."""
@@ -2492,6 +2724,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if not visible_rows:
             self.staff_select_all.setEnabled(False)
             self.staff_deselect_all.setEnabled(False)
+            self.staff_select_all.setToolTip("No staff records available to select.")
+            self.staff_deselect_all.setToolTip("No staff selected to deselect.")
             return
         self.staff_select_all.setEnabled(True)
         any_checked = False
@@ -2504,6 +2738,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 any_checked = True
         self.staff_select_all.setEnabled(not all_checked)
         self.staff_deselect_all.setEnabled(any_checked)
+        self.staff_select_all.setToolTip(
+            "All visible staff are already selected." if all_checked else ""
+        )
+        self.staff_deselect_all.setToolTip(
+            "Select at least one staff member to enable deselect." if not any_checked else ""
+        )
 
     def _select_all_staff(self, _: bool) -> None:
         """Select all visible staff rows."""
@@ -3041,19 +3281,19 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(False)
         self.audit_table.setFont(audit_font)
 
-        self.audit_table.setStyleSheet(
-            "QTableWidget::item { color: white;}"
-            "QTableWidget::item:selected { background-color: blue; color: white; }"
-        )
 
         button_row = QtWidgets.QHBoxLayout()
         export_button = QtWidgets.QPushButton("Export All Logs")
+        set_button_icon(export_button, "export")
         export_button.clicked.connect(self._export_audit_csv)
         export_visible_button = QtWidgets.QPushButton("Export Logs Shown")
+        set_button_icon(export_visible_button, "export")
         export_visible_button.clicked.connect(self._export_audit_csv_shown)
         verify_button = QtWidgets.QPushButton("Verify Log Integrity")
+        set_button_icon(verify_button, "approve")
         verify_button.clicked.connect(self._verify_audit)
         refresh_button = QtWidgets.QPushButton("Refresh Logs")
+        set_button_icon(refresh_button, "refresh")
         refresh_button.clicked.connect(self._load_audit_log)
         button_row.addWidget(export_button)
         button_row.addWidget(export_visible_button)
@@ -3229,6 +3469,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.policy_root_input = QtWidgets.QLineEdit(form_container)
         browse_root = QtWidgets.QPushButton("Browse", form_container)
+        set_button_icon(browse_root, "folder")
         browse_root.clicked.connect(self._browse_policy_root)
         policy_root_row = QtWidgets.QHBoxLayout()
         policy_root_row.addWidget(self.policy_root_input)
@@ -3242,19 +3483,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.overdue_days_input.setRange(0, 365)
         self.max_attachment_input = QtWidgets.QSpinBox(form_container)
         self.max_attachment_input.setRange(0, 500)
+        self.appearance_input = QtWidgets.QComboBox(form_container)
+        self.appearance_input.addItem("Light", "light")
+        self.appearance_input.addItem("Dark", "dark")
+        self.appearance_input.currentIndexChanged.connect(self._on_theme_changed)
 
         self.settings_form.addRow("Policy root folder", policy_root_container)
         self.settings_form.addRow("Amber months", self.amber_months_input)
         self.settings_form.addRow("Overdue grace days", self.overdue_days_input)
         self.settings_form.addRow("Max attachment MB", self.max_attachment_input)
+        self.settings_form.addRow("Appearance", self.appearance_input)
 
         save_button = QtWidgets.QPushButton("Save Settings", wrapper)
+        set_button_icon(save_button, "save")
         save_button.clicked.connect(self._save_settings)
 
         backup_row = QtWidgets.QHBoxLayout()
         open_data = QtWidgets.QPushButton("Open data folder", wrapper)
+        set_button_icon(open_data, "open")
         open_data.clicked.connect(self._open_data_folder)
         backup = QtWidgets.QPushButton("Backup/Export", wrapper)
+        set_button_icon(backup, "backup")
         backup.clicked.connect(self._backup_export)
         backup_row.addWidget(open_data)
         backup_row.addWidget(backup)
@@ -3308,6 +3557,17 @@ class MainWindow(QtWidgets.QMainWindow):
             )
         QtWidgets.QMessageBox.information(self, "Saved", "Settings updated.")
 
+    def _on_theme_changed(self) -> None:
+        """Persist and apply the selected appearance theme."""
+
+        if self.user_id is None:
+            return
+        theme_value = self.appearance_input.currentData()
+        if not theme_value:
+            return
+        set_user_theme(self.conn, self.user_id, theme_value)
+        theme.apply_theme(theme_value)
+
     def _load_settings(self) -> None:
         """Load saved settings into the UI fields."""
 
@@ -3315,6 +3575,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.amber_months_input.setValue(int(config.get_setting(self.conn, "amber_months", 2) or 2))
         self.overdue_days_input.setValue(int(config.get_setting(self.conn, "overdue_grace_days", 0) or 0))
         self.max_attachment_input.setValue(int(config.get_setting(self.conn, "max_attachment_mb", 0) or 0))
+        if self.user_id is not None:
+            theme_value = get_user_theme(self.conn, self.user_id)
+            index = self.appearance_input.findData(theme_value)
+            self.appearance_input.blockSignals(True)
+            if index >= 0:
+                self.appearance_input.setCurrentIndex(index)
+            self.appearance_input.blockSignals(False)
 
     def _open_data_folder(self) -> None:
         """Open the application's data directory."""

@@ -41,6 +41,12 @@ def apply_schema(conn: sqlite3.Connection) -> None:
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id TEXT PRIMARY KEY,
+                theme TEXT NOT NULL CHECK(theme IN ('light','dark')) DEFAULT 'light',
+                updated_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
