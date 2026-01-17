@@ -138,20 +138,20 @@ class MainWindow(QtWidgets.QMainWindow):
         header_font.setWeight(QtGui.QFont.DemiBold)
         header.setFont(header_font)
 
-        logo_label = QtWidgets.QLabel()
-        logo_label.setObjectName("BrandLogo")
-        logo_label.setAccessibleName("Martha Trust logo")
-        logo_label.setToolTip("Martha Trust")
+        self.brand_logo = QtWidgets.QLabel()
+        self.brand_logo.setObjectName("BrandLogo")
+        self.brand_logo.setAccessibleName("Martha Trust logo")
+        self.brand_logo.setToolTip("Martha Trust")
         logo_path = Path(__file__).resolve().parent / "assets" / "martha-trust-logo.png"
         if logo_path.exists():
             pixmap = QtGui.QPixmap(str(logo_path))
             if not pixmap.isNull():
-                logo_label.setPixmap(
+                self.brand_logo.setPixmap(
                     pixmap.scaled(48, 48, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
                 )
-        if logo_label.pixmap() is None:
-            logo_label.setText("Martha Trust")
-            logo_label.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
+        if self.brand_logo.pixmap() is None:
+            self.brand_logo.setText("Martha Trust")
+            self.brand_logo.setStyleSheet(f"color: {theme.COLORS['neutral_700']}; font-weight: 600;")
 
         kpi_row = QtWidgets.QHBoxLayout()
         kpi_row.setSpacing(theme.SPACING["md"])
@@ -238,7 +238,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         dashboard = QtWidgets.QWidget()
         header_row = QtWidgets.QHBoxLayout()
-        header_row.addWidget(logo_label)
+        header_row.addWidget(self.brand_logo)
         header_row.addWidget(header)
         header_row.addStretch(1)
 
@@ -268,7 +268,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_policies()
         self._load_settings()
         self._load_audit_log()
+        self._apply_theme_overrides()
         self._run_startup_policy_checks()
+
+    def _apply_theme_overrides(self) -> None:
+        """Apply theme-specific UI tweaks."""
+
+        if self.user_id is None:
+            theme_value = "light"
+        else:
+            theme_value = get_user_theme(self.conn, self.user_id)
+        self.brand_logo.setVisible(theme_value != "dark")
 
     def _run_startup_policy_checks(self) -> None:
         """Repair paths and flag missing or altered policy files on launch."""
@@ -3567,6 +3577,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         set_user_theme(self.conn, self.user_id, theme_value)
         theme.apply_theme(theme_value)
+        self.brand_logo.setVisible(theme_value != "dark")
 
     def _load_settings(self) -> None:
         """Load saved settings into the UI fields."""

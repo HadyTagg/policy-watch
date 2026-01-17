@@ -121,8 +121,16 @@ def build_stylesheet(font_family: str) -> str:
     QTableView::item {{
         padding: 8px;
     }}
+    QTableView::item:focus {{
+        outline: none;
+        border: none;
+    }}
     QTableView::item:hover {{
         background-color: {COLORS['neutral_50']};
+    }}
+    QTableWidget::item:focus {{
+        outline: none;
+        border: none;
     }}
     QTabWidget::pane {{
         border: 1px solid {COLORS['neutral_100']};
