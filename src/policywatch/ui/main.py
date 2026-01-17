@@ -3526,7 +3526,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.amber_months_input,
                 self.overdue_days_input,
                 self.max_attachment_input,
-                save_button,
             ):
                 widget.setEnabled(False)
                 widget.setToolTip(restriction_message)
@@ -3558,10 +3557,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """Persist settings from the UI to the config table."""
 
         if not self._is_admin():
-            QtWidgets.QMessageBox.warning(
+            QtWidgets.QMessageBox.information(
                 self,
-                "Restricted",
-                "Only admins can update settings.",
+                "Theme Saved",
+                "Your theme changes are saved automatically. Other settings require admin access.",
             )
             return
         current_policy_root = config.get_setting(self.conn, "policy_root", "")
