@@ -28,26 +28,32 @@ PILL_STYLE_MAP = {
     "no": theme.STATUS_COLORS["warning"],
 }
 
+def _standard_pixmap(name: str, fallback: QtWidgets.QStyle.StandardPixmap) -> QtWidgets.QStyle.StandardPixmap:
+    """Return a standard pixmap if available, otherwise a fallback."""
+
+    return getattr(QtWidgets.QStyle, name, fallback)
+
+
 STANDARD_ICON_MAP = {
-    "add": QtWidgets.QStyle.SP_FileDialogNewFolder,
-    "edit": QtWidgets.QStyle.SP_FileDialogDetailedView,
-    "delete": QtWidgets.QStyle.SP_TrashIcon,
-    "archive": QtWidgets.QStyle.SP_DialogDiscardButton,
-    "save": QtWidgets.QStyle.SP_DialogSaveButton,
-    "export": QtWidgets.QStyle.SP_ArrowDown,
-    "backup": QtWidgets.QStyle.SP_DialogSaveButton,
-    "send": QtWidgets.QStyle.SP_ArrowRight,
-    "refresh": QtWidgets.QStyle.SP_BrowserReload,
-    "search": QtWidgets.QStyle.SP_FileDialogContentsView,
-    "open": QtWidgets.QStyle.SP_DialogOpenButton,
-    "view": QtWidgets.QStyle.SP_FileDialogInfoView,
-    "approve": QtWidgets.QStyle.SP_DialogApplyButton,
-    "cancel": QtWidgets.QStyle.SP_DialogCancelButton,
-    "print": QtWidgets.QStyle.SP_PrinterIcon,
-    "login": QtWidgets.QStyle.SP_DialogOkButton,
-    "select": QtWidgets.QStyle.SP_DialogYesButton,
-    "deselect": QtWidgets.QStyle.SP_DialogNoButton,
-    "folder": QtWidgets.QStyle.SP_DirOpenIcon,
+    "add": _standard_pixmap("SP_FileDialogNewFolder", QtWidgets.QStyle.SP_FileDialogNewFolder),
+    "edit": _standard_pixmap("SP_FileDialogDetailedView", QtWidgets.QStyle.SP_FileDialogDetailedView),
+    "delete": _standard_pixmap("SP_TrashIcon", QtWidgets.QStyle.SP_DialogDiscardButton),
+    "archive": _standard_pixmap("SP_DialogDiscardButton", QtWidgets.QStyle.SP_DialogDiscardButton),
+    "save": _standard_pixmap("SP_DialogSaveButton", QtWidgets.QStyle.SP_DialogSaveButton),
+    "export": _standard_pixmap("SP_ArrowDown", QtWidgets.QStyle.SP_DialogSaveButton),
+    "backup": _standard_pixmap("SP_DialogSaveButton", QtWidgets.QStyle.SP_DialogSaveButton),
+    "send": _standard_pixmap("SP_ArrowRight", QtWidgets.QStyle.SP_CommandLink),
+    "refresh": _standard_pixmap("SP_BrowserReload", QtWidgets.QStyle.SP_BrowserReload),
+    "search": _standard_pixmap("SP_FileDialogContentsView", QtWidgets.QStyle.SP_FileDialogContentsView),
+    "open": _standard_pixmap("SP_DialogOpenButton", QtWidgets.QStyle.SP_DialogOpenButton),
+    "view": _standard_pixmap("SP_FileDialogInfoView", QtWidgets.QStyle.SP_FileDialogInfoView),
+    "approve": _standard_pixmap("SP_DialogApplyButton", QtWidgets.QStyle.SP_DialogApplyButton),
+    "cancel": _standard_pixmap("SP_DialogCancelButton", QtWidgets.QStyle.SP_DialogCancelButton),
+    "print": _standard_pixmap("SP_PrinterIcon", QtWidgets.QStyle.SP_FileIcon),
+    "login": _standard_pixmap("SP_DialogOkButton", QtWidgets.QStyle.SP_DialogOkButton),
+    "select": _standard_pixmap("SP_DialogYesButton", QtWidgets.QStyle.SP_DialogYesButton),
+    "deselect": _standard_pixmap("SP_DialogNoButton", QtWidgets.QStyle.SP_DialogNoButton),
+    "folder": _standard_pixmap("SP_DirOpenIcon", QtWidgets.QStyle.SP_DirOpenIcon),
 }
 
 
