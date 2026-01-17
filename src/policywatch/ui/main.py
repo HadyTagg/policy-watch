@@ -530,8 +530,16 @@ class MainWindow(QtWidgets.QMainWindow):
         selected_policy_id = self.current_policy_id
 
         for policy in base_policies:
-            if search_text and search_text not in policy.title.lower():
-                continue
+            if search_text:
+                search_candidates = [
+                    policy.title,
+                    policy.category,
+                    str(getattr(policy, "code", "") or ""),
+                    str(getattr(policy, "reference", "") or ""),
+                    str(policy.current_version_number or ""),
+                ]
+                if not any(search_text in candidate.lower() for candidate in search_candidates):
+                    continue
             if category != "All Categories" and policy.category != category:
                 continue
             if traffic != "All":
