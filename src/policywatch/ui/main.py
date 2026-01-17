@@ -1015,6 +1015,9 @@ class MainWindow(QtWidgets.QMainWindow):
             selected = self._select_version_row_by_id(selected_version_id)
         if not selected and policy["current_version_id"]:
             selected = self._select_version_row_by_id(policy["current_version_id"])
+        if not selected and versions:
+            self.version_table.setCurrentCell(0, 0)
+            selected = True
         if selected:
             version_id = self.version_table.item(self.version_table.currentRow(), 0).data(QtCore.Qt.UserRole)
             self._load_policy_reviews(version_id)
