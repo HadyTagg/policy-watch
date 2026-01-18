@@ -1873,6 +1873,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """Return the review status label for a version row."""
 
         normalized = (status or "").strip().lower()
+        if normalized in {"withdrawn", "archived", "missing"}:
+            return normalized.title()
         if normalized == "draft":
             return "Draft"
         if not review_due_date:
@@ -1880,7 +1882,7 @@ class MainWindow(QtWidgets.QMainWindow):
         review_due = self._parse_date_value(review_due_date)
         if not review_due:
             return ""
-        amber_months = int(config.get_setting(self.conn, "amber_months", 2) or 2)
+        amber_months = self._resolve_amber_months()
         traffic = traffic_light_status(datetime.now().date(), review_due, amber_months)
         status_map = {
             "Green": "In Date",
@@ -1888,6 +1890,15 @@ class MainWindow(QtWidgets.QMainWindow):
             "Red": "Past Review Date",
         }
         return status_map.get(traffic.status, "Review scheduled")
+
+    def _resolve_amber_months(self) -> int:
+        """Return a safe integer value for amber months."""
+
+        raw_value = config.get_setting(self.conn, "amber_months", 2)
+        try:
+            return int(raw_value)
+        except (TypeError, ValueError):
+            return 2
 
     def _set_date_field(self, widget: QtWidgets.QDateEdit, value: str | None) -> None:
         """Configure a date widget with a stored date or blank state."""
