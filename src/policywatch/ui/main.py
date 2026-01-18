@@ -40,10 +40,9 @@ from policywatch.services import (
     list_policies,
     list_policy_reviews,
     list_versions,
-    mark_version_ratified,
-    unmark_version_ratified,
-    set_current_version,
-    unset_current_version,
+    set_version_current,
+    set_version_ratified,
+    set_version_status,
     update_policy_category,
     update_policy_version_owner,
     update_policy_title,
@@ -189,7 +188,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.traffic_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.status_filter = QtWidgets.QComboBox()
-        self.status_filter.addItems(["All Statuses", "Draft", "Active", "Withdrawn", "Missing", "Archived"])
+        self.status_filter.addItems(
+            ["All Statuses", "Draft", "Ratified", "Active", "Withdrawn", "Missing", "Archived"]
+        )
         self.status_filter.currentIndexChanged.connect(self._refresh_policies)
 
         self.ratified_filter = QtWidgets.QComboBox()
@@ -730,6 +731,7 @@ class MainWindow(QtWidgets.QMainWindow):
         normalized = (status or "").strip() or "Unknown"
         status_map = {
             "draft": ("Draft", "✎", "neutral", "Draft policy awaiting activation."),
+            "ratified": ("Ratified", "✔", "info", "Ratified policy awaiting activation."),
             "active": ("Active", "✓", "info", "Active policy currently in force."),
             "withdrawn": ("Withdrawn", "⏸", "warning", "Withdrawn policy kept for reference."),
             "missing": ("Missing", "⚠", "danger", "Policy file is missing."),
@@ -1275,7 +1277,7 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             add_policy_version(self.conn, self.current_policy_id, Path(file_path), None, metadata)
         except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "No Change", str(exc))
+            QtWidgets.QMessageBox.warning(self, "Unable to Add Version", str(exc))
             return
         self._load_policy_detail(self.current_policy_id)
         self._refresh_policies(clear_selection=False)
@@ -1304,7 +1306,11 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        mark_version_ratified(self.conn, version_id, self.user_id)
+        try:
+            set_version_ratified(self.conn, version_id, True, user_id=self.user_id)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
@@ -1334,7 +1340,11 @@ class MainWindow(QtWidgets.QMainWindow):
         ):
             return
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        unmark_version_ratified(self.conn, version_id)
+        try:
+            set_version_ratified(self.conn, version_id, False)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
         if self.current_policy_id:
             self._load_policy_detail(self.current_policy_id)
             self._select_version_row_by_id(version_id)
@@ -1376,7 +1386,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if not version_row["ratified"]:
             QtWidgets.QMessageBox.warning(self, "Not Ratified", "Version must be ratified first.")
             return
-        set_current_version(self.conn, self.current_policy_id, version_id)
+        try:
+            set_version_current(self.conn, self.current_policy_id, version_id, True)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
         self._load_policy_detail(self.current_policy_id)
         self._refresh_policies(clear_selection=False)
         self._load_audit_log()
@@ -1409,7 +1423,13 @@ class MainWindow(QtWidgets.QMainWindow):
             != QtWidgets.QMessageBox.Yes
         ):
             return
-        unset_current_version(self.conn, self.current_policy_id)
+        if selected_version_id is None:
+            return
+        try:
+            set_version_current(self.conn, self.current_policy_id, selected_version_id, False)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
         self._load_policy_detail(self.current_policy_id)
         if selected_version_id is not None:
             self._select_version_row_by_id(selected_version_id)
@@ -1936,7 +1956,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         form = QtWidgets.QFormLayout()
         status_combo = QtWidgets.QComboBox()
-        status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        status_combo.addItems(["Draft"])
+        status_combo.setEnabled(False)
         owner_combo = QtWidgets.QComboBox()
         owner_combo.setEditable(False)
         owner_combo.addItem("Unassigned", None)
@@ -2048,25 +2069,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if version_row:
                 current_status = version_row["status"]
                 current_version_id = version_row["id"]
-        if (current_status or "").lower() == "active" and (status or "").lower() == "draft":
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Change Not Allowed",
-                "Active policies cannot be changed back to Draft.",
-            )
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
+        if current_version_id is None:
             return
-        if (current_status or "").lower() != "draft" and (status or "").lower() == "draft":
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Change Not Allowed",
-                "Only new versions can be saved as Draft.",
-            )
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
-            return
-        if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
+        if (status or "").lower() == "active":
             if self.user_id is None:
                 QtWidgets.QMessageBox.warning(
                     self,
@@ -2099,54 +2104,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 if self.current_policy_id:
                     self._load_policy_detail(self.current_policy_id)
                 return
-            if self.current_policy_id and current_version_id:
-                ratified_row = self.conn.execute(
-                    "SELECT ratified FROM policy_versions WHERE id = ?",
-                    (current_version_id,),
-                ).fetchone()
-                if not ratified_row or not ratified_row["ratified"]:
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Not Ratified",
-                        "Version must be ratified before it can be set to Active.",
-                    )
-                    if self.current_policy_id:
-                        self._load_policy_detail(self.current_policy_id)
-                    return
-        if (status or "").lower() == "active" and self.current_policy_id and current_version_id:
-            active_row = self.conn.execute(
-                """
-                SELECT id, version_number
-                FROM policy_versions
-                WHERE policy_id = ?
-                  AND LOWER(status) = 'active'
-                  AND id != ?
-                LIMIT 1
-                """,
-                (self.current_policy_id, current_version_id),
-            ).fetchone()
-            if active_row:
-                version_number = active_row["version_number"]
-                label = f"v{version_number}" if version_number is not None else "another version"
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Change Not Allowed",
-                    f"Only one active version is allowed. {label} is already active.",
-                )
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
-        confirm_change = not (
-            (current_status or "").lower() == "draft" and (status or "").lower() == "active"
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Change",
+            f"Change Status from {current_status} to {status}?",
         )
-        self._update_policy_field(
-            "status",
-            status,
-            confirm=confirm_change,
-            version_id=current_version_id,
-        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+            return
+        try:
+            set_version_status(self.conn, current_version_id, status)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+            return
         self._apply_status_constraints(status)
-        if (current_status or "").lower() == "draft" and (status or "").lower() == "active":
+        if (status or "").lower() == "active":
             if current_version_id:
                 updated_status = self.conn.execute(
                     "SELECT status FROM policy_versions WHERE id = ?",
@@ -2161,13 +2136,13 @@ class MainWindow(QtWidgets.QMainWindow):
                         reviewed_at,
                         None,
                     )
-                    if self.current_policy_id:
-                        self._load_policy_detail(self.current_policy_id)
-                        if self._select_version_row_by_id(current_version_id):
-                            self._on_version_selected()
-                        self._load_policy_reviews(current_version_id)
-                        self._refresh_policies(clear_selection=False)
-                        self._load_audit_log()
+        if self.current_policy_id:
+            self._load_policy_detail(self.current_policy_id)
+            if self._select_version_row_by_id(current_version_id):
+                self._on_version_selected()
+            self._load_policy_reviews(current_version_id)
+            self._refresh_policies(clear_selection=False)
+            self._load_audit_log()
         self.detail_review_frequency.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self._apply_review_metadata_state(status, allow_edit=True)
@@ -2535,7 +2510,7 @@ class MainWindow(QtWidgets.QMainWindow):
             popup_delay_ms=popup_delay_ms,
         )
         status_delegate = EnumComboPillDelegate(
-            ["Draft", "Active", "Withdrawn", "Archived"],
+            ["Draft", "Ratified", "Active", "Withdrawn", "Archived"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
@@ -2580,7 +2555,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_owner.setEditable(False)
         self.detail_owner.currentTextChanged.connect(self._on_owner_changed)
         self.detail_status = QtWidgets.QComboBox()
-        self.detail_status.addItems(["Draft", "Active", "Withdrawn", "Missing", "Archived"])
+        self.detail_status.addItems(["Draft", "Ratified", "Active", "Withdrawn", "Missing", "Archived"])
         missing_index = self.detail_status.findText("Missing")
         if missing_index >= 0:
             missing_item = self.detail_status.model().item(missing_index)
