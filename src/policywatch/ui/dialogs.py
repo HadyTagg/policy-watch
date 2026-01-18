@@ -31,7 +31,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.on_updated = on_updated
         self.setWindowTitle("Manage Categories")
         self.setModal(True)
-
+        self.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
         self.category_input = QtWidgets.QLineEdit()
         self.category_input.setPlaceholderText("New category name")
 
