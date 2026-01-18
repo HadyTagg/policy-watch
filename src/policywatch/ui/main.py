@@ -53,7 +53,13 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import KpiCard, apply_pill_delegate, apply_table_focusless, set_button_icon
+from policywatch.ui.widgets import (
+    EnumComboPillDelegate,
+    KpiCard,
+    apply_pill_delegate,
+    apply_table_focusless,
+    set_button_icon,
+)
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -972,6 +978,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
+        editable_columns = {4, 5, 6}
         headers = [
             "Created",
             "Version",
@@ -1037,6 +1044,12 @@ class MainWindow(QtWidgets.QMainWindow):
             ]
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
+                flags = item.flags()
+                if column in editable_columns and not integrity_issue:
+                    flags |= QtCore.Qt.ItemIsEditable
+                else:
+                    flags &= ~QtCore.Qt.ItemIsEditable
+                item.setFlags(flags)
                 if integrity_issue:
                     item.setForeground(QtGui.QColor("#9ca3af"))
                     item.setToolTip(f"Integrity issue: {issue_reason}")
@@ -1056,6 +1069,37 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_policy_reviews(version_id)
         else:
             self._clear_policy_reviews()
+
+    def _handle_version_table_combo_change(self, index: QtCore.QModelIndex, value: str) -> None:
+        """Apply inline combo edits for version metadata cells."""
+
+        if not index.isValid():
+            return
+        header_item = self.version_table.horizontalHeaderItem(index.column())
+        if not header_item:
+            return
+        previous_value = str(index.data(QtCore.Qt.DisplayRole) or "")
+        if previous_value == value:
+            return
+        version_id = index.sibling(index.row(), 0).data(QtCore.Qt.UserRole)
+        if version_id is None:
+            return
+        self._select_version_row_by_id(version_id)
+        header = header_item.text().strip().lower()
+        if header == "current":
+            if value == "Current":
+                self._set_current()
+            else:
+                self._set_not_current()
+            return
+        if header == "status":
+            self._on_status_changed(value)
+            return
+        if header == "ratified":
+            if value == "Ratified":
+                self._mark_ratified()
+            else:
+                self._mark_unratified()
 
     def _load_policy_reviews(self, policy_version_id: int) -> None:
         """Load review history for the selected policy version."""
@@ -2402,13 +2446,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
         self.version_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.version_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
-        self.version_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.version_table.setEditTriggers(
+            QtWidgets.QAbstractItemView.SelectedClicked
+            | QtWidgets.QAbstractItemView.EditKeyPressed
+        )
         version_font = self.version_table.font()
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
-        apply_pill_delegate(self.version_table, ["Current", "Ratified", "Status"])
+        current_delegate = EnumComboPillDelegate(
+            ["Current", "Not Current"],
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+        )
+        status_delegate = EnumComboPillDelegate(
+            ["Draft", "Active", "Withdrawn", "Archived"],
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+        )
+        ratified_delegate = EnumComboPillDelegate(
+            ["Ratified", "Awaiting Ratification"],
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+        )
+        self.version_table.setItemDelegateForColumn(4, current_delegate)
+        self.version_table.setItemDelegateForColumn(5, status_delegate)
+        self.version_table.setItemDelegateForColumn(6, ratified_delegate)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 

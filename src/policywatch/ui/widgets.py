@@ -216,6 +216,55 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
         return QtCore.QSize(size.width(), max(size.height(), 28))
 
 
+class EnumComboPillDelegate(PillDelegate):
+    """Combo box editor delegate that preserves pill styling."""
+
+    def __init__(
+        self,
+        options: list[str],
+        on_commit,
+        parent: QtCore.QObject | None = None,
+        style_map: dict[str, dict[str, str]] | None = None,
+        default_style: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(style_map or PILL_STYLES, parent, default_style=default_style)
+        self._options = options
+        self._on_commit = on_commit
+
+    def createEditor(
+        self,
+        parent: QtWidgets.QWidget,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> QtWidgets.QWidget:
+        combo = QtWidgets.QComboBox(parent)
+        combo.addItems(self._options)
+        combo.setEditable(False)
+        return combo
+
+    def setEditorData(self, editor: QtWidgets.QWidget, index: QtCore.QModelIndex) -> None:
+        if not isinstance(editor, QtWidgets.QComboBox):
+            super().setEditorData(editor, index)
+            return
+        value = str(index.data(QtCore.Qt.DisplayRole) or "")
+        index_value = editor.findText(value)
+        if index_value >= 0:
+            editor.setCurrentIndex(index_value)
+
+    def setModelData(
+        self,
+        editor: QtWidgets.QWidget,
+        model: QtCore.QAbstractItemModel,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        if not isinstance(editor, QtWidgets.QComboBox):
+            super().setModelData(editor, model, index)
+            return
+        value = editor.currentText()
+        if callable(self._on_commit):
+            self._on_commit(index, value)
+
+
 def apply_pill_delegate(
     table: QtWidgets.QTableWidget,
     columns: list[int | str] | int | str,
