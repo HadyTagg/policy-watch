@@ -357,15 +357,23 @@ def list_policies(conn) -> list[PolicyRow]:
     rows = conn.execute(
         """
         SELECT p.id, p.title, p.category,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.status END AS status,
-               CASE WHEN p.current_version_id IS NULL THEN 0 ELSE COALESCE(v.ratified, 0) END AS ratified,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_due_date END AS review_due_date,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.review_frequency_months END AS review_frequency_months,
-               CASE WHEN p.current_version_id IS NULL THEN NULL ELSE v.owner END AS owner,
-               p.current_version_id,
+               v.status AS status,
+               COALESCE(v.ratified, 0) AS ratified,
+               v.review_due_date,
+               v.review_frequency_months,
+               v.owner,
+               v.id AS current_version_id,
                v.version_number AS current_version_number
         FROM policies p
-        LEFT JOIN policy_versions v ON v.id = p.current_version_id
+        LEFT JOIN policy_versions v
+          ON v.id = (
+              SELECT pv.id
+              FROM policy_versions pv
+              WHERE pv.policy_id = p.id
+                AND LOWER(pv.status) = 'active'
+              ORDER BY pv.version_number DESC, pv.created_at DESC, pv.id DESC
+              LIMIT 1
+          )
         ORDER BY p.created_at DESC
         """
     ).fetchall()
@@ -374,7 +382,7 @@ def list_policies(conn) -> list[PolicyRow]:
 
 
 def list_drafts_awaiting_ratification(conn) -> list[PolicyRow]:
-    """Return draft policies awaiting ratification, even without a current version."""
+    """Return draft policies awaiting ratification, even without an active version."""
 
     rows = conn.execute(
         """
@@ -505,7 +513,7 @@ def add_policy_review(
 
     policy_row = conn.execute(
         """
-        SELECT policy_id, version_number, review_frequency_months, review_due_date
+        SELECT policy_id, version_number, review_frequency_months, review_due_date, status
         FROM policy_versions
         WHERE id = ?
         """,
@@ -538,11 +546,7 @@ def add_policy_review(
         "UPDATE policy_versions SET review_due_date = ? WHERE id = ?",
         (next_review_due, policy_version_id),
     )
-    current_row = conn.execute(
-        "SELECT current_version_id FROM policies WHERE id = ?",
-        (policy_id,),
-    ).fetchone()
-    if current_row and current_row["current_version_id"] == policy_version_id:
+    if (policy_row["status"] or "").lower() == "active":
         conn.execute(
             "UPDATE policies SET review_due_date = ? WHERE id = ?",
             (next_review_due, policy_id),
@@ -749,24 +753,6 @@ def unmark_version_ratified(conn, version_id: int) -> None:
     set_version_ratified(conn, version_id, False)
 
 
-def set_current_version(conn, policy_id: int, version_id: int) -> None:
-    """Set the current version for a policy and log the change."""
-    set_version_current(conn, policy_id, version_id, True)
-
-
-def unset_current_version(conn, policy_id: int) -> None:
-    """Clear the current version for a policy."""
-    if not policy_id:
-        return
-    policy_row = conn.execute(
-        "SELECT current_version_id FROM policies WHERE id = ?",
-        (policy_id,),
-    ).fetchone()
-    current_version_id = policy_row["current_version_id"] if policy_row else None
-    if current_version_id:
-        set_version_current(conn, policy_id, current_version_id, False)
-
-
 def _normalize_version_status(status: str | None) -> str:
     """Return a canonical status label for comparisons."""
 
@@ -799,7 +785,6 @@ def validate_status_transition(
     old_status: str | None,
     new_status: str | None,
     ratified: bool,
-    is_current: bool,
 ) -> tuple[str, str]:
     """Validate a version status transition and return normalized statuses."""
 
@@ -827,8 +812,6 @@ def validate_status_transition(
         if current_status == "Archived":
             raise ValueError("Archived versions are locked and cannot be modified.")
         raise ValueError("Invalid status transition.")
-    if requested_status in {"Withdrawn", "Archived"} and is_current:
-        return current_status, requested_status
     return current_status, requested_status
 
 
@@ -878,6 +861,23 @@ def _load_version_row(conn, version_id: int):
     return row
 
 
+def _load_active_versions(conn, policy_id: int, exclude_version_id: int | None = None):
+    """Return active versions for a policy."""
+
+    rows = conn.execute(
+        """
+        SELECT id, status, ratified
+        FROM policy_versions
+        WHERE policy_id = ?
+          AND LOWER(status) = 'active'
+        """,
+        (policy_id,),
+    ).fetchall()
+    if exclude_version_id is not None:
+        return [row for row in rows if row["id"] != exclude_version_id]
+    return rows
+
+
 def set_version_ratified(
     conn,
     version_id: int,
@@ -921,87 +921,6 @@ def set_version_ratified(
     _log_event(conn, action, "policy_version", version_id, details)
 
 
-def set_version_current(conn, policy_id: int, version_id: int, is_current: bool) -> None:
-    """Set or unset a policy version as current with lifecycle validation."""
-
-    version_row = _load_version_row(conn, version_id)
-    current_status = _normalize_version_status(version_row["status"])
-    if current_status == "Archived":
-        raise ValueError("Archived versions are locked and cannot be modified.")
-    if current_status == "Missing":
-        raise ValueError("Missing versions are locked and cannot be modified.")
-    if version_row["policy_id"] != policy_id:
-        raise ValueError("Version does not belong to the selected policy.")
-    policy_row = conn.execute(
-        "SELECT current_version_id FROM policies WHERE id = ?",
-        (policy_id,),
-    ).fetchone()
-    current_version_id = policy_row["current_version_id"] if policy_row else None
-    if not is_current:
-        if current_version_id != version_id:
-            return
-        conn.execute("UPDATE policies SET current_version_id = NULL WHERE id = ?", (policy_id,))
-        if current_status == "Active":
-            validate_status_transition(current_status, "Withdrawn", bool(version_row["ratified"]), True)
-            conn.execute(
-                "UPDATE policy_versions SET status = ? WHERE id = ?",
-                ("Withdrawn", version_id),
-            )
-            _log_status_change(conn, version_id, "Active", "Withdrawn")
-        conn.commit()
-        _log_event(
-            conn,
-            "unset_current_version",
-            "policy",
-            policy_id,
-            f"version_id={version_id}",
-        )
-        return
-    if current_status == "Draft":
-        raise ValueError("Draft versions cannot be set as Current.")
-    if current_status in {"Withdrawn", "Archived"}:
-        raise ValueError("Withdrawn/Archived versions cannot be set as Current.")
-    if not version_row["ratified"]:
-        raise ValueError("You must ratify before activating.")
-    validate_status_transition(current_status, "Active", bool(version_row["ratified"]), True)
-    if current_version_id and current_version_id != version_id:
-        previous_status_row = conn.execute(
-            "SELECT status, ratified FROM policy_versions WHERE id = ?",
-            (current_version_id,),
-        ).fetchone()
-        if previous_status_row:
-            previous_status = _normalize_version_status(previous_status_row["status"])
-            if previous_status != "Archived":
-                validate_status_transition(
-                    previous_status,
-                    "Withdrawn",
-                    bool(previous_status_row["ratified"]),
-                    True,
-                )
-                conn.execute(
-                    "UPDATE policy_versions SET status = ? WHERE id = ?",
-                    ("Withdrawn", current_version_id),
-                )
-                _log_status_change(conn, current_version_id, previous_status, "Withdrawn")
-    conn.execute(
-        "UPDATE policy_versions SET status = ? WHERE id = ?",
-        ("Active", version_id),
-    )
-    _log_status_change(conn, version_id, current_status, "Active")
-    conn.execute(
-        "UPDATE policies SET current_version_id = ? WHERE id = ?",
-        (version_id, policy_id),
-    )
-    conn.commit()
-    _log_event(
-        conn,
-        "set_current_version",
-        "policy",
-        policy_id,
-        f"version_id={version_id}",
-    )
-
-
 def set_version_status(
     conn,
     version_id: int,
@@ -1012,29 +931,18 @@ def set_version_status(
     """Update a policy version status using lifecycle rules."""
 
     version_row = _load_version_row(conn, version_id)
-    policy_row = conn.execute(
-        "SELECT current_version_id FROM policies WHERE id = ?",
-        (version_row["policy_id"],),
-    ).fetchone()
-    current_version_id = policy_row["current_version_id"] if policy_row else None
-    is_current = current_version_id == version_id
     current_status, requested_status = validate_status_transition(
         version_row["status"],
         new_status,
         bool(version_row["ratified"]),
-        is_current,
     )
     if requested_status == current_status:
         return
     if requested_status == "Archived" and current_status != "Withdrawn":
-        validate_status_transition(current_status, "Withdrawn", bool(version_row["ratified"]), is_current)
+        validate_status_transition(current_status, "Withdrawn", bool(version_row["ratified"]))
         conn.execute(
             "UPDATE policy_versions SET status = ? WHERE id = ?",
             ("Withdrawn", version_id),
-        )
-        conn.execute(
-            "UPDATE policies SET current_version_id = NULL WHERE id = ? AND current_version_id = ?",
-            (version_row["policy_id"], version_id),
         )
         _log_status_change(
             conn,
@@ -1045,7 +953,6 @@ def set_version_status(
             note="implicit_withdrawal_before_archive",
         )
         current_status = "Withdrawn"
-        is_current = False
     if requested_status == "Ratified":
         ratified_at = datetime.datetime.utcnow().isoformat()
         conn.execute(
@@ -1067,36 +974,26 @@ def set_version_status(
     elif requested_status == "Active":
         if not version_row["ratified"]:
             raise ValueError("You must ratify before activating.")
-        if current_version_id and current_version_id != version_id:
-            previous_status_row = conn.execute(
-                "SELECT status, ratified FROM policy_versions WHERE id = ?",
-                (current_version_id,),
-            ).fetchone()
-            if previous_status_row:
-                previous_status = _normalize_version_status(previous_status_row["status"])
-                if previous_status != "Archived":
-                    validate_status_transition(
-                        previous_status,
-                        "Withdrawn",
-                        bool(previous_status_row["ratified"]),
-                        True,
-                    )
-                    conn.execute(
-                        "UPDATE policy_versions SET status = ? WHERE id = ?",
-                        ("Withdrawn", current_version_id),
-                    )
-                    _log_status_change(
-                        conn,
-                        current_version_id,
-                        previous_status,
-                        "Withdrawn",
-                        actor=actor_username,
-                        note="auto_withdrawn_for_new_active",
-                    )
-        conn.execute(
-            "UPDATE policies SET current_version_id = ? WHERE id = ?",
-            (version_id, version_row["policy_id"]),
-        )
+        for active_row in _load_active_versions(conn, version_row["policy_id"], version_id):
+            previous_status = _normalize_version_status(active_row["status"])
+            if previous_status != "Archived":
+                validate_status_transition(
+                    previous_status,
+                    "Withdrawn",
+                    bool(active_row["ratified"]),
+                )
+                conn.execute(
+                    "UPDATE policy_versions SET status = ? WHERE id = ?",
+                    ("Withdrawn", active_row["id"]),
+                )
+                _log_status_change(
+                    conn,
+                    active_row["id"],
+                    previous_status,
+                    "Withdrawn",
+                    actor=actor_username,
+                    note="auto_withdrawn_for_new_active",
+                )
         conn.execute(
             "UPDATE policy_versions SET status = ? WHERE id = ?",
             ("Active", version_id),
@@ -1114,10 +1011,6 @@ def set_version_status(
             "UPDATE policy_versions SET status = ? WHERE id = ?",
             ("Withdrawn", version_id),
         )
-        conn.execute(
-            "UPDATE policies SET current_version_id = NULL WHERE id = ? AND current_version_id = ?",
-            (version_row["policy_id"], version_id),
-        )
         _log_status_change(
             conn,
             version_id,
@@ -1130,10 +1023,6 @@ def set_version_status(
         conn.execute(
             "UPDATE policy_versions SET status = ? WHERE id = ?",
             ("Archived", version_id),
-        )
-        conn.execute(
-            "UPDATE policies SET current_version_id = NULL WHERE id = ? AND current_version_id = ?",
-            (version_row["policy_id"], version_id),
         )
         _log_status_change(
             conn,
@@ -1573,14 +1462,12 @@ def mark_policy_version_missing(
 
     row = conn.execute(
         """
-        SELECT p.current_version_id,
-               v.policy_id,
+        SELECT v.policy_id,
                v.version_number,
                v.status,
                v.notes,
                v.owner
         FROM policy_versions v
-        JOIN policies p ON p.id = v.policy_id
         WHERE v.id = ?
         """,
         (version_id,),
@@ -1640,7 +1527,8 @@ def mark_policy_version_missing(
                 replacement_version_id,
                 f"carried_reviews_from_version={row['version_number']}",
             )
-    if row["current_version_id"] == version_id:
+    is_active = (row["status"] or "").lower() == "active"
+    if is_active:
         if replacement_version_id is not None:
             conn.execute(
                 "UPDATE policy_versions SET owner = ? WHERE id = ?",
@@ -1653,30 +1541,22 @@ def mark_policy_version_missing(
                 replacement_version_id,
                 f"owner={row['owner'] or 'Unassigned'} copied_from_version={row['version_number']}",
             )
-            conn.execute(
-                "UPDATE policies SET current_version_id = ? WHERE id = ?",
-                (replacement_version_id, row["policy_id"]),
-            )
             _log_event(
                 conn,
-                "current_version_replaced",
+                "active_version_replaced",
                 "policy",
                 row["policy_id"],
                 (
-                    "current_status_copied"
+                    "active_status_copied"
                     f" status={row['status']}"
                     f" from_version={row['version_number']}"
                     f" to_version={new_version_number}"
                 ),
             )
         else:
-            conn.execute(
-                "UPDATE policies SET current_version_id = NULL WHERE id = ?",
-                (row["policy_id"],),
-            )
             _log_event(
                 conn,
-                "current_version_cleared",
+                "active_version_cleared",
                 "policy",
                 row["policy_id"],
                 f"previous_version_id={version_id}",
