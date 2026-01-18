@@ -1343,9 +1343,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if not version_row:
             QtWidgets.QMessageBox.warning(self, "Unavailable", "Unable to load version details.")
             return
-        if (version_row["status"] or "").lower() != "active":
-            QtWidgets.QMessageBox.warning(self, "Not Active", "Only active versions can be set as current.")
-            return
         if not version_row["ratified"]:
             QtWidgets.QMessageBox.warning(self, "Not Ratified", "Version must be ratified first.")
             return
@@ -2108,15 +2105,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     if self.current_policy_id:
                         self._load_policy_detail(self.current_policy_id)
                     return
-        if (current_status or "").lower() == "draft" and (status or "").lower() in {"withdrawn", "archived"}:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Change Not Allowed",
-                "Draft policies can only be set to Active.",
-            )
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
-            return
         confirm_change = not (
             (current_status or "").lower() == "draft" and (status or "").lower() == "active"
         )
