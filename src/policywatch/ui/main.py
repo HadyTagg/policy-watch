@@ -1105,17 +1105,27 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._format_version_review_status(version.get("status"), version.get("review_due_date"))
             )
             review_due_item = QtWidgets.QTableWidgetItem(
-                "Archived"
-                if is_archived
-                else ("Draft" if is_draft else self._format_date_display(version.get("review_due_date")))
+                "Missing"
+                if is_missing_status
+                else (
+                    "Archived"
+                    if is_archived
+                    else (
+                        "Draft" if is_draft else self._format_date_display(version.get("review_due_date"))
+                    )
+                )
             )
             review_frequency_label = (
-                "Archived"
-                if is_archived
+                "Missing"
+                if is_missing_status
                 else (
-                    "Draft"
-                    if is_draft
-                    else self._review_frequency_label(version.get("review_frequency_months"))
+                    "Archived"
+                    if is_archived
+                    else (
+                        "Draft"
+                        if is_draft
+                        else self._review_frequency_label(version.get("review_frequency_months"))
+                    )
                 )
             )
             review_frequency_item = QtWidgets.QTableWidgetItem(review_frequency_label)
@@ -1124,7 +1134,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._review_frequency_option_labels(review_frequency_label),
             )
             owner_item = QtWidgets.QTableWidgetItem(
-                "Archived" if is_archived else (version.get("owner") or "Unassigned")
+                "Missing"
+                if is_missing_status
+                else ("Archived" if is_archived else (version.get("owner") or "Unassigned"))
             )
             status_item.setData(
                 QtCore.Qt.UserRole + 2,
