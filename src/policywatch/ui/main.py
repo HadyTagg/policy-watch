@@ -52,6 +52,7 @@ from policywatch.services import (
     set_audit_actor,
     set_user_theme,
 )
+from policywatch.services.traffic import traffic_light_status
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 from policywatch.ui.widgets import (
@@ -1016,16 +1017,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {4, 5, 8}
+        editable_columns = {3, 4, 8}
         headers = [
             "Created",
-            "Version",
-            "Category",
             "Title",
+            "Version",
             "Status",
             "Ratified",
+            "Review Status",
             "Review Due",
-            "Last Reviewed",
+            "Review Frequency",
             "Owner",
         ]
         owners = list_users(self.conn)
@@ -1073,9 +1074,8 @@ class MainWindow(QtWidgets.QMainWindow):
             created_item = QtWidgets.QTableWidgetItem(
                 self._format_datetime_display(version["created_at"])
             )
-            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
-            category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
             title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
+            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
@@ -1088,11 +1088,15 @@ class MainWindow(QtWidgets.QMainWindow):
                 is_missing=is_missing_status,
             )
             is_draft = normalized_status == "draft"
+            review_status_item = QtWidgets.QTableWidgetItem(
+                self._format_version_review_status(version.get("status"), version.get("review_due_date"))
+            )
             review_due_item = QtWidgets.QTableWidgetItem(
                 "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
-            last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
-            last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
+            review_frequency_item = QtWidgets.QTableWidgetItem(
+                "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+            )
             owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
             status_item.setData(
                 QtCore.Qt.UserRole + 2,
@@ -1100,13 +1104,13 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             items = [
                 created_item,
-                version_item,
-                category_item,
                 title_item,
+                version_item,
                 status_item,
                 ratified_item,
+                review_status_item,
                 review_due_item,
-                last_reviewed_item,
+                review_frequency_item,
                 owner_item,
             ]
             for column, item in enumerate(items):
@@ -1175,7 +1179,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_version_table_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
         """Open combo editors immediately for editable enum columns."""
 
-        if item.column() not in {4, 5, 8}:
+        if item.column() not in {3, 4, 8}:
             return
         if not (item.flags() & QtCore.Qt.ItemIsEditable):
             return
@@ -1865,6 +1869,26 @@ class MainWindow(QtWidgets.QMainWindow):
             return date_time.date().toString("dd/MM/yyyy")
         return self._format_date_display(value)
 
+    def _format_version_review_status(self, status: str | None, review_due_date: str | None) -> str:
+        """Return the review status label for a version row."""
+
+        normalized = (status or "").strip().lower()
+        if normalized == "draft":
+            return "Draft"
+        if not review_due_date:
+            return "No schedule"
+        review_due = self._parse_date_value(review_due_date)
+        if not review_due:
+            return ""
+        amber_months = int(config.get_setting(self.conn, "amber_months", 2) or 2)
+        traffic = traffic_light_status(datetime.now().date(), review_due, amber_months)
+        status_map = {
+            "Green": "In Date",
+            "Amber": "Review Due",
+            "Red": "Past Review Date",
+        }
+        return status_map.get(traffic.status, "Review scheduled")
+
     def _set_date_field(self, widget: QtWidgets.QDateEdit, value: str | None) -> None:
         """Configure a date widget with a stored date or blank state."""
 
@@ -2471,13 +2495,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setHorizontalHeaderLabels(
             [
                 "Created",
-                "Version",
-                "Category",
                 "Title",
+                "Version",
                 "Status",
                 "Ratified",
+                "Review Status",
                 "Review Due",
-                "Last Reviewed",
+                "Review Frequency",
                 "Owner",
             ]
         )
@@ -2500,8 +2524,8 @@ class MainWindow(QtWidgets.QMainWindow):
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
         )
-        self.version_table.setItemDelegateForColumn(4, status_delegate)
-        self.version_table.setItemDelegateForColumn(5, BooleanIconDelegate(self.version_table))
+        self.version_table.setItemDelegateForColumn(3, status_delegate)
+        self.version_table.setItemDelegateForColumn(4, BooleanIconDelegate(self.version_table))
         self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
