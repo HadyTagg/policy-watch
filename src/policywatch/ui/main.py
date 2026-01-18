@@ -1107,13 +1107,15 @@ class MainWindow(QtWidgets.QMainWindow):
             review_due_item = QtWidgets.QTableWidgetItem(
                 "Archived"
                 if is_archived
-                else ("" if is_draft else self._format_date_display(version.get("review_due_date")))
+                else ("Draft" if is_draft else self._format_date_display(version.get("review_due_date")))
             )
             review_frequency_label = (
                 "Archived"
                 if is_archived
                 else (
-                    "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+                    "Draft"
+                    if is_draft
+                    else self._review_frequency_label(version.get("review_frequency_months"))
                 )
             )
             review_frequency_item = QtWidgets.QTableWidgetItem(review_frequency_label)
