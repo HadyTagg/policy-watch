@@ -432,15 +432,15 @@ class PolicyLifecycleTimeline(QtWidgets.QWidget):
         colors = _current_theme_colors()
         background = colors["neutral_50"]
         border = colors["neutral_100"]
-        self.setStyleSheet(
-            f"""
+        stylesheet = f"""
             #PolicyLifecycleTimeline {{
                 background-color: {background};
                 border: 1px solid {border};
                 border-radius: {theme.SPACING['sm']}px;
             }}
             """.strip()
-        )
+        if self.styleSheet() != stylesheet:
+            self.setStyleSheet(stylesheet)
 
     def changeEvent(self, event: QtCore.QEvent) -> None:
         """Refresh styles on theme or palette changes."""
