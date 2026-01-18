@@ -1930,9 +1930,9 @@ class MainWindow(QtWidgets.QMainWindow):
         amber_months = self._resolve_amber_months()
         traffic = traffic_light_status(datetime.now().date(), review_due, amber_months)
         status_map = {
-            "Green": "In Date",
-            "Amber": "Review Due",
-            "Red": "Past Review Date",
+            "Green": "OK",
+            "Amber": "Due Soon",
+            "Red": "Overdue",
         }
         return status_map.get(traffic.status, "Review scheduled")
 
