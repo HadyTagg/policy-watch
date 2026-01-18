@@ -31,6 +31,7 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.conn = conn
         self.on_updated = on_updated
+        self._allow_close = False
         self.setWindowTitle("Manage Categories")
         self.setModal(True)
         self.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
@@ -88,9 +89,18 @@ class CategoryManagerDialog(QtWidgets.QDialog):
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """Hide the dialog and notify listeners instead of destroying it."""
 
+        if self._allow_close:
+            event.accept()
+            return
         event.ignore()
         self.hide()
         self.closed.emit()
+
+    def close_for_shutdown(self) -> None:
+        """Force the dialog to close during application shutdown."""
+
+        self._allow_close = True
+        self.close()
 
     def _add_category(self) -> None:
         """Add a new category and refresh the view."""
