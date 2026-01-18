@@ -1519,7 +1519,13 @@ def update_policy_version_metadata_field(
     conn.commit()
 
 
-def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
+def update_policy_version_notes(
+    conn,
+    version_id: int,
+    notes: str,
+    *,
+    allow_locked: bool = False,
+) -> None:
     """Update notes for a policy version and log the change."""
 
     row = conn.execute(
@@ -1529,7 +1535,7 @@ def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
     if not row:
         raise ValueError("Version not found")
     integrity_issue = _version_integrity_issue(conn, row)
-    if is_version_locked_row(row, integrity_issue=integrity_issue):
+    if not allow_locked and is_version_locked_row(row, integrity_issue=integrity_issue):
         raise ValueError(LOCKED_VERSION_MESSAGE)
     conn.execute(
         "UPDATE policy_versions SET notes = ? WHERE id = ?",

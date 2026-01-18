@@ -498,7 +498,12 @@ class MainWindow(QtWidgets.QMainWindow):
                         timestamp,
                         "policy integrity mismatch",
                     )
-                    update_policy_version_notes(self.conn, new_version_id, replacement_note)
+                    update_policy_version_notes(
+                        self.conn,
+                        new_version_id,
+                        replacement_note,
+                        allow_locked=True,
+                    )
                     details = (
                         f"title={item['title']} "
                         f"version={item['version']} "
