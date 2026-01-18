@@ -53,8 +53,10 @@ from policywatch.services import (
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 from policywatch.ui.widgets import (
+    BooleanIconDelegate,
     EnumComboPillDelegate,
     KpiCard,
+    apply_boolean_icon_delegate,
     apply_pill_delegate,
     apply_table_focusless,
     set_button_icon,
@@ -228,7 +230,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
         apply_table_focusless(self.table)
-        apply_pill_delegate(self.table, ["Status", "Review Status", "Ratified"])
+        apply_pill_delegate(self.table, ["Status", "Review Status"])
+        apply_boolean_icon_delegate(self.table, ["Ratified"])
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
         self.table.doubleClicked.connect(self.open_policy_detail_from_index)
@@ -590,9 +593,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
-                ratified_item = QtWidgets.QTableWidgetItem(
-                    "Ratified" if policy.ratified else "Awaiting Ratification"
-                )
+                ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
+                ratified_item.setData(QtCore.Qt.UserRole, bool(policy.ratified))
                 owner_item = QtWidgets.QTableWidgetItem(policy.owner or "Unassigned")
             else:
                 current_version_item = QtWidgets.QTableWidgetItem("")
@@ -1069,6 +1071,7 @@ class MainWindow(QtWidgets.QMainWindow):
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
+            ratified_item.setData(QtCore.Qt.UserRole, bool(int(version["ratified"] or 0)))
             normalized_status = (version.get("status") or "").lower()
             is_draft = normalized_status == "draft"
             review_due_item = QtWidgets.QTableWidgetItem(
@@ -2553,6 +2556,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.version_table.setItemDelegateForColumn(4, current_delegate)
         self.version_table.setItemDelegateForColumn(5, status_delegate)
+        self.version_table.setItemDelegateForColumn(6, BooleanIconDelegate(self.version_table))
         self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
