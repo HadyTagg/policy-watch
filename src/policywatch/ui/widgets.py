@@ -253,6 +253,7 @@ class TimelineStepWidget(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(theme.SPACING["xs"])
+        layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignHCenter)
         layout.addWidget(self.circle, alignment=QtCore.Qt.AlignCenter)
         layout.addWidget(self.label, alignment=QtCore.Qt.AlignCenter)
 
@@ -270,24 +271,31 @@ class TimelineStepWidget(QtWidgets.QWidget):
         accent_color = QtGui.QColor(colors["accent"])
         highlight_text = QtGui.QColor(colors["neutral_0"])
 
+        icon_font = QtGui.QFont(self.circle.font())
+        icon_font.setPointSize(theme.FONT_SIZES["heading"])
+        icon_font.setWeight(QtGui.QFont.Bold if state == "current" else QtGui.QFont.Medium)
+
         if state == "completed":
             circle_bg = accent_color
             circle_border = accent_color
             icon_color = highlight_text
             label_color = text_color
             label_weight = QtGui.QFont.Medium
+            self.circle.setText("✓")
         elif state == "current":
             circle_bg = base_color
             circle_border = accent_color
             icon_color = accent_color
             label_color = accent_color
             label_weight = QtGui.QFont.Bold
+            self.circle.setText(self._icon_text)
         else:
             circle_bg = base_color
             circle_border = border_color
             icon_color = muted_text
             label_color = muted_text
             label_weight = QtGui.QFont.Medium
+            self.circle.setText(self._icon_text)
 
         radius = self._diameter // 2
         self.circle.setStyleSheet(
@@ -300,11 +308,23 @@ class TimelineStepWidget(QtWidgets.QWidget):
             }}
             """.strip()
         )
+        self.circle.setFont(icon_font)
         label_font = QtGui.QFont(self.label.font())
         label_font.setWeight(label_weight)
         label_font.setPointSize(theme.FONT_SIZES["small"])
         self.label.setFont(label_font)
         self.label.setStyleSheet(f"color: {label_color.name()};")
+
+        if state == "current":
+            glow = QtWidgets.QGraphicsDropShadowEffect(self.circle)
+            glow.setBlurRadius(12)
+            glow.setOffset(0, 0)
+            glow_color = QtGui.QColor(accent_color)
+            glow_color.setAlpha(140)
+            glow.setColor(glow_color)
+            self.circle.setGraphicsEffect(glow)
+        else:
+            self.circle.setGraphicsEffect(None)
 
 
 class TimelineConnector(QtWidgets.QFrame):
@@ -342,11 +362,13 @@ class PolicyLifecycleTimeline(QtWidgets.QWidget):
         super().__init__(parent)
         self.setFocusPolicy(QtCore.Qt.NoFocus)
         self._stage = None
+        self._connector_wraps: list[QtWidgets.QWidget] = []
+        self.setObjectName("PolicyLifecycleTimeline")
 
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(theme.SPACING["md"], theme.SPACING["sm"], theme.SPACING["md"], theme.SPACING["sm"])
+        layout.setContentsMargins(theme.SPACING["lg"], theme.SPACING["md"], theme.SPACING["lg"], theme.SPACING["md"])
         layout.setSpacing(theme.SPACING["sm"])
-        layout.setAlignment(QtCore.Qt.AlignCenter)
+        layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignHCenter)
 
         self._step_widgets: list[TimelineStepWidget] = []
         self._connector_widgets: list[TimelineConnector] = []
@@ -354,12 +376,21 @@ class PolicyLifecycleTimeline(QtWidgets.QWidget):
         for index, (label, icon) in enumerate(self.steps):
             step = TimelineStepWidget(label, icon, self)
             self._step_widgets.append(step)
-            layout.addWidget(step)
+            layout.addWidget(step, 0, QtCore.Qt.AlignTop)
             if index < len(self.steps) - 1:
                 connector = TimelineConnector(self)
+                connector_wrap = QtWidgets.QWidget(self)
+                connector_layout = QtWidgets.QVBoxLayout(connector_wrap)
+                connector_layout.setContentsMargins(0, 0, 0, 0)
+                connector_layout.setSpacing(0)
+                connector_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignHCenter)
+                connector_layout.addSpacing(step.circle.height() // 2 - connector.height() // 2)
+                connector_layout.addWidget(connector, alignment=QtCore.Qt.AlignHCenter)
+                self._connector_wraps.append(connector_wrap)
                 self._connector_widgets.append(connector)
-                layout.addWidget(connector)
+                layout.addWidget(connector_wrap, 1)
 
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
         self.setMinimumHeight(theme.SPACING["xl"] * 3 + theme.SPACING["sm"])
         self.set_stage(None)
 
@@ -370,6 +401,7 @@ class PolicyLifecycleTimeline(QtWidgets.QWidget):
         self._apply_styles()
 
     def _apply_styles(self) -> None:
+        self._apply_container_style()
         stages = [label for label, _ in self.steps]
         if self._stage in stages:
             current_index = stages.index(self._stage)
@@ -395,6 +427,20 @@ class PolicyLifecycleTimeline(QtWidgets.QWidget):
             else:
                 state = "upcoming"
             connector.apply_state(state)
+
+    def _apply_container_style(self) -> None:
+        colors = _current_theme_colors()
+        background = colors["neutral_50"]
+        border = colors["neutral_100"]
+        self.setStyleSheet(
+            f"""
+            #PolicyLifecycleTimeline {{
+                background-color: {background};
+                border: 1px solid {border};
+                border-radius: {theme.SPACING['sm']}px;
+            }}
+            """.strip()
+        )
 
     def changeEvent(self, event: QtCore.QEvent) -> None:
         """Refresh styles on theme or palette changes."""
