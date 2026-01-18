@@ -992,7 +992,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {4, 5, 6}
+        editable_columns = {4, 5, 6, 9}
         headers = [
             "Created",
             "Version",
@@ -1005,6 +1005,19 @@ class MainWindow(QtWidgets.QMainWindow):
             "Last Reviewed",
             "Owner",
         ]
+        owners = list_users(self.conn)
+        for version in versions:
+            owner_value = version.get("owner")
+            if owner_value and owner_value not in owners:
+                owners.append(owner_value)
+        owner_options = ["Unassigned"] + [owner for owner in owners if owner]
+        owner_delegate = EnumComboPillDelegate(
+            owner_options,
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+            popup_delay_ms=0,
+        )
+        self.version_table.setItemDelegateForColumn(9, owner_delegate)
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
@@ -1114,11 +1127,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._mark_ratified()
             else:
                 self._mark_unratified()
+            return
+        if header == "owner":
+            self._update_version_owner_from_table(version_id, value)
 
     def _on_version_table_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
         """Open combo editors immediately for editable enum columns."""
 
-        if item.column() not in {4, 5, 6}:
+        if item.column() not in {4, 5, 6, 9}:
             return
         if not (item.flags() & QtCore.Qt.ItemIsEditable):
             return
@@ -2137,7 +2153,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     (current_version_id,),
                 ).fetchone()
                 if updated_status and (updated_status["status"] or "").lower() == "active":
-                    set_current_version(self.conn, self.current_policy_id, current_version_id)
                     reviewed_at = datetime.now().date().isoformat()
                     add_policy_review(
                         self.conn,
@@ -2401,6 +2416,51 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_policy_detail(self.current_policy_id)
             return
         update_policy_version_owner(self.conn, version_id, selected_owner)
+        self._refresh_policies(clear_selection=False)
+        self._load_policy_detail(self.current_policy_id)
+        self._load_audit_log()
+
+    def _update_version_owner_from_table(self, version_id: int, owner_label: str) -> None:
+        """Apply owner changes from the version table."""
+
+        if not self.current_policy_id:
+            return
+        if self._selected_version_is_missing():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Missing Policy",
+                "This policy is missing and its details can no longer be edited.",
+            )
+            return
+        if self._selected_version_integrity_issue():
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Integrity Issue",
+                "Resolve the file integrity issue before modifying this version.",
+            )
+            return
+        new_owner = None if owner_label == "Unassigned" else owner_label
+        row = self.conn.execute(
+            "SELECT owner FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if not row:
+            return
+        current_owner = row["owner"] or ""
+        new_owner_value = new_owner or ""
+        if current_owner == new_owner_value:
+            return
+        current_label = current_owner or "Unassigned"
+        new_label = new_owner_value or "Unassigned"
+        response = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Change",
+            f"Change Owner from {current_label} to {new_label}?",
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            self._load_policy_detail(self.current_policy_id)
+            return
+        update_policy_version_owner(self.conn, version_id, new_owner)
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
