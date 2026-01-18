@@ -867,6 +867,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabs.blockSignals(False)
         QtWidgets.QMessageBox.warning(self, "Select Policy", "Select a policy first.")
 
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        """Ensure all child dialogs close and exit the application."""
+
+        if getattr(self, "_category_dialog", None):
+            self._category_dialog.close_for_shutdown()
+        if getattr(self, "settings_dialog", None):
+            self.settings_dialog.close()
+        if getattr(self, "audit_dialog", None):
+            self.audit_dialog.close()
+        event.accept()
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.quit()
+
     def _load_user_context(self) -> None:
         """Load the current user's metadata for role-aware actions."""
 

@@ -97,7 +97,7 @@ class PolicyWatchApp:
 
         app = QtWidgets.QApplication([])
         self._app = app
-        app.setQuitOnLastWindowClosed(False)
+        app.setQuitOnLastWindowClosed(True)
         self._apply_base_theme(app)
         icon = self._load_app_icon()
         if icon and not icon.isNull():
