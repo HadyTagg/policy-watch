@@ -5,6 +5,8 @@ from pathlib import Path
 
 
 Path("policywatch.db").unlink(missing_ok=True)
+Path("policywatch.db-shm").unlink(missing_ok=True)
+Path("policywatch.db-wal").unlink(missing_ok=True)
 def force_delete_dir(path: str) -> None:
     p = Path(path)
 
