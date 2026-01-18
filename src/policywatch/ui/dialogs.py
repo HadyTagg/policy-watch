@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch.core import security
 from policywatch.services import (
@@ -72,6 +72,15 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         for row_index, row in enumerate(rows):
             self.table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(str(row["id"])))
             self.table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["name"]))
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        """Ensure Escape closes only this dialog without bubbling."""
+
+        if event.key() == QtCore.Qt.Key_Escape:
+            event.accept()
+            self.reject()
+            return
+        super().keyPressEvent(event)
 
     def _add_category(self) -> None:
         """Add a new category and refresh the view."""
