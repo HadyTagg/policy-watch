@@ -2103,6 +2103,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 current_version_id = version_row["id"]
         if current_version_id is None:
             return
+        if (current_status or "").strip().lower() == (status or "").strip().lower():
+            return
         if (status or "").lower() == "active":
             if self.user_id is None:
                 QtWidgets.QMessageBox.warning(
@@ -2152,7 +2154,9 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.current_policy_id:
                 self._load_policy_detail(self.current_policy_id)
             return
+        self.detail_status.blockSignals(True)
         self._apply_status_constraints(status)
+        self.detail_status.blockSignals(False)
         if (status or "").lower() == "active":
             if current_version_id:
                 updated_status = self.conn.execute(
