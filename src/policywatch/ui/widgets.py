@@ -247,6 +247,8 @@ class EnumComboPillDelegate(PillDelegate):
         option: QtWidgets.QStyleOptionViewItem,
         index: QtCore.QModelIndex,
     ) -> QtWidgets.QWidget:
+        if bool(index.data(QtCore.Qt.UserRole + 3)):
+            return None
         combo = QtWidgets.QComboBox(parent)
         combo.addItems(self._options_for_index(index))
         combo.setEditable(False)

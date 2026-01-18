@@ -27,6 +27,8 @@ from policywatch.services import (
     mark_policy_version_missing,
     format_replacement_note,
     file_sha256,
+    is_version_locked_row,
+    LOCKED_VERSION_MESSAGE,
     policy_backup_available,
     resolve_version_file_path,
     restore_policy_from_backup,
@@ -40,16 +42,17 @@ from policywatch.services import (
     list_policies,
     list_policy_reviews,
     list_versions,
-    set_version_current,
     set_version_ratified,
     set_version_status,
     update_policy_category,
     update_policy_version_owner,
+    update_policy_version_metadata_field,
     update_policy_title,
     get_user_theme,
     set_audit_actor,
     set_user_theme,
 )
+from policywatch.services.traffic import traffic_light_status
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 from policywatch.ui.widgets import (
@@ -99,6 +102,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._staff_records: list[dict[str, str]] = []
         self._owner_refreshing = False
         self._kpi_filter: str | None = None
+        self._version_locked = False
 
         set_audit_actor(username)
         self._load_user_context()
@@ -215,7 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Ratified",
                 "Review Status",
                 "Review Due",
-                "Current Version",
+                "Active Version",
                 "Owner",
             ]
         )
@@ -580,7 +584,7 @@ class MainWindow(QtWidgets.QMainWindow):
             category_item = QtWidgets.QTableWidgetItem(policy.category)
             title_item = QtWidgets.QTableWidgetItem(policy.title)
             if policy.current_version_id:
-                current_version_item = QtWidgets.QTableWidgetItem(
+                active_version_item = QtWidgets.QTableWidgetItem(
                     str(policy.current_version_number) if policy.current_version_number else ""
                 )
                 status_payload = self._build_status_chip(policy.status or "")
@@ -597,7 +601,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item.setData(QtCore.Qt.UserRole, bool(policy.ratified))
                 owner_item = QtWidgets.QTableWidgetItem(policy.owner or "Unassigned")
             else:
-                current_version_item = QtWidgets.QTableWidgetItem("")
+                active_version_item = QtWidgets.QTableWidgetItem("")
                 status_payload = self._build_status_chip("No version")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
                 status_item.setToolTip(status_payload["tooltip"])
@@ -614,7 +618,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 ratified_item,
                 days_remaining_item,
                 review_due_item,
-                current_version_item,
+                active_version_item,
                 owner_item,
             ]
             for column, item in enumerate(items):
@@ -668,11 +672,11 @@ class MainWindow(QtWidgets.QMainWindow):
             title_font.setWeight(QtGui.QFont.DemiBold)
             title_item.setFont(title_font)
 
-        current_version_item = self.table.item(row_index, 3)
-        if current_version_item:
+        active_version_item = self.table.item(row_index, 6)
+        if active_version_item:
             current_font = QtGui.QFont(self.table.font())
             current_font.setWeight(QtGui.QFont.Medium)
-            current_version_item.setFont(current_font)
+            active_version_item.setFont(current_font)
 
         for column in range(self.table.columnCount()):
             item = self.table.item(row_index, column)
@@ -738,7 +742,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "withdrawn": ("Withdrawn", "⏸", "warning", "Withdrawn policy kept for reference."),
             "missing": ("Missing", "⚠", "danger", "Policy file is missing."),
             "archived": ("Archived", "🗄", "neutral", "Archived policy for historical use."),
-            "no version": ("No version", "○", "neutral", "Policy has no current version."),
+            "no version": ("No version", "○", "neutral", "Policy has no active version."),
         }
         key = normalized.lower()
         label_text, icon, kind, tooltip = status_map.get(
@@ -776,7 +780,7 @@ class MainWindow(QtWidgets.QMainWindow):
             label = "○ No version"
             return {
                 "text": "No version",
-                "tooltip": "Policy has no current version on record.",
+                "tooltip": "Policy has no active version on record.",
                 "chip": {"label": label, "kind": "neutral"},
             }
         if (policy.status or "").lower() == "draft":
@@ -1013,17 +1017,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {4, 5, 9}
+        editable_columns = {3, 4, 7, 8}
         headers = [
             "Created",
-            "Version",
-            "Category",
             "Title",
-            "Current",
+            "Version",
             "Status",
             "Ratified",
+            "Review Status",
             "Review Due",
-            "Last Reviewed",
+            "Review Frequency",
             "Owner",
         ]
         owners = list_users(self.conn)
@@ -1038,11 +1041,26 @@ class MainWindow(QtWidgets.QMainWindow):
             parent=self.version_table,
             popup_delay_ms=0,
         )
-        self.version_table.setItemDelegateForColumn(9, owner_delegate)
+        self.version_table.setItemDelegateForColumn(8, owner_delegate)
+        review_frequency_delegate = EnumComboPillDelegate(
+            self._review_frequency_option_labels(),
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+            popup_delay_ms=0,
+        )
+        self.version_table.setItemDelegateForColumn(7, review_frequency_delegate)
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
         self.version_table.setRowCount(len(versions))
+        active_version_id = next(
+            (
+                version["id"]
+                for version in versions
+                if (version.get("status") or "").lower() == "active"
+            ),
+            None,
+        )
         for row_index, version in enumerate(versions):
             integrity_issue = False
             issue_reason = ""
@@ -1060,25 +1078,37 @@ class MainWindow(QtWidgets.QMainWindow):
                     if current_hash != version["sha256_hash"]:
                         integrity_issue = True
                         issue_reason = "Hash mismatch"
-            is_current = policy["current_version_id"] == version["id"]
             created_item = QtWidgets.QTableWidgetItem(
                 self._format_datetime_display(version["created_at"])
             )
-            current_item = QtWidgets.QTableWidgetItem("Current" if is_current else "Not Current")
-            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
-            category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
             title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
+            version_item = QtWidgets.QTableWidgetItem(str(version["version_number"]))
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             ratified_item.setData(QtCore.Qt.UserRole, bool(int(version["ratified"] or 0)))
             normalized_status = (version.get("status") or "").lower()
+            is_missing_status = normalized_status == "missing"
+            locked = is_version_locked_row(
+                version,
+                integrity_issue=integrity_issue,
+                is_missing=is_missing_status,
+            )
             is_draft = normalized_status == "draft"
+            review_status_item = QtWidgets.QTableWidgetItem(
+                self._format_version_review_status(version.get("status"), version.get("review_due_date"))
+            )
             review_due_item = QtWidgets.QTableWidgetItem(
                 "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
-            last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
-            last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
+            review_frequency_label = (
+                "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+            )
+            review_frequency_item = QtWidgets.QTableWidgetItem(review_frequency_label)
+            review_frequency_item.setData(
+                QtCore.Qt.UserRole + 2,
+                self._review_frequency_option_labels(review_frequency_label),
+            )
             owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
             status_item.setData(
                 QtCore.Qt.UserRole + 2,
@@ -1086,31 +1116,31 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             items = [
                 created_item,
-                version_item,
-                category_item,
                 title_item,
-                current_item,
+                version_item,
                 status_item,
                 ratified_item,
+                review_status_item,
                 review_due_item,
-                last_reviewed_item,
+                review_frequency_item,
                 owner_item,
             ]
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
                 flags = item.flags()
-                if (
-                    column in editable_columns
-                    and not integrity_issue
-                    and not (column == 5 and normalized_status in {"archived", "missing"})
-                ):
+                if column == 7 and is_draft:
+                    flags &= ~QtCore.Qt.ItemIsEditable
+                elif column in editable_columns and not locked:
                     flags |= QtCore.Qt.ItemIsEditable
                 else:
                     flags &= ~QtCore.Qt.ItemIsEditable
                 item.setFlags(flags)
+                item.setData(QtCore.Qt.UserRole + 3, locked)
                 if integrity_issue:
                     item.setForeground(QtGui.QColor("#9ca3af"))
                     item.setToolTip(f"Integrity issue: {issue_reason}")
+                elif locked:
+                    item.setToolTip("Locked version (archived/missing/integrity issue).")
             if normalized_status in {"withdrawn", "archived"} and not int(version["ratified"] or 0):
                 for item in items:
                     if not integrity_issue:
@@ -1120,8 +1150,8 @@ class MainWindow(QtWidgets.QMainWindow):
         selected = False
         if selected_version_id:
             selected = self._select_version_row_by_id(selected_version_id)
-        if not selected and policy["current_version_id"]:
-            selected = self._select_version_row_by_id(policy["current_version_id"])
+        if not selected and active_version_id:
+            selected = self._select_version_row_by_id(active_version_id)
         if not selected and versions:
             self.version_table.setCurrentCell(0, 0)
             self.version_table.selectRow(0)
@@ -1148,12 +1178,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._select_version_row_by_id(version_id)
         header = header_item.text().strip().lower()
-        if header == "current":
-            if value == "Current":
-                self._set_current()
-            else:
-                self._set_not_current()
-            return
         if header == "status":
             self._on_status_changed(value)
             return
@@ -1163,13 +1187,16 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self._mark_unratified()
             return
+        if header == "review frequency":
+            self._update_review_frequency_from_table(version_id, value)
+            return
         if header == "owner":
             self._update_version_owner_from_table(version_id, value)
 
     def _on_version_table_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
         """Open combo editors immediately for editable enum columns."""
 
-        if item.column() not in {4, 5, 6, 9}:
+        if item.column() not in {3, 4, 7, 8}:
             return
         if not (item.flags() & QtCore.Qt.ItemIsEditable):
             return
@@ -1384,94 +1411,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_policies(clear_selection=False)
             self._load_audit_log()
 
-    def _set_current(self) -> None:
-        """Set the selected version as the current policy version."""
-
-        if not self.current_policy_id:
-            return
-        selection = self.version_table.selectionModel().selectedRows()
-        if not selection:
-            return
-        if self._selected_version_integrity_issue():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Integrity Issue",
-                "Resolve the file integrity issue before modifying this version.",
-            )
-            return
-        if (
-            QtWidgets.QMessageBox.question(
-                self,
-                "Confirm",
-                "Set selected version as current?",
-            )
-            != QtWidgets.QMessageBox.Yes
-        ):
-            return
-        version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
-        version_row = self.conn.execute(
-            "SELECT ratified, status FROM policy_versions WHERE id = ?",
-            (version_id,),
-        ).fetchone()
-        if not version_row:
-            QtWidgets.QMessageBox.warning(self, "Unavailable", "Unable to load version details.")
-            return
-        if not version_row["ratified"]:
-            QtWidgets.QMessageBox.warning(self, "Not Ratified", "Version must be ratified first.")
-            return
-        try:
-            set_version_current(self.conn, self.current_policy_id, version_id, True)
-        except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
-            return
-        self._load_policy_detail(self.current_policy_id)
-        self._refresh_policies(clear_selection=False)
-        self._load_audit_log()
-        self._load_send_policies()
-
-    def _set_not_current(self) -> None:
-        """Unset the current policy version."""
-
-        if not self.current_policy_id:
-            return
-        selection = self.version_table.selectionModel().selectedRows()
-        selected_version_id = None
-        if selection:
-            selected_version_id = self.version_table.item(selection[0].row(), 0).data(
-                QtCore.Qt.UserRole
-            )
-        if self._selected_version_integrity_issue():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Integrity Issue",
-                "Resolve the file integrity issue before modifying this version.",
-            )
-            return
-        if (
-            QtWidgets.QMessageBox.question(
-                self,
-                "Confirm",
-                "Clear the current version selection?",
-            )
-            != QtWidgets.QMessageBox.Yes
-        ):
-            return
-        if selected_version_id is None:
-            return
-        try:
-            set_version_current(self.conn, self.current_policy_id, selected_version_id, False)
-        except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
-            return
-        self._load_policy_detail(self.current_policy_id)
-        if selected_version_id is not None:
-            self._select_version_row_by_id(selected_version_id)
-        self._refresh_policies(clear_selection=False)
-        self._load_audit_log()
-        self._load_send_policies()
-
     def _open_file_location(self) -> None:
-        """Open the current version file in the OS file manager."""
+        """Open the selected version file in the OS file manager."""
 
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
@@ -1523,7 +1464,7 @@ class MainWindow(QtWidgets.QMainWindow):
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(resolved_path)))
 
     def _print_policy_document(self) -> None:
-        """Send the current version file to the default printer."""
+        """Send the selected version file to the default printer."""
 
         selection = self.version_table.selectionModel().selectedRows()
         if not selection:
@@ -1566,6 +1507,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._clear_policy_reviews()
             return
         integrity_issue = self._selected_version_integrity_issue()
+        locked = self._selected_version_is_locked()
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
         version = self.conn.execute(
             """
@@ -1612,10 +1554,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setText(self._format_datetime_display(version["ratified_at"] or ""))
         self.detail_ratified_by.setText(version["ratified_by"] or "")
         self._update_review_schedule_display()
-        read_only = integrity_issue or is_missing_status
-        self._set_policy_metadata_enabled(not read_only)
-        self._apply_review_metadata_state(version["status"] or "", allow_edit=not read_only)
-        self._set_version_action_state(not read_only)
+        self._version_locked = locked
+        self.version_locked_banner.setVisible(
+            locked and self.detail_summary_toggle.isChecked()
+        )
+        self._set_policy_metadata_enabled(not locked)
+        self._apply_review_metadata_state(version["status"] or "", allow_edit=not locked)
+        self._set_version_action_state(
+            metadata_enabled=not locked,
+            document_enabled=not (integrity_issue or is_missing_status),
+        )
         self.detail_status.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
@@ -1627,7 +1575,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._load_policy_reviews(version_id)
 
-        if read_only:
+        if locked and (integrity_issue or is_missing_status):
             if is_missing_status:
                 message = "This policy is missing and its details can no longer be edited."
                 title = "Missing Policy"
@@ -1669,36 +1617,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.current_policy_id:
             return
-        if self._selected_version_is_missing():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Policy",
-                "This policy is missing and its details can no longer be edited.",
-            )
-            return
-        if self._selected_version_integrity_issue():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Integrity Issue",
-                "Resolve the file integrity issue before modifying this version.",
-            )
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
             return
         selected_version_id = version_id
         if selected_version_id is None:
             selected = self.version_table.selectionModel().selectedRows()
             if selected:
                 selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
-        policy_row = self.conn.execute(
-            "SELECT current_version_id FROM policies WHERE id = ?",
-            (self.current_policy_id,),
-        ).fetchone()
-        if not policy_row:
-            return
-        current_version_id = selected_version_id or policy_row["current_version_id"]
-        if current_version_id:
+        active_version_id = selected_version_id or self._resolve_active_version_id(self.current_policy_id)
+        if active_version_id:
             current = self.conn.execute(
                 f"SELECT {field} FROM policy_versions WHERE id = ?",
-                (current_version_id,),
+                (active_version_id,),
             ).fetchone()
         else:
             current = self.conn.execute(
@@ -1731,33 +1662,41 @@ class MainWindow(QtWidgets.QMainWindow):
             if response != QtWidgets.QMessageBox.Yes:
                 self._load_policy_detail(self.current_policy_id)
                 return
-        if current_version_id:
-            self.conn.execute(
-                f"UPDATE policy_versions SET {field} = ? WHERE id = ?",
-                (value, current_version_id),
-            )
+        if active_version_id:
+            try:
+                update_policy_version_metadata_field(
+                    self.conn,
+                    active_version_id,
+                    field,
+                    value,
+                )
+            except ValueError as exc:
+                QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
         else:
             self.conn.execute(
                 f"UPDATE policies SET {field} = ? WHERE id = ?",
                 (value, self.current_policy_id),
             )
-        self.conn.commit()
+            self.conn.commit()
         audit.append_event_log(
             self.conn,
             {
                 "occurred_at": datetime.utcnow().isoformat(),
                 "actor": self._resolve_audit_actor(),
                 "action": "update_policy_field",
-                "entity_type": "policy_version" if current_version_id else "policy",
-                "entity_id": current_version_id or self.current_policy_id,
+                "entity_type": "policy_version" if active_version_id else "policy",
+                "entity_id": active_version_id or self.current_policy_id,
                 "details": f"{field}: {display_current} -> {display_value}",
             },
         )
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
-        if current_version_id:
-            self._select_version_row_by_id(current_version_id)
-            self._load_policy_reviews(current_version_id)
+        if active_version_id:
+            self._select_version_row_by_id(active_version_id)
+            self._load_policy_reviews(active_version_id)
         self._load_audit_log()
 
     def _format_file_size(self, size_bytes: int) -> str:
@@ -1895,6 +1834,34 @@ class MainWindow(QtWidgets.QMainWindow):
         review_due_value = self._get_date_field_value(self.detail_review_due)
         self.detail_review_days_remaining.setText(self._format_days_remaining(review_due_value))
 
+    def _review_frequency_option_labels(self, current_label: str | None = None) -> list[str]:
+        """Return review frequency labels for inline editing."""
+
+        base_options = ["Annual", "Biannual", "Quarterly", "Monthly", "None"]
+        label = (current_label or "").strip()
+        if label and label not in base_options:
+            base_options.append(label)
+        return base_options
+
+    def _parse_review_frequency_label(self, label: str) -> int | None:
+        """Convert a review frequency label back to a month count."""
+
+        normalized = (label or "").strip().lower()
+        if not normalized or normalized == "none":
+            return None
+        mapping = {
+            "annual": 12,
+            "biannual": 6,
+            "quarterly": 3,
+            "monthly": 1,
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        match = re.search(r"(\d+)", normalized)
+        if match:
+            return int(match.group(1))
+        return None
+
     def _apply_review_metadata_state(self, status: str, allow_edit: bool = True) -> None:
         """Adjust review metadata controls based on version status."""
 
@@ -1946,6 +1913,37 @@ class MainWindow(QtWidgets.QMainWindow):
         if date_time.isValid():
             return date_time.date().toString("dd/MM/yyyy")
         return self._format_date_display(value)
+
+    def _format_version_review_status(self, status: str | None, review_due_date: str | None) -> str:
+        """Return the review status label for a version row."""
+
+        normalized = (status or "").strip().lower()
+        if normalized in {"withdrawn", "archived", "missing"}:
+            return normalized.title()
+        if normalized == "draft":
+            return "Draft"
+        if not review_due_date:
+            return "No schedule"
+        review_due = self._parse_date_value(review_due_date)
+        if not review_due:
+            return ""
+        amber_months = self._resolve_amber_months()
+        traffic = traffic_light_status(datetime.now().date(), review_due, amber_months)
+        status_map = {
+            "Green": "OK",
+            "Amber": "Due Soon",
+            "Red": "Overdue",
+        }
+        return status_map.get(traffic.status, "Review scheduled")
+
+    def _resolve_amber_months(self) -> int:
+        """Return a safe integer value for amber months."""
+
+        raw_value = config.get_setting(self.conn, "amber_months", 2)
+        try:
+            return int(raw_value)
+        except (TypeError, ValueError):
+            return 2
 
     def _set_date_field(self, widget: QtWidgets.QDateEdit, value: str | None) -> None:
         """Configure a date widget with a stored date or blank state."""
@@ -2079,115 +2077,134 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_status_changed(self, status: str) -> None:
         """Handle status updates from the metadata form."""
 
-        current_status = None
-        current_version_id = None
-        selected = self.version_table.selectionModel().selectedRows()
-        if selected:
-            version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
-            current_version_id = version_id
-            version_row = self.conn.execute(
-                "SELECT status FROM policy_versions WHERE id = ?",
-                (version_id,),
-            ).fetchone()
-            if version_row:
-                current_status = version_row["status"]
-        elif self.current_policy_id:
-            version_row = self.conn.execute(
-                """
-                SELECT v.id, v.status
-                FROM policy_versions v
-                JOIN policies p ON p.current_version_id = v.id
-                WHERE p.id = ?
-                """,
-                (self.current_policy_id,),
-            ).fetchone()
-            if version_row:
-                current_status = version_row["status"]
-                current_version_id = version_row["id"]
-        if current_version_id is None:
-            return
-        if (current_status or "").strip().lower() == (status or "").strip().lower():
-            return
-        if (status or "").lower() == "active":
-            if self.user_id is None:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Unavailable",
-                    "User account not found. Unable to confirm status change.",
-                )
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
-            password, ok = QtWidgets.QInputDialog.getText(
-                self,
-                "Confirm Password",
-                "Enter your account password to activate this policy:",
-                QtWidgets.QLineEdit.Password,
-            )
-            if not ok:
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
-            user_row = self.conn.execute(
-                "SELECT password_hash, salt FROM users WHERE id = ?",
-                (self.user_id,),
-            ).fetchone()
-            if not user_row or not security.verify_password(
-                password,
-                user_row["password_hash"],
-                user_row["salt"],
-            ):
-                QtWidgets.QMessageBox.warning(self, "Invalid", "Password is incorrect.")
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Change",
-            f"Change Status from {current_status} to {status}?",
-        )
-        if confirm != QtWidgets.QMessageBox.Yes:
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
-            return
         try:
-            set_version_status(self.conn, current_version_id, status, actor_username=self.username)
-        except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            current_status = None
+            current_version_id = None
+            selected = self.version_table.selectionModel().selectedRows()
+            if selected:
+                version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
+                current_version_id = version_id
+                version_row = self.conn.execute(
+                    "SELECT status FROM policy_versions WHERE id = ?",
+                    (version_id,),
+                ).fetchone()
+                if version_row:
+                    current_status = version_row["status"]
+            elif self.current_policy_id:
+                active_version_id = self._resolve_active_version_id(self.current_policy_id)
+                if active_version_id:
+                    version_row = self.conn.execute(
+                        "SELECT status FROM policy_versions WHERE id = ?",
+                        (active_version_id,),
+                    ).fetchone()
+                    if version_row:
+                        current_status = version_row["status"]
+                        current_version_id = active_version_id
+            if current_version_id is None:
+                return
+            if (current_status or "").strip().lower() == (status or "").strip().lower():
+                return
+            if (status or "").lower() == "active":
+                if self.user_id is None:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Unavailable",
+                        "User account not found. Unable to confirm status change.",
+                    )
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+                password, ok = QtWidgets.QInputDialog.getText(
+                    self,
+                    "Confirm Password",
+                    "Enter your account password to activate this policy:",
+                    QtWidgets.QLineEdit.Password,
+                )
+                if not ok:
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+                user_row = self.conn.execute(
+                    "SELECT password_hash, salt FROM users WHERE id = ?",
+                    (self.user_id,),
+                ).fetchone()
+                if not user_row or not security.verify_password(
+                    password,
+                    user_row["password_hash"],
+                    user_row["salt"],
+                ):
+                    QtWidgets.QMessageBox.warning(self, "Invalid", "Password is incorrect.")
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+            confirm = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Change",
+                f"Change Status from {current_status} to {status}?",
+            )
+            if confirm != QtWidgets.QMessageBox.Yes:
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
+            try:
+                set_version_status(
+                    self.conn,
+                    current_version_id,
+                    status,
+                    actor_username=self.username,
+                    actor_user_id=self.user_id,
+                )
+            except ValueError as exc:
+                QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
+            self.detail_status.blockSignals(True)
+            self._apply_status_constraints(status)
+            self.detail_status.blockSignals(False)
+            if (status or "").lower() == "active":
+                if current_version_id:
+                    updated_status = self.conn.execute(
+                        "SELECT status FROM policy_versions WHERE id = ?",
+                        (current_version_id,),
+                    ).fetchone()
+                    if updated_status and (updated_status["status"] or "").lower() == "active":
+                        reviewed_at = datetime.now().date().isoformat()
+                        add_policy_review(
+                            self.conn,
+                            current_version_id,
+                            self.user_id,
+                            reviewed_at,
+                            None,
+                        )
             if self.current_policy_id:
                 self._load_policy_detail(self.current_policy_id)
+                if self._select_version_row_by_id(current_version_id):
+                    self._on_version_selected()
+                self._load_policy_reviews(current_version_id)
+                self._refresh_policies(clear_selection=False)
+                self._load_audit_log()
+            self.detail_review_frequency.blockSignals(True)
+            self.detail_review_due.blockSignals(True)
+            self._apply_review_metadata_state(status, allow_edit=True)
+            self.detail_review_due.blockSignals(False)
+            self.detail_review_frequency.blockSignals(False)
+            self._update_review_schedule_display()
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Status Update Failed",
+                f"Unable to update the policy status: {exc}",
+            )
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+                if current_version_id:
+                    self._load_policy_reviews(current_version_id)
+                else:
+                    self._clear_policy_reviews()
+                self._refresh_policies(clear_selection=False)
+                self._load_audit_log()
             return
-        self.detail_status.blockSignals(True)
-        self._apply_status_constraints(status)
-        self.detail_status.blockSignals(False)
-        if (status or "").lower() == "active":
-            if current_version_id:
-                updated_status = self.conn.execute(
-                    "SELECT status FROM policy_versions WHERE id = ?",
-                    (current_version_id,),
-                ).fetchone()
-                if updated_status and (updated_status["status"] or "").lower() == "active":
-                    reviewed_at = datetime.now().date().isoformat()
-                    add_policy_review(
-                        self.conn,
-                        current_version_id,
-                        self.user_id,
-                        reviewed_at,
-                        None,
-                    )
-        if self.current_policy_id:
-            self._load_policy_detail(self.current_policy_id)
-            if self._select_version_row_by_id(current_version_id):
-                self._on_version_selected()
-            self._load_policy_reviews(current_version_id)
-            self._refresh_policies(clear_selection=False)
-            self._load_audit_log()
-        self.detail_review_frequency.blockSignals(True)
-        self.detail_review_due.blockSignals(True)
-        self._apply_review_metadata_state(status, allow_edit=True)
-        self.detail_review_due.blockSignals(False)
-        self.detail_review_frequency.blockSignals(False)
-        self._update_review_schedule_display()
 
     def _on_review_due_changed(self, value: QtCore.QDate) -> None:
         """Handle review due date updates from the metadata form."""
@@ -2228,12 +2245,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.current_policy_id:
             return
-        if self._selected_version_is_missing():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Policy",
-                "This policy is missing and its details can no longer be edited.",
-            )
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
             return
         policy_row = self.conn.execute(
             "SELECT title FROM policies WHERE id = ?",
@@ -2303,15 +2316,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setEnabled(enabled)
         self.detail_ratified_by.setEnabled(enabled)
 
-    def _set_version_action_state(self, enabled: bool) -> None:
+    def _set_version_action_state(self, *, metadata_enabled: bool, document_enabled: bool) -> None:
         """Enable or disable version-specific actions."""
 
-        self.ratify_button.setEnabled(enabled)
-        self.unratify_button.setEnabled(enabled)
-        self.set_current_button.setEnabled(enabled)
-        self.set_not_current_button.setEnabled(enabled)
-        self.open_location_button.setEnabled(enabled)
-        self.print_document_button.setEnabled(enabled)
+        self.open_location_button.setEnabled(document_enabled)
+        self.print_document_button.setEnabled(document_enabled)
 
     def _selected_version_integrity_issue_reason(self) -> str:
         """Return the integrity issue reason for the selected version, if any."""
@@ -2326,6 +2335,40 @@ class MainWindow(QtWidgets.QMainWindow):
 
         return bool(self._selected_version_integrity_issue_reason())
 
+    def _selected_version_is_locked(self) -> bool:
+        """Return True if the selected version is locked for metadata edits."""
+
+        selection = self.version_table.selectionModel().selectedRows()
+        if not selection:
+            return False
+        item = self.version_table.item(selection[0].row(), 0)
+        if not item:
+            return False
+        locked = item.data(QtCore.Qt.UserRole + 3)
+        if locked is not None:
+            return bool(locked)
+        version_id = item.data(QtCore.Qt.UserRole)
+        if version_id is None:
+            return False
+        row = self.conn.execute(
+            "SELECT status, file_path, sha256_hash FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if not row:
+            return False
+        integrity_issue = False
+        if row["file_path"]:
+            resolved_path = resolve_version_file_path(
+                self.conn,
+                version_id,
+                row["file_path"],
+            )
+            if not resolved_path:
+                integrity_issue = True
+            else:
+                integrity_issue = file_sha256(resolved_path) != row["sha256_hash"]
+        return is_version_locked_row(row, integrity_issue=integrity_issue)
+
     def _selected_version_is_missing(self) -> bool:
         """Return True if the selected version has Missing status."""
 
@@ -2339,6 +2382,25 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         return bool(row and (row["status"] or "").lower() == "missing")
 
+    def _resolve_active_version_id(self, policy_id: int | None = None) -> int | None:
+        """Return the active version id for a policy."""
+
+        policy_id = policy_id or self.current_policy_id
+        if not policy_id:
+            return None
+        row = self.conn.execute(
+            """
+            SELECT id
+            FROM policy_versions
+            WHERE policy_id = ?
+              AND LOWER(status) = 'active'
+            ORDER BY version_number DESC, created_at DESC, id DESC
+            LIMIT 1
+            """,
+            (policy_id,),
+        ).fetchone()
+        return row["id"] if row else None
+
     def _clear_policy_metadata_fields(self) -> None:
         """Reset policy metadata fields when no version is selected."""
 
@@ -2350,7 +2412,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_category.blockSignals(True)
         self.detail_owner.blockSignals(True)
         self._set_policy_metadata_enabled(False)
-        self._set_version_action_state(False)
+        self._set_version_action_state(metadata_enabled=False, document_enabled=False)
         self.detail_title.setText("")
         self.detail_status.setCurrentIndex(-1)
         self._apply_status_constraints("")
@@ -2364,6 +2426,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
         self.detail_last_reviewed.setText("")
+        self._version_locked = False
+        self.version_locked_banner.setVisible(False)
         self.detail_status.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
@@ -2381,32 +2445,15 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         if not self.current_policy_id or not self._is_admin():
             return
-        if self._selected_version_is_missing():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Policy",
-                "This policy is missing and its details can no longer be edited.",
-            )
-            return
-        if self._selected_version_integrity_issue():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Integrity Issue",
-                "Resolve the file integrity issue before modifying this version.",
-            )
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
             return
         selected_owner = self.detail_owner.currentData()
         selected = self.version_table.selectionModel().selectedRows()
         selected_version_id = None
         if selected:
             selected_version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
-        policy_row = self.conn.execute(
-            "SELECT current_version_id FROM policies WHERE id = ?",
-            (self.current_policy_id,),
-        ).fetchone()
-        if not policy_row:
-            return
-        version_id = selected_version_id or policy_row["current_version_id"]
+        version_id = selected_version_id or self._resolve_active_version_id(self.current_policy_id)
         if not version_id:
             return
         row = self.conn.execute(
@@ -2429,7 +2476,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if response != QtWidgets.QMessageBox.Yes:
             self._load_policy_detail(self.current_policy_id)
             return
-        update_policy_version_owner(self.conn, version_id, selected_owner)
+        try:
+            update_policy_version_owner(self.conn, version_id, selected_owner)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
@@ -2439,19 +2490,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if not self.current_policy_id:
             return
-        if self._selected_version_is_missing():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Missing Policy",
-                "This policy is missing and its details can no longer be edited.",
-            )
-            return
-        if self._selected_version_integrity_issue():
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Integrity Issue",
-                "Resolve the file integrity issue before modifying this version.",
-            )
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
             return
         new_owner = None if owner_label == "Unassigned" else owner_label
         row = self.conn.execute(
@@ -2474,7 +2514,37 @@ class MainWindow(QtWidgets.QMainWindow):
         if response != QtWidgets.QMessageBox.Yes:
             self._load_policy_detail(self.current_policy_id)
             return
-        update_policy_version_owner(self.conn, version_id, new_owner)
+        try:
+            update_policy_version_owner(self.conn, version_id, new_owner)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+            return
+        self._refresh_policies(clear_selection=False)
+        self._load_policy_detail(self.current_policy_id)
+        self._load_audit_log()
+
+    def _update_review_frequency_from_table(self, version_id: int, frequency_label: str) -> None:
+        """Apply review frequency updates from the version table."""
+
+        if not self.current_policy_id:
+            return
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
+            return
+        frequency_value = self._parse_review_frequency_label(frequency_label)
+        self._update_policy_field(
+            "review_frequency_months",
+            frequency_value,
+            version_id=version_id,
+        )
+        review_due_value = self._calculate_review_due_value(frequency_value)
+        if review_due_value:
+            self._update_policy_field(
+                "review_due_date",
+                review_due_value,
+                confirm=False,
+                version_id=version_id,
+            )
         self._refresh_policies(clear_selection=False)
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
@@ -2483,6 +2553,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """Handle category updates from the metadata form."""
 
         if not self.current_policy_id:
+            return
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
             return
         policy_row = self.conn.execute(
             "SELECT category FROM policies WHERE id = ?",
@@ -2514,18 +2587,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
-        self.version_table = QtWidgets.QTableWidget(0, 10)
+        self.version_table = QtWidgets.QTableWidget(0, 9)
         self.version_table.setHorizontalHeaderLabels(
             [
                 "Created",
-                "Version",
-                "Category",
                 "Title",
-                "Current",
+                "Version",
                 "Status",
                 "Ratified",
+                "Review Status",
                 "Review Due",
-                "Last Reviewed",
+                "Review Frequency",
                 "Owner",
             ]
         )
@@ -2541,22 +2613,16 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
+        apply_pill_delegate(self.version_table, ["Review Status"])
         popup_delay_ms = 0
-        current_delegate = EnumComboPillDelegate(
-            ["Current", "Not Current"],
-            self._handle_version_table_combo_change,
-            parent=self.version_table,
-            popup_delay_ms=popup_delay_ms,
-        )
         status_delegate = EnumComboPillDelegate(
             ["Draft", "Ratified", "Active", "Withdrawn", "Archived"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
         )
-        self.version_table.setItemDelegateForColumn(4, current_delegate)
-        self.version_table.setItemDelegateForColumn(5, status_delegate)
-        self.version_table.setItemDelegateForColumn(6, BooleanIconDelegate(self.version_table))
+        self.version_table.setItemDelegateForColumn(3, status_delegate)
+        self.version_table.setItemDelegateForColumn(4, BooleanIconDelegate(self.version_table))
         self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2568,11 +2634,20 @@ class MainWindow(QtWidgets.QMainWindow):
         summary_toggle.setCheckable(True)
         summary_toggle.setChecked(False)
         summary_toggle.setText("+")
+        self.detail_summary_toggle = summary_toggle
         summary_title = QtWidgets.QLabel("Policy Metadata")
         summary_header.addWidget(summary_toggle)
         summary_header.addWidget(summary_title)
         summary_header.addStretch()
         summary_layout.addLayout(summary_header)
+        self.version_locked_banner = QtWidgets.QLabel(LOCKED_VERSION_MESSAGE)
+        self.version_locked_banner.setWordWrap(True)
+        self.version_locked_banner.setStyleSheet(
+            "background-color: #fef3c7; color: #92400e; "
+            "border: 1px solid #f59e0b; border-radius: 4px; padding: 6px;"
+        )
+        self.version_locked_banner.setVisible(False)
+        summary_layout.addWidget(self.version_locked_banner)
         summary_contents = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(summary_contents)
         summary_layout.addWidget(summary_contents)
@@ -2635,6 +2710,7 @@ class MainWindow(QtWidgets.QMainWindow):
         def toggle_summary_contents(checked: bool) -> None:
             summary_contents.setVisible(checked)
             summary_toggle.setText("-" if checked else "+")
+            self.version_locked_banner.setVisible(checked and self._version_locked)
 
         summary_toggle.toggled.connect(toggle_summary_contents)
 
@@ -2663,18 +2739,6 @@ class MainWindow(QtWidgets.QMainWindow):
         reviews_layout.addLayout(review_button_row)
 
         button_row = QtWidgets.QHBoxLayout()
-        self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
-        set_button_icon(self.ratify_button, "approve")
-        self.ratify_button.clicked.connect(self._mark_ratified)
-        self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
-        set_button_icon(self.unratify_button, "cancel")
-        self.unratify_button.clicked.connect(self._mark_unratified)
-        self.set_current_button = QtWidgets.QPushButton("Set Current")
-        set_button_icon(self.set_current_button, "select")
-        self.set_current_button.clicked.connect(self._set_current)
-        self.set_not_current_button = QtWidgets.QPushButton("Set Not Current")
-        set_button_icon(self.set_not_current_button, "deselect")
-        self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
         set_button_icon(self.open_location_button, "open")
         self.open_location_button.clicked.connect(self._open_file_location)
@@ -2685,12 +2749,6 @@ class MainWindow(QtWidgets.QMainWindow):
         set_button_icon(self.add_version_button, "add")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
-        button_row.addStretch(2)
-        button_row.addWidget(self.ratify_button)
-        button_row.addWidget(self.unratify_button)
-        button_row.addStretch(2)
-        button_row.addWidget(self.set_current_button)
-        button_row.addWidget(self.set_not_current_button)
         button_row.addStretch(2)
         button_row.addWidget(self.open_location_button)
         button_row.addWidget(self.print_document_button)
@@ -2809,14 +2867,14 @@ class MainWindow(QtWidgets.QMainWindow):
         return wrapper
 
     def _load_send_policies(self) -> None:
-        """Load current policy versions into the send table."""
+        """Load active policy versions into the send table."""
 
         rows = self.conn.execute(
             """
             SELECT p.title, p.category, v.id AS version_id, v.version_number, v.file_size_bytes
             FROM policy_versions v
             JOIN policies p ON p.id = v.policy_id
-            WHERE p.current_version_id = v.id
+            WHERE LOWER(v.status) = 'active'
             ORDER BY p.category, p.title, v.version_number DESC
             """
         ).fetchall()
