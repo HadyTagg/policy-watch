@@ -2070,28 +2070,6 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._load_policy_detail(self.current_policy_id)
                 return
             if self.current_policy_id and current_version_id:
-                active_row = self.conn.execute(
-                    """
-                    SELECT id, version_number
-                    FROM policy_versions
-                    WHERE policy_id = ?
-                      AND LOWER(status) = 'active'
-                      AND id != ?
-                    LIMIT 1
-                    """,
-                    (self.current_policy_id, current_version_id),
-                ).fetchone()
-                if active_row:
-                    version_number = active_row["version_number"]
-                    label = f"v{version_number}" if version_number is not None else "another version"
-                    QtWidgets.QMessageBox.warning(
-                        self,
-                        "Change Not Allowed",
-                        f"Only one active version is allowed. {label} is already active.",
-                    )
-                    if self.current_policy_id:
-                        self._load_policy_detail(self.current_policy_id)
-                    return
                 ratified_row = self.conn.execute(
                     "SELECT ratified FROM policy_versions WHERE id = ?",
                     (current_version_id,),
@@ -2105,6 +2083,29 @@ class MainWindow(QtWidgets.QMainWindow):
                     if self.current_policy_id:
                         self._load_policy_detail(self.current_policy_id)
                     return
+        if (status or "").lower() == "active" and self.current_policy_id and current_version_id:
+            active_row = self.conn.execute(
+                """
+                SELECT id, version_number
+                FROM policy_versions
+                WHERE policy_id = ?
+                  AND LOWER(status) = 'active'
+                  AND id != ?
+                LIMIT 1
+                """,
+                (self.current_policy_id, current_version_id),
+            ).fetchone()
+            if active_row:
+                version_number = active_row["version_number"]
+                label = f"v{version_number}" if version_number is not None else "another version"
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Change Not Allowed",
+                    f"Only one active version is allowed. {label} is already active.",
+                )
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
         confirm_change = not (
             (current_status or "").lower() == "draft" and (status or "").lower() == "active"
         )
