@@ -750,6 +750,23 @@ class MainWindow(QtWidgets.QMainWindow):
             "chip": {"label": label, "kind": kind},
         }
 
+    def _status_transition_options(self, status: str | None) -> list[str]:
+        """Return allowed status options for the provided status."""
+
+        normalized = (status or "").strip().lower()
+        options_map = {
+            "draft": ["Draft", "Ratified", "Withdrawn", "Archived"],
+            "ratified": ["Ratified", "Active", "Withdrawn"],
+            "active": ["Active", "Withdrawn"],
+            "withdrawn": ["Withdrawn", "Archived"],
+            "archived": ["Archived"],
+            "missing": ["Missing"],
+        }
+        return options_map.get(
+            normalized,
+            ["Draft", "Ratified", "Active", "Withdrawn", "Archived"],
+        )
+
     def _build_review_status_chip(self, policy) -> dict[str, dict[str, str] | str]:
         """Return chip payloads for review traffic status."""
 
@@ -1052,13 +1069,18 @@ class MainWindow(QtWidgets.QMainWindow):
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
             ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
-            is_draft = (version.get("status") or "").lower() == "draft"
+            normalized_status = (version.get("status") or "").lower()
+            is_draft = normalized_status == "draft"
             review_due_item = QtWidgets.QTableWidgetItem(
                 "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
             last_reviewed_value = self._format_review_date_display(version.get("last_reviewed") or "")
             last_reviewed_item = QtWidgets.QTableWidgetItem(last_reviewed_value)
             owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
+            status_item.setData(
+                QtCore.Qt.UserRole + 2,
+                self._status_transition_options(version.get("status")),
+            )
             items = [
                 created_item,
                 version_item,
@@ -1074,7 +1096,11 @@ class MainWindow(QtWidgets.QMainWindow):
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
                 flags = item.flags()
-                if column in editable_columns and not integrity_issue:
+                if (
+                    column in editable_columns
+                    and not integrity_issue
+                    and not (column == 5 and normalized_status in {"archived", "missing"})
+                ):
                     flags |= QtCore.Qt.ItemIsEditable
                 else:
                     flags &= ~QtCore.Qt.ItemIsEditable
@@ -1082,6 +1108,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 if integrity_issue:
                     item.setForeground(QtGui.QColor("#9ca3af"))
                     item.setToolTip(f"Integrity issue: {issue_reason}")
+            if normalized_status in {"withdrawn", "archived"} and not int(version["ratified"] or 0):
+                for item in items:
+                    if not integrity_issue:
+                        item.setForeground(QtGui.QColor("#9ca3af"))
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole, version["id"])
             self.version_table.item(row_index, 0).setData(QtCore.Qt.UserRole + 1, issue_reason)
         selected = False
@@ -1610,17 +1640,19 @@ class MainWindow(QtWidgets.QMainWindow):
         """Enable or disable status options based on the current status."""
 
         model = self.detail_status.model()
-        for option in ["Withdrawn", "Archived"]:
-            index = self.detail_status.findText(option)
-            if index < 0:
-                continue
+        allowed = set(self._status_transition_options(status))
+        for index in range(self.detail_status.count()):
+            option = self.detail_status.itemText(index)
             item = model.item(index)
             if item is None:
                 continue
-            if (status or "").lower() == "draft":
+            if option == "Missing":
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
-            else:
+                continue
+            if option in allowed:
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEnabled)
+            else:
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEnabled)
 
     def _update_policy_field(
         self,
@@ -2114,7 +2146,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._load_policy_detail(self.current_policy_id)
             return
         try:
-            set_version_status(self.conn, current_version_id, status)
+            set_version_status(self.conn, current_version_id, status, actor_username=self.username)
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
             if self.current_policy_id:
