@@ -691,9 +691,10 @@ def add_policy_version(
     if not review_due_date:
         review_due_date = ""
     normalized_status = _normalize_version_status(status)
-    if normalized_status != "Draft":
+    allow_non_draft = allow_active_version_id is not None
+    if normalized_status != "Draft" and not allow_non_draft:
         raise ValueError("New policy versions must start as Draft.")
-    status = "Draft"
+    status = normalized_status if allow_non_draft else "Draft"
     ratified_flag = 0
     ratified_at = None
     cursor = conn.execute(
@@ -1518,7 +1519,13 @@ def update_policy_version_metadata_field(
     conn.commit()
 
 
-def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
+def update_policy_version_notes(
+    conn,
+    version_id: int,
+    notes: str,
+    *,
+    allow_locked: bool = False,
+) -> None:
     """Update notes for a policy version and log the change."""
 
     row = conn.execute(
@@ -1528,7 +1535,7 @@ def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
     if not row:
         raise ValueError("Version not found")
     integrity_issue = _version_integrity_issue(conn, row)
-    if is_version_locked_row(row, integrity_issue=integrity_issue):
+    if not allow_locked and is_version_locked_row(row, integrity_issue=integrity_issue):
         raise ValueError(LOCKED_VERSION_MESSAGE)
     conn.execute(
         "UPDATE policy_versions SET notes = ? WHERE id = ?",
