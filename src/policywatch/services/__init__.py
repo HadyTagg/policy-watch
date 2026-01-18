@@ -10,6 +10,7 @@ import shutil
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from policywatch.core import audit, config, security
@@ -27,6 +28,11 @@ def _resolve_london_tz() -> datetime.tzinfo:
 
 
 LONDON_TZ = _resolve_london_tz()
+
+
+LOCKED_VERSION_MESSAGE = (
+    "This version is locked because it is archived, missing, or has a file integrity issue."
+)
 
 
 _AUDIT_ACTOR = contextvars.ContextVar("policywatch_audit_actor", default=None)
@@ -850,7 +856,7 @@ def _load_version_row(conn, version_id: int):
 
     row = conn.execute(
         """
-        SELECT id, policy_id, version_number, status, ratified
+        SELECT id, policy_id, version_number, status, ratified, file_path, sha256_hash
         FROM policy_versions
         WHERE id = ?
         """,
@@ -888,6 +894,9 @@ def set_version_ratified(
     """Set the ratified flag for a policy version while enforcing lifecycle rules."""
 
     version_row = _load_version_row(conn, version_id)
+    integrity_issue = _version_integrity_issue(conn, version_row)
+    if is_version_locked_row(version_row, integrity_issue=integrity_issue):
+        raise ValueError(LOCKED_VERSION_MESSAGE)
     current_status = _normalize_version_status(version_row["status"])
     if current_status == "Archived":
         raise ValueError("Archived versions are locked and cannot be modified.")
@@ -932,6 +941,9 @@ def set_version_status(
     """Update a policy version status using lifecycle rules."""
 
     version_row = _load_version_row(conn, version_id)
+    integrity_issue = _version_integrity_issue(conn, version_row)
+    if is_version_locked_row(version_row, integrity_issue=integrity_issue):
+        raise ValueError(LOCKED_VERSION_MESSAGE)
     current_status, requested_status = validate_status_transition(
         version_row["status"],
         new_status,
@@ -1204,6 +1216,40 @@ def file_sha256(path: Path) -> str:
     return _hash_file(path)
 
 
+def is_version_locked_row(
+    row: Mapping[str, object],
+    *,
+    integrity_issue: bool = False,
+    is_missing: bool | None = None,
+) -> bool:
+    """Return True when a policy version is locked for metadata edits."""
+
+    status = (row.get("status") or "").strip().lower()
+    if status == "archived":
+        return True
+    missing_flag = is_missing
+    if missing_flag is None:
+        missing_flag = status == "missing" or bool(row.get("is_missing"))
+    if missing_flag:
+        return True
+    if integrity_issue:
+        return True
+    return False
+
+
+def _version_integrity_issue(conn, row: Mapping[str, object]) -> bool:
+    status = (row.get("status") or "").strip().lower()
+    if status == "missing":
+        return True
+    file_path = row.get("file_path")
+    if not file_path:
+        return True
+    resolved = resolve_version_file_path(conn, int(row["id"]), str(file_path))
+    if not resolved:
+        return True
+    return _hash_file(resolved) != row.get("sha256_hash")
+
+
 def format_replacement_note(
     replaced_version_number: int,
     replacement_version_number: int | None,
@@ -1434,9 +1480,45 @@ def restore_missing_policy_file(conn, version_id: int, source_path: Path) -> Non
     conn.commit()
 
 
+def update_policy_version_metadata_field(
+    conn,
+    version_id: int,
+    field: str,
+    value,
+) -> None:
+    """Update allowed metadata fields for a policy version."""
+
+    allowed_fields = {"review_due_date", "review_frequency_months", "notes"}
+    if field not in allowed_fields:
+        raise ValueError("Unsupported metadata field.")
+    row = conn.execute(
+        "SELECT id, status, file_path, sha256_hash FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    integrity_issue = _version_integrity_issue(conn, row)
+    if is_version_locked_row(row, integrity_issue=integrity_issue):
+        raise ValueError(LOCKED_VERSION_MESSAGE)
+    conn.execute(
+        f"UPDATE policy_versions SET {field} = ? WHERE id = ?",
+        (value, version_id),
+    )
+    conn.commit()
+
+
 def update_policy_version_notes(conn, version_id: int, notes: str) -> None:
     """Update notes for a policy version and log the change."""
 
+    row = conn.execute(
+        "SELECT id, status, file_path, sha256_hash FROM policy_versions WHERE id = ?",
+        (version_id,),
+    ).fetchone()
+    if not row:
+        raise ValueError("Version not found")
+    integrity_issue = _version_integrity_issue(conn, row)
+    if is_version_locked_row(row, integrity_issue=integrity_issue):
+        raise ValueError(LOCKED_VERSION_MESSAGE)
     conn.execute(
         "UPDATE policy_versions SET notes = ? WHERE id = ?",
         (notes, version_id),
@@ -1606,11 +1688,14 @@ def update_policy_version_owner(conn, version_id: int, owner: str | None) -> Non
     """Update the policy version owner and log the change."""
 
     row = conn.execute(
-        "SELECT owner, version_number FROM policy_versions WHERE id = ?",
+        "SELECT id, owner, version_number, status, file_path, sha256_hash FROM policy_versions WHERE id = ?",
         (version_id,),
     ).fetchone()
     if not row:
         return
+    integrity_issue = _version_integrity_issue(conn, row)
+    if is_version_locked_row(row, integrity_issue=integrity_issue):
+        raise ValueError(LOCKED_VERSION_MESSAGE)
     current_owner = row["owner"] or ""
     new_owner = owner or ""
     if current_owner == new_owner:
