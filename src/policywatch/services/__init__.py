@@ -1216,6 +1216,17 @@ def file_sha256(path: Path) -> str:
     return _hash_file(path)
 
 
+def _row_value(row: Mapping[str, object], key: str, default: object | None = None) -> object | None:
+    """Return a value from a row-like mapping, supporting sqlite3.Row."""
+
+    if hasattr(row, "get"):
+        return row.get(key, default)
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return default
+
+
 def is_version_locked_row(
     row: Mapping[str, object],
     *,
@@ -1224,12 +1235,12 @@ def is_version_locked_row(
 ) -> bool:
     """Return True when a policy version is locked for metadata edits."""
 
-    status = (row.get("status") or "").strip().lower()
+    status = (_row_value(row, "status") or "").strip().lower()
     if status == "archived":
         return True
     missing_flag = is_missing
     if missing_flag is None:
-        missing_flag = status == "missing" or bool(row.get("is_missing"))
+        missing_flag = status == "missing" or bool(_row_value(row, "is_missing"))
     if missing_flag:
         return True
     if integrity_issue:
@@ -1238,16 +1249,16 @@ def is_version_locked_row(
 
 
 def _version_integrity_issue(conn, row: Mapping[str, object]) -> bool:
-    status = (row.get("status") or "").strip().lower()
+    status = (_row_value(row, "status") or "").strip().lower()
     if status == "missing":
         return True
-    file_path = row.get("file_path")
+    file_path = _row_value(row, "file_path")
     if not file_path:
         return True
     resolved = resolve_version_file_path(conn, int(row["id"]), str(file_path))
     if not resolved:
         return True
-    return _hash_file(resolved) != row.get("sha256_hash")
+    return _hash_file(resolved) != _row_value(row, "sha256_hash")
 
 
 def format_replacement_note(
