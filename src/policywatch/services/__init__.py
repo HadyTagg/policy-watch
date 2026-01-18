@@ -926,6 +926,7 @@ def set_version_status(
     version_id: int,
     new_status: str,
     actor_username: str | None = None,
+    actor_user_id: int | None = None,
     note: str | None = None,
 ) -> None:
     """Update a policy version status using lifecycle rules."""
@@ -958,10 +959,10 @@ def set_version_status(
         conn.execute(
             """
             UPDATE policy_versions
-            SET status = ?, ratified = 1, ratified_at = ?, ratified_by_user_id = NULL
+            SET status = ?, ratified = 1, ratified_at = ?, ratified_by_user_id = ?
             WHERE id = ?
             """,
-            ("Ratified", ratified_at, version_id),
+            ("Ratified", ratified_at, actor_user_id, version_id),
         )
         _log_status_change(
             conn,

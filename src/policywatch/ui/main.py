@@ -2053,7 +2053,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._load_policy_detail(self.current_policy_id)
             return
         try:
-            set_version_status(self.conn, current_version_id, status, actor_username=self.username)
+            set_version_status(
+                self.conn,
+                current_version_id,
+                status,
+                actor_username=self.username,
+                actor_user_id=self.user_id,
+            )
         except ValueError as exc:
             QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
             if self.current_policy_id:
