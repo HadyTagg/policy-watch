@@ -146,6 +146,51 @@ class VersionLifecycleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             set_version_status(self.conn, version_id, "Active")
 
+    def test_draft_can_be_closed(self) -> None:
+        policy_id = _seed_policy(self.conn)
+        version_id = _seed_version(self.conn, policy_id, status="Draft")
+
+        set_version_status(self.conn, version_id, "Withdrawn")
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        self.assertEqual(row["status"], "Withdrawn")
+
+        set_version_status(self.conn, version_id, "Archived")
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        self.assertEqual(row["status"], "Archived")
+
+    def test_ratified_can_withdraw_and_archive(self) -> None:
+        policy_id = _seed_policy(self.conn)
+        version_id = _seed_version(self.conn, policy_id, status="Draft")
+        set_version_status(self.conn, version_id, "Ratified")
+
+        set_version_status(self.conn, version_id, "Withdrawn")
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        self.assertEqual(row["status"], "Withdrawn")
+
+        set_version_status(self.conn, version_id, "Archived")
+        row = self.conn.execute(
+            "SELECT status FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        self.assertEqual(row["status"], "Archived")
+
+    def test_withdrawn_cannot_be_reactivated(self) -> None:
+        policy_id = _seed_policy(self.conn)
+        version_id = _seed_version(self.conn, policy_id, status="Draft")
+        set_version_status(self.conn, version_id, "Withdrawn")
+
+        with self.assertRaises(ValueError):
+            set_version_status(self.conn, version_id, "Active")
+
     def test_new_policies_start_as_draft(self) -> None:
         with self.assertRaises(ValueError):
             create_policy(
