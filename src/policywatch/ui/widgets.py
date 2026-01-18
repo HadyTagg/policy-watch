@@ -227,11 +227,19 @@ class EnumComboPillDelegate(PillDelegate):
         popup_delay_ms: int = 0,
         style_map: dict[str, dict[str, str]] | None = None,
         default_style: dict[str, str] | None = None,
+        option_role: int = QtCore.Qt.UserRole + 2,
     ) -> None:
         super().__init__(style_map or PILL_STYLES, parent, default_style=default_style)
         self._options = options
         self._on_commit = on_commit
         self._popup_delay_ms = max(0, int(popup_delay_ms))
+        self._option_role = option_role
+
+    def _options_for_index(self, index: QtCore.QModelIndex) -> list[str]:
+        role_options = index.data(self._option_role)
+        if isinstance(role_options, (list, tuple)):
+            return [str(option) for option in role_options]
+        return list(self._options)
 
     def createEditor(
         self,
@@ -240,7 +248,7 @@ class EnumComboPillDelegate(PillDelegate):
         index: QtCore.QModelIndex,
     ) -> QtWidgets.QWidget:
         combo = QtWidgets.QComboBox(parent)
-        combo.addItems(self._options)
+        combo.addItems(self._options_for_index(index))
         combo.setEditable(False)
         combo.currentIndexChanged.connect(self._commit_combo_selection)
         QtCore.QTimer.singleShot(self._popup_delay_ms, combo.showPopup)
@@ -276,6 +284,89 @@ class EnumComboPillDelegate(PillDelegate):
         self.closeEditor.emit(editor, QtWidgets.QAbstractItemDelegate.NoHint)
 
 
+class BooleanIconDelegate(QtWidgets.QStyledItemDelegate):
+    """Render boolean values as centered icons in table cells."""
+
+    def __init__(
+        self,
+        parent: QtCore.QObject | None = None,
+        true_color: QtGui.QColor | None = None,
+        false_color: QtGui.QColor | None = None,
+        icon_size: int = 16,
+    ) -> None:
+        super().__init__(parent)
+        self._true_color = true_color or QtGui.QColor("#16a34a")
+        self._false_color = false_color or QtGui.QColor("#dc2626")
+        self._icon_size = max(12, int(icon_size))
+        self._true_icon = QtWidgets.QApplication.style().standardIcon(
+            _standard_pixmap("SP_DialogApplyButton", QtWidgets.QStyle.SP_DialogApplyButton)
+        )
+        self._false_icon = QtWidgets.QApplication.style().standardIcon(
+            _standard_pixmap("SP_DialogCancelButton", QtWidgets.QStyle.SP_DialogCancelButton)
+        )
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        value = index.data(QtCore.Qt.UserRole)
+        if value is None:
+            value = index.data(QtCore.Qt.DisplayRole)
+        bool_value = self._coerce_bool(value)
+        if bool_value is None:
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        style_option = QtWidgets.QStyleOptionViewItem(option)
+        style_option.text = ""
+        style = style_option.widget.style() if style_option.widget else QtWidgets.QApplication.style()
+        style.drawPrimitive(QtWidgets.QStyle.PE_PanelItemViewItem, style_option, painter, style_option.widget)
+
+        icon = self._true_icon if bool_value else self._false_icon
+        color = self._true_color if bool_value else self._false_color
+        pixmap = icon.pixmap(self._icon_size, self._icon_size)
+        if not pixmap.isNull():
+            pixmap = self._tint_pixmap(pixmap, color)
+            x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
+            y = option.rect.y() + (option.rect.height() - pixmap.height()) // 2
+            painter.drawPixmap(x, y, pixmap)
+        painter.restore()
+
+    def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
+        base = super().sizeHint(option, index)
+        return QtCore.QSize(base.width(), max(base.height(), self._icon_size + 6))
+
+    @staticmethod
+    def _tint_pixmap(pixmap: QtGui.QPixmap, color: QtGui.QColor) -> QtGui.QPixmap:
+        tinted = QtGui.QPixmap(pixmap.size())
+        tinted.fill(QtCore.Qt.transparent)
+        painter = QtGui.QPainter(tinted)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.setCompositionMode(QtGui.QPainter.CompositionMode_SourceIn)
+        painter.fillRect(tinted.rect(), color)
+        painter.end()
+        return tinted
+
+    @staticmethod
+    def _coerce_bool(value: object) -> bool | None:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"yes", "true", "1", "ratified"}:
+                return True
+            if normalized in {"no", "false", "0", "not ratified", "unratified"}:
+                return False
+        return None
+
+
 def apply_pill_delegate(
     table: QtWidgets.QTableWidget,
     columns: list[int | str] | int | str,
@@ -287,6 +378,29 @@ def apply_pill_delegate(
     if isinstance(columns, (int, str)):
         columns = [columns]
     delegate = PillDelegate(style_map or PILL_STYLES, table, default_style=default_style)
+    for column in columns:
+        if isinstance(column, int):
+            table.setItemDelegateForColumn(column, delegate)
+            continue
+        match_index = None
+        for idx in range(table.columnCount()):
+            header_item = table.horizontalHeaderItem(idx)
+            if header_item and header_item.text().strip().lower() == column.strip().lower():
+                match_index = idx
+                break
+        if match_index is not None:
+            table.setItemDelegateForColumn(match_index, delegate)
+
+
+def apply_boolean_icon_delegate(
+    table: QtWidgets.QTableWidget,
+    columns: list[int | str] | int | str,
+) -> None:
+    """Apply the boolean icon delegate to the provided columns."""
+
+    if isinstance(columns, (int, str)):
+        columns = [columns]
+    delegate = BooleanIconDelegate(table)
     for column in columns:
         if isinstance(column, int):
             table.setItemDelegateForColumn(column, delegate)
