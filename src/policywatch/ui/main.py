@@ -53,7 +53,13 @@ from policywatch.services import (
 )
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
-from policywatch.ui.widgets import KpiCard, apply_pill_delegate, apply_table_focusless, set_button_icon
+from policywatch.ui.widgets import (
+    KpiCard,
+    PolicyLifecycleTimeline,
+    apply_pill_delegate,
+    apply_table_focusless,
+    set_button_icon,
+)
 
 
 class BoldTableItemDelegate(QtWidgets.QStyledItemDelegate):
@@ -88,6 +94,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._title_dirty = False
         self._current_policy_title = ""
         self._current_policy_category = ""
+        self._current_policy_version_id: int | None = None
         self._latest_reviewed_at: str | None = None
         self._staff_records: list[dict[str, str]] = []
         self._owner_refreshing = False
@@ -939,6 +946,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self._current_policy_title = policy["title"] or ""
         self._current_policy_category = policy["category"] or ""
+        self._current_policy_version_id = policy["current_version_id"]
         self.detail_status.blockSignals(True)
         self.detail_review_due.blockSignals(True)
         self.detail_review_frequency.blockSignals(True)
@@ -1043,8 +1051,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if selected:
             version_id = self.version_table.item(self.version_table.currentRow(), 0).data(QtCore.Qt.UserRole)
             self._load_policy_reviews(version_id)
+            self._update_version_timeline(version_id)
         else:
             self._clear_policy_reviews()
+            self._update_version_timeline(None)
 
     def _load_policy_reviews(self, policy_version_id: int) -> None:
         """Load review history for the selected policy version."""
@@ -1073,6 +1083,48 @@ class MainWindow(QtWidgets.QMainWindow):
         self.review_table.setRowCount(0)
         self._latest_reviewed_at = None
         self.detail_last_reviewed.setText("")
+
+    def _resolve_version_stage(
+        self,
+        *,
+        is_current: bool,
+        ratified: bool,
+        withdrawn: bool,
+        archived: bool,
+    ) -> str:
+        """Map version fields to the lifecycle stage string."""
+
+        if archived:
+            return "Archived"
+        if withdrawn:
+            return "Withdrawn"
+        if is_current:
+            return "Active"
+        if ratified:
+            return "Ratified"
+        return "Draft"
+
+    def _update_version_timeline(self, version_id: int | None) -> None:
+        """Update the lifecycle timeline for the selected version."""
+
+        if version_id is None:
+            self.version_timeline.set_stage(None)
+            return
+        version = self.conn.execute(
+            "SELECT status, ratified FROM policy_versions WHERE id = ?",
+            (version_id,),
+        ).fetchone()
+        if not version:
+            self.version_timeline.set_stage(None)
+            return
+        status_value = (version["status"] or "").lower()
+        stage = self._resolve_version_stage(
+            is_current=self._current_policy_version_id == version_id,
+            ratified=bool(version["ratified"]),
+            withdrawn=status_value == "withdrawn",
+            archived=status_value == "archived",
+        )
+        self.version_timeline.set_stage(stage)
 
     def _prompt_policy_review(self) -> dict | None:
         """Prompt for review details when recording a no-change review."""
@@ -1420,6 +1472,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not selection:
             self._clear_policy_metadata_fields()
             self._clear_policy_reviews()
+            self.version_timeline.set_stage(None)
             return
         integrity_issue = self._selected_version_integrity_issue()
         version_id = self.version_table.item(selection[0].row(), 0).data(QtCore.Qt.UserRole)
@@ -1441,6 +1494,14 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not version:
             return
+        status_value = (version["status"] or "").lower()
+        stage = self._resolve_version_stage(
+            is_current=self._current_policy_version_id == version_id,
+            ratified=bool(version["ratified"]),
+            withdrawn=status_value == "withdrawn",
+            archived=status_value == "archived",
+        )
+        self.version_timeline.set_stage(stage)
         is_missing_status = (version["status"] or "").lower() == "missing"
         self.detail_status.blockSignals(True)
         self.detail_review_due.blockSignals(True)
@@ -1843,6 +1904,20 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog.setWindowTitle("Version Metadata")
         layout = QtWidgets.QVBoxLayout(dialog)
 
+        def stage_for_status(status: str) -> str:
+            status_value = (status or "").lower()
+            if status_value == "archived":
+                return "Archived"
+            if status_value == "withdrawn":
+                return "Withdrawn"
+            if status_value == "active":
+                return "Active"
+            return "Draft"
+
+        timeline = PolicyLifecycleTimeline(dialog)
+        timeline.set_stage(stage_for_status("Draft"))
+        layout.addWidget(timeline)
+
         form = QtWidgets.QFormLayout()
         status_combo = QtWidgets.QComboBox()
         status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
@@ -1893,6 +1968,7 @@ class MainWindow(QtWidgets.QMainWindow):
             review_due_date.setDate(base_date)
 
         def update_metadata_state(status: str) -> None:
+            timeline.set_stage(stage_for_status(status))
             is_draft = status == "Draft"
             min_date = QtCore.QDate(1900, 1, 1)
             review_due_date.setMinimumDate(min_date)
@@ -2268,6 +2344,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
         self.detail_last_reviewed.setText("")
+        self.version_timeline.set_stage(None)
         self.detail_status.blockSignals(False)
         self.detail_review_due.blockSignals(False)
         self.detail_review_frequency.blockSignals(False)
@@ -2373,6 +2450,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
+        self.version_timeline = PolicyLifecycleTimeline()
+        versions_layout.addWidget(self.version_timeline, alignment=QtCore.Qt.AlignCenter)
         self.version_table = QtWidgets.QTableWidget(0, 10)
         self.version_table.setHorizontalHeaderLabels(
             [

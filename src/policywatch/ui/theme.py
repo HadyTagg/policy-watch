@@ -31,6 +31,17 @@ COLORS = {
     "neutral_900": "#0f172a",
     "accent": "#2563eb",
 }
+DARK_COLORS = {
+    "neutral_0": "#0f172a",
+    "neutral_50": "#111827",
+    "neutral_100": "#1e293b",
+    "neutral_200": "#1e293b",
+    "neutral_300": "#334155",
+    "neutral_500": "#94a3b8",
+    "neutral_700": "#cbd5e1",
+    "neutral_900": "#f8fafc",
+    "accent": "#60a5fa",
+}
 STATUS_COLORS = {
     "neutral": {"bg": "#e2e8f0", "fg": "#1e293b", "border": "#cbd5e1"},
     "info": {"bg": "#dbeafe", "fg": "#1e3a8a", "border": "#93c5fd"},
@@ -215,6 +226,7 @@ def apply_base_theme(app: QtWidgets.QApplication) -> None:
     app.setPalette(palette)
     base_stylesheet = build_stylesheet(font_family)
     app.setProperty("policywatch_base_stylesheet", base_stylesheet)
+    app.setProperty("policywatch_theme", "light")
     app.setStyleSheet(base_stylesheet)
 
 
@@ -231,6 +243,7 @@ def apply_theme(theme: str) -> None:
     app = QtWidgets.QApplication.instance()
     if not app:
         return
+    app.setProperty("policywatch_theme", theme)
     base_stylesheet = app.property("policywatch_base_stylesheet") or ""
     if theme == "light":
         app.setStyleSheet(base_stylesheet)
