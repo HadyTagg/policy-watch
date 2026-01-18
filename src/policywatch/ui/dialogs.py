@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Callable
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 from policywatch.core import security
 from policywatch.services import (
@@ -23,6 +23,8 @@ from policywatch.ui.widgets import apply_table_focusless, set_button_icon
 class CategoryManagerDialog(QtWidgets.QDialog):
     """Dialog for creating and deleting policy categories."""
 
+    closed = QtCore.pyqtSignal()
+
     def __init__(self, conn: sqlite3.Connection, on_updated: Callable[[], None], parent=None):
         """Initialize the category management dialog UI."""
 
@@ -32,6 +34,8 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         self.setWindowTitle("Manage Categories")
         self.setModal(True)
         self.setAttribute(QtCore.Qt.WA_QuitOnClose, False)
+        self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
+
         self.category_input = QtWidgets.QLineEdit()
         self.category_input.setPlaceholderText("New category name")
 
@@ -71,6 +75,22 @@ class CategoryManagerDialog(QtWidgets.QDialog):
         for row_index, row in enumerate(rows):
             self.table.setItem(row_index, 0, QtWidgets.QTableWidgetItem(str(row["id"])))
             self.table.setItem(row_index, 1, QtWidgets.QTableWidgetItem(row["name"]))
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        """Ensure Escape closes only this dialog without bubbling."""
+
+        if event.key() == QtCore.Qt.Key_Escape:
+            event.accept()
+            self.close()
+            return
+        super().keyPressEvent(event)
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        """Hide the dialog and notify listeners instead of destroying it."""
+
+        event.ignore()
+        self.hide()
+        self.closed.emit()
 
     def _add_category(self) -> None:
         """Add a new category and refresh the view."""

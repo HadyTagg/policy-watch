@@ -902,11 +902,22 @@ class MainWindow(QtWidgets.QMainWindow):
             self._refresh_categories()
             self._load_audit_log()
 
+        if getattr(self, "_category_dialog", None):
+            self._category_dialog.show()
+            self._category_dialog.raise_()
+            self._category_dialog.activateWindow()
+            return
+
         dialog = CategoryManagerDialog(self.conn, _refresh_categories_and_audit, self)
-        dialog.exec()
-        self._refresh_policies(clear_selection=False)
-        self._load_policy_detail(self.current_policy_id)
-        self._load_audit_log()
+
+        def _on_dialog_closed() -> None:
+            self._refresh_policies(clear_selection=False)
+            self._load_policy_detail(self.current_policy_id)
+            self._load_audit_log()
+
+        dialog.closed.connect(_on_dialog_closed)
+        self._category_dialog = dialog
+        dialog.show()
 
     def _open_new_policy(self) -> None:
         """Open the new policy dialog and refresh data."""
