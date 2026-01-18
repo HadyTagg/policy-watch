@@ -240,6 +240,8 @@ class EnumComboPillDelegate(PillDelegate):
         combo = QtWidgets.QComboBox(parent)
         combo.addItems(self._options)
         combo.setEditable(False)
+        combo.currentIndexChanged.connect(self._commit_combo_selection)
+        QtCore.QTimer.singleShot(0, combo.showPopup)
         return combo
 
     def setEditorData(self, editor: QtWidgets.QWidget, index: QtCore.QModelIndex) -> None:
@@ -263,6 +265,13 @@ class EnumComboPillDelegate(PillDelegate):
         value = editor.currentText()
         if callable(self._on_commit):
             self._on_commit(index, value)
+
+    def _commit_combo_selection(self) -> None:
+        editor = self.sender()
+        if not isinstance(editor, QtWidgets.QComboBox):
+            return
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QtWidgets.QAbstractItemDelegate.NoHint)
 
 
 def apply_pill_delegate(
