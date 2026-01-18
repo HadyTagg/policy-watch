@@ -224,12 +224,14 @@ class EnumComboPillDelegate(PillDelegate):
         options: list[str],
         on_commit,
         parent: QtCore.QObject | None = None,
+        popup_delay_ms: int = 0,
         style_map: dict[str, dict[str, str]] | None = None,
         default_style: dict[str, str] | None = None,
     ) -> None:
         super().__init__(style_map or PILL_STYLES, parent, default_style=default_style)
         self._options = options
         self._on_commit = on_commit
+        self._popup_delay_ms = max(0, int(popup_delay_ms))
 
     def createEditor(
         self,
@@ -241,7 +243,7 @@ class EnumComboPillDelegate(PillDelegate):
         combo.addItems(self._options)
         combo.setEditable(False)
         combo.currentIndexChanged.connect(self._commit_combo_selection)
-        QtCore.QTimer.singleShot(0, combo.showPopup)
+        QtCore.QTimer.singleShot(self._popup_delay_ms, combo.showPopup)
         return combo
 
     def setEditorData(self, editor: QtWidgets.QWidget, index: QtCore.QModelIndex) -> None:

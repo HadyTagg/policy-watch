@@ -2464,20 +2464,24 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
+        popup_delay_ms = 0
         current_delegate = EnumComboPillDelegate(
             ["Current", "Not Current"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
+            popup_delay_ms=popup_delay_ms,
         )
         status_delegate = EnumComboPillDelegate(
             ["Draft", "Active", "Withdrawn", "Archived"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
+            popup_delay_ms=popup_delay_ms,
         )
         ratified_delegate = EnumComboPillDelegate(
             ["Ratified", "Awaiting Ratification"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
+            popup_delay_ms=popup_delay_ms,
         )
         self.version_table.setItemDelegateForColumn(4, current_delegate)
         self.version_table.setItemDelegateForColumn(5, status_delegate)
