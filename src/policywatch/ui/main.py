@@ -1011,7 +1011,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {4, 5, 6, 9}
+        editable_columns = {4, 5, 9}
         headers = [
             "Created",
             "Version",
@@ -1067,7 +1067,7 @@ class MainWindow(QtWidgets.QMainWindow):
             category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
             title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
-            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Awaiting Ratification"
+            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             normalized_status = (version.get("status") or "").lower()
             is_draft = normalized_status == "draft"
@@ -2547,15 +2547,8 @@ class MainWindow(QtWidgets.QMainWindow):
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
         )
-        ratified_delegate = EnumComboPillDelegate(
-            ["Ratified", "Awaiting Ratification"],
-            self._handle_version_table_combo_change,
-            parent=self.version_table,
-            popup_delay_ms=popup_delay_ms,
-        )
         self.version_table.setItemDelegateForColumn(4, current_delegate)
         self.version_table.setItemDelegateForColumn(5, status_delegate)
-        self.version_table.setItemDelegateForColumn(6, ratified_delegate)
         self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
