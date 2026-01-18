@@ -153,7 +153,8 @@ class PolicyDialog(QtWidgets.QDialog):
         self.category_combo = QtWidgets.QComboBox()
         self.category_combo.setEditable(False)
         self.status_combo = QtWidgets.QComboBox()
-        self.status_combo.addItems(["Draft", "Active", "Withdrawn", "Archived"])
+        self.status_combo.addItems(["Draft"])
+        self.status_combo.setEnabled(False)
         self.status_combo.currentTextChanged.connect(self._update_metadata_state)
 
         self.owner_combo = QtWidgets.QComboBox()
