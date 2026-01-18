@@ -53,6 +53,7 @@ from policywatch.services import (
 from policywatch.ui import theme
 from policywatch.ui.dialogs import AccountCreationDialog, CategoryManagerDialog, PasswordChangeDialog, PolicyDialog
 from policywatch.ui.widgets import (
+    DropdownPillDelegate,
     EnumComboPillDelegate,
     KpiCard,
     apply_pill_delegate,
@@ -1011,7 +1012,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {4, 5, 9}
+        editable_columns = {4, 5, 6, 9}
+        tooltip_columns = {4, 5, 6}
         headers = [
             "Created",
             "Version",
@@ -1067,7 +1069,7 @@ class MainWindow(QtWidgets.QMainWindow):
             category_item = QtWidgets.QTableWidgetItem(version.get("category") or policy["category"] or "")
             title_item = QtWidgets.QTableWidgetItem(version.get("title") or policy["title"] or "")
             status_item = QtWidgets.QTableWidgetItem(version["status"] or "")
-            ratified_value = "Yes" if int(version["ratified"] or 0) else "No"
+            ratified_value = "Ratified" if int(version["ratified"] or 0) else "Not Ratified"
             ratified_item = QtWidgets.QTableWidgetItem(ratified_value)
             normalized_status = (version.get("status") or "").lower()
             is_draft = normalized_status == "draft"
@@ -1102,6 +1104,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     and not (column == 5 and normalized_status in {"archived", "missing"})
                 ):
                     flags |= QtCore.Qt.ItemIsEditable
+                    if column in tooltip_columns and not item.toolTip():
+                        item.setToolTip("Click to change")
                 else:
                     flags &= ~QtCore.Qt.ItemIsEditable
                 item.setFlags(flags)
@@ -1330,7 +1334,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.question(
                 self,
                 "Confirm",
-                "Mark selected version as ratified?",
+                "Change ratification status to Ratified?",
             )
             != QtWidgets.QMessageBox.Yes
         ):
@@ -1364,7 +1368,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.question(
                 self,
                 "Confirm",
-                "Mark selected version as not ratified?",
+                "Change ratification status to Not Ratified?",
             )
             != QtWidgets.QMessageBox.Yes
         ):
@@ -1400,7 +1404,7 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.question(
                 self,
                 "Confirm",
-                "Set selected version as current?",
+                "Make this version current?",
             )
             != QtWidgets.QMessageBox.Yes
         ):
@@ -2303,10 +2307,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _set_version_action_state(self, enabled: bool) -> None:
         """Enable or disable version-specific actions."""
 
-        self.ratify_button.setEnabled(enabled)
-        self.unratify_button.setEnabled(enabled)
-        self.set_current_button.setEnabled(enabled)
-        self.set_not_current_button.setEnabled(enabled)
         self.open_location_button.setEnabled(enabled)
         self.print_document_button.setEnabled(enabled)
 
@@ -2533,26 +2533,34 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QAbstractItemView.SelectedClicked
             | QtWidgets.QAbstractItemView.EditKeyPressed
         )
+        self.version_table.setMouseTracking(True)
         version_font = self.version_table.font()
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
         popup_delay_ms = 0
-        current_delegate = EnumComboPillDelegate(
+        current_delegate = DropdownPillDelegate(
             ["Current", "Not Current"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
         )
-        status_delegate = EnumComboPillDelegate(
+        status_delegate = DropdownPillDelegate(
             ["Draft", "Ratified", "Active", "Withdrawn", "Archived"],
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+            popup_delay_ms=popup_delay_ms,
+        )
+        ratified_delegate = DropdownPillDelegate(
+            ["Ratified", "Not Ratified"],
             self._handle_version_table_combo_change,
             parent=self.version_table,
             popup_delay_ms=popup_delay_ms,
         )
         self.version_table.setItemDelegateForColumn(4, current_delegate)
         self.version_table.setItemDelegateForColumn(5, status_delegate)
+        self.version_table.setItemDelegateForColumn(6, ratified_delegate)
         self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
@@ -2659,18 +2667,6 @@ class MainWindow(QtWidgets.QMainWindow):
         reviews_layout.addLayout(review_button_row)
 
         button_row = QtWidgets.QHBoxLayout()
-        self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
-        set_button_icon(self.ratify_button, "approve")
-        self.ratify_button.clicked.connect(self._mark_ratified)
-        self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
-        set_button_icon(self.unratify_button, "cancel")
-        self.unratify_button.clicked.connect(self._mark_unratified)
-        self.set_current_button = QtWidgets.QPushButton("Set Current")
-        set_button_icon(self.set_current_button, "select")
-        self.set_current_button.clicked.connect(self._set_current)
-        self.set_not_current_button = QtWidgets.QPushButton("Set Not Current")
-        set_button_icon(self.set_not_current_button, "deselect")
-        self.set_not_current_button.clicked.connect(self._set_not_current)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
         set_button_icon(self.open_location_button, "open")
         self.open_location_button.clicked.connect(self._open_file_location)
@@ -2681,12 +2677,6 @@ class MainWindow(QtWidgets.QMainWindow):
         set_button_icon(self.add_version_button, "add")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
-        button_row.addStretch(2)
-        button_row.addWidget(self.ratify_button)
-        button_row.addWidget(self.unratify_button)
-        button_row.addStretch(2)
-        button_row.addWidget(self.set_current_button)
-        button_row.addWidget(self.set_not_current_button)
         button_row.addStretch(2)
         button_row.addWidget(self.open_location_button)
         button_row.addWidget(self.print_document_button)

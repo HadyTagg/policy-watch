@@ -284,6 +284,48 @@ class EnumComboPillDelegate(PillDelegate):
         self.closeEditor.emit(editor, QtWidgets.QAbstractItemDelegate.NoHint)
 
 
+class DropdownPillDelegate(EnumComboPillDelegate):
+    """Combo box delegate that overlays a subtle dropdown indicator."""
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        super().paint(painter, option, index)
+
+        if not (index.flags() & QtCore.Qt.ItemIsEditable):
+            return
+
+        raw_text = index.data(QtCore.Qt.DisplayRole)
+        if raw_text is None or str(raw_text).strip() == "":
+            return
+
+        painter.save()
+        arrow = "▾"
+        hover = bool(option.state & QtWidgets.QStyle.State_MouseOver)
+        is_selected = bool(option.state & QtWidgets.QStyle.State_Selected)
+        palette = option.palette
+        base_color = palette.color(QtGui.QPalette.HighlightedText if is_selected else QtGui.QPalette.Text)
+        arrow_color = QtGui.QColor(base_color)
+        arrow_color.setAlpha(220 if hover else 150)
+        painter.setPen(arrow_color)
+
+        font = QtGui.QFont(option.font)
+        font.setPointSize(theme.FONT_SIZES["small"])
+        painter.setFont(font)
+        metrics = QtGui.QFontMetrics(font)
+        padding = theme.SPACING["sm"]
+        arrow_width = metrics.horizontalAdvance(arrow)
+
+        arrow_rect = QtCore.QRect(option.rect)
+        arrow_rect.setLeft(option.rect.right() - arrow_width - padding)
+        arrow_rect.setRight(option.rect.right() - padding)
+        painter.drawText(arrow_rect, QtCore.Qt.AlignVCenter | QtCore.Qt.AlignRight, arrow)
+        painter.restore()
+
+
 def apply_pill_delegate(
     table: QtWidgets.QTableWidget,
     columns: list[int | str] | int | str,
