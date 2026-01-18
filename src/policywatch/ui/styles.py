@@ -20,8 +20,6 @@ PILL_STYLES: dict[str, dict[str, str]] = {
     "ok": {"bg": "#dcfce7", "fg": "#14532d", "border": "#22c55e"},
     "review scheduled": {"bg": "#e5e7eb", "fg": "#1f2937", "border": "#9ca3af"},
     "no schedule": {"bg": "#e5e7eb", "fg": "#1f2937", "border": "#9ca3af"},
-    "current": {"bg": "#dcfce7", "fg": "#14532d", "border": "#22c55e"},
-    "not current": {"bg": "#e5e7eb", "fg": "#1f2937", "border": "#9ca3af"},
     "yes": {"bg": "#dcfce7", "fg": "#14532d", "border": "#22c55e"},
     "no": {"bg": "#fef3c7", "fg": "#92400e", "border": "#f59e0b"},
 }
