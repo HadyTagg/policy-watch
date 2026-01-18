@@ -1101,6 +1101,15 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self._mark_unratified()
 
+    def _on_version_table_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
+        """Open combo editors immediately for editable enum columns."""
+
+        if item.column() not in {4, 5, 6}:
+            return
+        if not (item.flags() & QtCore.Qt.ItemIsEditable):
+            return
+        self.version_table.editItem(item)
+
     def _load_policy_reviews(self, policy_version_id: int) -> None:
         """Load review history for the selected policy version."""
 
@@ -2473,6 +2482,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.setItemDelegateForColumn(4, current_delegate)
         self.version_table.setItemDelegateForColumn(5, status_delegate)
         self.version_table.setItemDelegateForColumn(6, ratified_delegate)
+        self.version_table.itemClicked.connect(self._on_version_table_item_clicked)
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
