@@ -2032,118 +2032,134 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_status_changed(self, status: str) -> None:
         """Handle status updates from the metadata form."""
 
-        current_status = None
-        current_version_id = None
-        selected = self.version_table.selectionModel().selectedRows()
-        if selected:
-            version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
-            current_version_id = version_id
-            version_row = self.conn.execute(
-                "SELECT status FROM policy_versions WHERE id = ?",
-                (version_id,),
-            ).fetchone()
-            if version_row:
-                current_status = version_row["status"]
-        elif self.current_policy_id:
-            active_version_id = self._resolve_active_version_id(self.current_policy_id)
-            if active_version_id:
+        try:
+            current_status = None
+            current_version_id = None
+            selected = self.version_table.selectionModel().selectedRows()
+            if selected:
+                version_id = self.version_table.item(selected[0].row(), 0).data(QtCore.Qt.UserRole)
+                current_version_id = version_id
                 version_row = self.conn.execute(
                     "SELECT status FROM policy_versions WHERE id = ?",
-                    (active_version_id,),
+                    (version_id,),
                 ).fetchone()
                 if version_row:
                     current_status = version_row["status"]
-                    current_version_id = active_version_id
-        if current_version_id is None:
-            return
-        if (current_status or "").strip().lower() == (status or "").strip().lower():
-            return
-        if (status or "").lower() == "active":
-            if self.user_id is None:
-                QtWidgets.QMessageBox.warning(
-                    self,
-                    "Unavailable",
-                    "User account not found. Unable to confirm status change.",
-                )
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
+            elif self.current_policy_id:
+                active_version_id = self._resolve_active_version_id(self.current_policy_id)
+                if active_version_id:
+                    version_row = self.conn.execute(
+                        "SELECT status FROM policy_versions WHERE id = ?",
+                        (active_version_id,),
+                    ).fetchone()
+                    if version_row:
+                        current_status = version_row["status"]
+                        current_version_id = active_version_id
+            if current_version_id is None:
                 return
-            password, ok = QtWidgets.QInputDialog.getText(
-                self,
-                "Confirm Password",
-                "Enter your account password to activate this policy:",
-                QtWidgets.QLineEdit.Password,
-            )
-            if not ok:
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
+            if (current_status or "").strip().lower() == (status or "").strip().lower():
                 return
-            user_row = self.conn.execute(
-                "SELECT password_hash, salt FROM users WHERE id = ?",
-                (self.user_id,),
-            ).fetchone()
-            if not user_row or not security.verify_password(
-                password,
-                user_row["password_hash"],
-                user_row["salt"],
-            ):
-                QtWidgets.QMessageBox.warning(self, "Invalid", "Password is incorrect.")
-                if self.current_policy_id:
-                    self._load_policy_detail(self.current_policy_id)
-                return
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Change",
-            f"Change Status from {current_status} to {status}?",
-        )
-        if confirm != QtWidgets.QMessageBox.Yes:
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
-            return
-        try:
-            set_version_status(
-                self.conn,
-                current_version_id,
-                status,
-                actor_username=self.username,
-                actor_user_id=self.user_id,
-            )
-        except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
-            if self.current_policy_id:
-                self._load_policy_detail(self.current_policy_id)
-            return
-        self.detail_status.blockSignals(True)
-        self._apply_status_constraints(status)
-        self.detail_status.blockSignals(False)
-        if (status or "").lower() == "active":
-            if current_version_id:
-                updated_status = self.conn.execute(
-                    "SELECT status FROM policy_versions WHERE id = ?",
-                    (current_version_id,),
-                ).fetchone()
-                if updated_status and (updated_status["status"] or "").lower() == "active":
-                    reviewed_at = datetime.now().date().isoformat()
-                    add_policy_review(
-                        self.conn,
-                        current_version_id,
-                        self.user_id,
-                        reviewed_at,
-                        None,
+            if (status or "").lower() == "active":
+                if self.user_id is None:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Unavailable",
+                        "User account not found. Unable to confirm status change.",
                     )
-        if self.current_policy_id:
-            self._load_policy_detail(self.current_policy_id)
-            if self._select_version_row_by_id(current_version_id):
-                self._on_version_selected()
-            self._load_policy_reviews(current_version_id)
-            self._refresh_policies(clear_selection=False)
-            self._load_audit_log()
-        self.detail_review_frequency.blockSignals(True)
-        self.detail_review_due.blockSignals(True)
-        self._apply_review_metadata_state(status, allow_edit=True)
-        self.detail_review_due.blockSignals(False)
-        self.detail_review_frequency.blockSignals(False)
-        self._update_review_schedule_display()
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+                password, ok = QtWidgets.QInputDialog.getText(
+                    self,
+                    "Confirm Password",
+                    "Enter your account password to activate this policy:",
+                    QtWidgets.QLineEdit.Password,
+                )
+                if not ok:
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+                user_row = self.conn.execute(
+                    "SELECT password_hash, salt FROM users WHERE id = ?",
+                    (self.user_id,),
+                ).fetchone()
+                if not user_row or not security.verify_password(
+                    password,
+                    user_row["password_hash"],
+                    user_row["salt"],
+                ):
+                    QtWidgets.QMessageBox.warning(self, "Invalid", "Password is incorrect.")
+                    if self.current_policy_id:
+                        self._load_policy_detail(self.current_policy_id)
+                    return
+            confirm = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Change",
+                f"Change Status from {current_status} to {status}?",
+            )
+            if confirm != QtWidgets.QMessageBox.Yes:
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
+            try:
+                set_version_status(
+                    self.conn,
+                    current_version_id,
+                    status,
+                    actor_username=self.username,
+                    actor_user_id=self.user_id,
+                )
+            except ValueError as exc:
+                QtWidgets.QMessageBox.warning(self, "Change Not Allowed", str(exc))
+                if self.current_policy_id:
+                    self._load_policy_detail(self.current_policy_id)
+                return
+            self.detail_status.blockSignals(True)
+            self._apply_status_constraints(status)
+            self.detail_status.blockSignals(False)
+            if (status or "").lower() == "active":
+                if current_version_id:
+                    updated_status = self.conn.execute(
+                        "SELECT status FROM policy_versions WHERE id = ?",
+                        (current_version_id,),
+                    ).fetchone()
+                    if updated_status and (updated_status["status"] or "").lower() == "active":
+                        reviewed_at = datetime.now().date().isoformat()
+                        add_policy_review(
+                            self.conn,
+                            current_version_id,
+                            self.user_id,
+                            reviewed_at,
+                            None,
+                        )
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+                if self._select_version_row_by_id(current_version_id):
+                    self._on_version_selected()
+                self._load_policy_reviews(current_version_id)
+                self._refresh_policies(clear_selection=False)
+                self._load_audit_log()
+            self.detail_review_frequency.blockSignals(True)
+            self.detail_review_due.blockSignals(True)
+            self._apply_review_metadata_state(status, allow_edit=True)
+            self.detail_review_due.blockSignals(False)
+            self.detail_review_frequency.blockSignals(False)
+            self._update_review_schedule_display()
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Status Update Failed",
+                f"Unable to update the policy status: {exc}",
+            )
+            if self.current_policy_id:
+                self._load_policy_detail(self.current_policy_id)
+                if current_version_id:
+                    self._load_policy_reviews(current_version_id)
+                else:
+                    self._clear_policy_reviews()
+                self._refresh_policies(clear_selection=False)
+                self._load_audit_log()
+            return
 
     def _on_review_due_changed(self, value: QtCore.QDate) -> None:
         """Handle review due date updates from the metadata form."""
