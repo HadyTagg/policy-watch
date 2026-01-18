@@ -1095,21 +1095,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 is_missing=is_missing_status,
             )
             is_draft = normalized_status == "draft"
+            is_archived = normalized_status == "archived"
             review_status_item = QtWidgets.QTableWidgetItem(
                 self._format_version_review_status(version.get("status"), version.get("review_due_date"))
             )
             review_due_item = QtWidgets.QTableWidgetItem(
-                "" if is_draft else self._format_date_display(version.get("review_due_date"))
+                "Archived"
+                if is_archived
+                else ("" if is_draft else self._format_date_display(version.get("review_due_date")))
             )
             review_frequency_label = (
-                "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+                "Archived"
+                if is_archived
+                else (
+                    "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+                )
             )
             review_frequency_item = QtWidgets.QTableWidgetItem(review_frequency_label)
             review_frequency_item.setData(
                 QtCore.Qt.UserRole + 2,
                 self._review_frequency_option_labels(review_frequency_label),
             )
-            owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
+            owner_item = QtWidgets.QTableWidgetItem(
+                "Archived" if is_archived else (version.get("owner") or "Unassigned")
+            )
             status_item.setData(
                 QtCore.Qt.UserRole + 2,
                 self._status_transition_options(version.get("status")),
@@ -2613,7 +2622,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
-        apply_pill_delegate(self.version_table, ["Review Status"])
+        apply_pill_delegate(self.version_table, ["Review Status", "Review Due"])
         popup_delay_ms = 0
         status_delegate = EnumComboPillDelegate(
             ["Draft", "Ratified", "Active", "Withdrawn", "Archived"],

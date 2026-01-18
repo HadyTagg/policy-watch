@@ -691,9 +691,10 @@ def add_policy_version(
     if not review_due_date:
         review_due_date = ""
     normalized_status = _normalize_version_status(status)
-    if normalized_status != "Draft":
+    allow_non_draft = allow_active_version_id is not None
+    if normalized_status != "Draft" and not allow_non_draft:
         raise ValueError("New policy versions must start as Draft.")
-    status = "Draft"
+    status = normalized_status if allow_non_draft else "Draft"
     ratified_flag = 0
     ratified_at = None
     cursor = conn.execute(
