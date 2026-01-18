@@ -1017,7 +1017,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         versions = list_versions(self.conn, policy_id)
         versions.sort(key=lambda version: (version.get("version_number") or 0), reverse=True)
-        editable_columns = {3, 4, 8}
+        editable_columns = {3, 4, 7, 8}
         headers = [
             "Created",
             "Title",
@@ -1042,6 +1042,13 @@ class MainWindow(QtWidgets.QMainWindow):
             popup_delay_ms=0,
         )
         self.version_table.setItemDelegateForColumn(8, owner_delegate)
+        review_frequency_delegate = EnumComboPillDelegate(
+            self._review_frequency_option_labels(),
+            self._handle_version_table_combo_change,
+            parent=self.version_table,
+            popup_delay_ms=0,
+        )
+        self.version_table.setItemDelegateForColumn(7, review_frequency_delegate)
         self.version_table.clearContents()
         self.version_table.setColumnCount(len(headers))
         self.version_table.setHorizontalHeaderLabels(headers)
@@ -1094,8 +1101,13 @@ class MainWindow(QtWidgets.QMainWindow):
             review_due_item = QtWidgets.QTableWidgetItem(
                 "" if is_draft else self._format_date_display(version.get("review_due_date"))
             )
-            review_frequency_item = QtWidgets.QTableWidgetItem(
+            review_frequency_label = (
                 "" if is_draft else self._review_frequency_label(version.get("review_frequency_months"))
+            )
+            review_frequency_item = QtWidgets.QTableWidgetItem(review_frequency_label)
+            review_frequency_item.setData(
+                QtCore.Qt.UserRole + 2,
+                self._review_frequency_option_labels(review_frequency_label),
             )
             owner_item = QtWidgets.QTableWidgetItem(version.get("owner") or "Unassigned")
             status_item.setData(
@@ -1116,7 +1128,9 @@ class MainWindow(QtWidgets.QMainWindow):
             for column, item in enumerate(items):
                 self.version_table.setItem(row_index, column, item)
                 flags = item.flags()
-                if column in editable_columns and not locked:
+                if column == 7 and is_draft:
+                    flags &= ~QtCore.Qt.ItemIsEditable
+                elif column in editable_columns and not locked:
                     flags |= QtCore.Qt.ItemIsEditable
                 else:
                     flags &= ~QtCore.Qt.ItemIsEditable
@@ -1173,13 +1187,16 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 self._mark_unratified()
             return
+        if header == "review frequency":
+            self._update_review_frequency_from_table(version_id, value)
+            return
         if header == "owner":
             self._update_version_owner_from_table(version_id, value)
 
     def _on_version_table_item_clicked(self, item: QtWidgets.QTableWidgetItem) -> None:
         """Open combo editors immediately for editable enum columns."""
 
-        if item.column() not in {3, 4, 8}:
+        if item.column() not in {3, 4, 7, 8}:
             return
         if not (item.flags() & QtCore.Qt.ItemIsEditable):
             return
@@ -1817,6 +1834,34 @@ class MainWindow(QtWidgets.QMainWindow):
         review_due_value = self._get_date_field_value(self.detail_review_due)
         self.detail_review_days_remaining.setText(self._format_days_remaining(review_due_value))
 
+    def _review_frequency_option_labels(self, current_label: str | None = None) -> list[str]:
+        """Return review frequency labels for inline editing."""
+
+        base_options = ["Annual", "Biannual", "Quarterly", "Monthly", "None"]
+        label = (current_label or "").strip()
+        if label and label not in base_options:
+            base_options.append(label)
+        return base_options
+
+    def _parse_review_frequency_label(self, label: str) -> int | None:
+        """Convert a review frequency label back to a month count."""
+
+        normalized = (label or "").strip().lower()
+        if not normalized or normalized == "none":
+            return None
+        mapping = {
+            "annual": 12,
+            "biannual": 6,
+            "quarterly": 3,
+            "monthly": 1,
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        match = re.search(r"(\d+)", normalized)
+        if match:
+            return int(match.group(1))
+        return None
+
     def _apply_review_metadata_state(self, status: str, allow_edit: bool = True) -> None:
         """Adjust review metadata controls based on version status."""
 
@@ -2274,8 +2319,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def _set_version_action_state(self, *, metadata_enabled: bool, document_enabled: bool) -> None:
         """Enable or disable version-specific actions."""
 
-        self.ratify_button.setEnabled(metadata_enabled)
-        self.unratify_button.setEnabled(metadata_enabled)
         self.open_location_button.setEnabled(document_enabled)
         self.print_document_button.setEnabled(document_enabled)
 
@@ -2480,6 +2523,32 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_policy_detail(self.current_policy_id)
         self._load_audit_log()
 
+    def _update_review_frequency_from_table(self, version_id: int, frequency_label: str) -> None:
+        """Apply review frequency updates from the version table."""
+
+        if not self.current_policy_id:
+            return
+        if self._selected_version_is_locked():
+            QtWidgets.QMessageBox.warning(self, "Locked Version", LOCKED_VERSION_MESSAGE)
+            return
+        frequency_value = self._parse_review_frequency_label(frequency_label)
+        self._update_policy_field(
+            "review_frequency_months",
+            frequency_value,
+            version_id=version_id,
+        )
+        review_due_value = self._calculate_review_due_value(frequency_value)
+        if review_due_value:
+            self._update_policy_field(
+                "review_due_date",
+                review_due_value,
+                confirm=False,
+                version_id=version_id,
+            )
+        self._refresh_policies(clear_selection=False)
+        self._load_policy_detail(self.current_policy_id)
+        self._load_audit_log()
+
     def _on_category_changed(self, category: str) -> None:
         """Handle category updates from the metadata form."""
 
@@ -2669,12 +2738,6 @@ class MainWindow(QtWidgets.QMainWindow):
         reviews_layout.addLayout(review_button_row)
 
         button_row = QtWidgets.QHBoxLayout()
-        self.ratify_button = QtWidgets.QPushButton("Mark Ratified")
-        set_button_icon(self.ratify_button, "approve")
-        self.ratify_button.clicked.connect(self._mark_ratified)
-        self.unratify_button = QtWidgets.QPushButton("Mark Unratified")
-        set_button_icon(self.unratify_button, "cancel")
-        self.unratify_button.clicked.connect(self._mark_unratified)
         self.open_location_button = QtWidgets.QPushButton("Open Policy Document")
         set_button_icon(self.open_location_button, "open")
         self.open_location_button.clicked.connect(self._open_file_location)
@@ -2685,9 +2748,6 @@ class MainWindow(QtWidgets.QMainWindow):
         set_button_icon(self.add_version_button, "add")
         self.add_version_button.clicked.connect(self._upload_version)
         button_row.addWidget(self.add_version_button)
-        button_row.addStretch(2)
-        button_row.addWidget(self.ratify_button)
-        button_row.addWidget(self.unratify_button)
         button_row.addStretch(2)
         button_row.addWidget(self.open_location_button)
         button_row.addWidget(self.print_document_button)
