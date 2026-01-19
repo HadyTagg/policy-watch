@@ -1101,6 +1101,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             is_draft = normalized_status == "draft"
             is_archived = normalized_status == "archived"
+            is_withdrawn = normalized_status == "withdrawn"
             review_status_item = QtWidgets.QTableWidgetItem(
                 self._format_version_review_status(version.get("status"), version.get("review_due_date"))
             )
@@ -1111,7 +1112,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Archived"
                     if is_archived
                     else (
-                        "Draft" if is_draft else self._format_date_display(version.get("review_due_date"))
+                        "Withdrawn"
+                        if is_withdrawn
+                        else (
+                            "Draft"
+                            if is_draft
+                            else self._format_date_display(version.get("review_due_date"))
+                        )
                     )
                 )
             )
@@ -1122,9 +1129,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     "Archived"
                     if is_archived
                     else (
-                        "Draft"
-                        if is_draft
-                        else self._review_frequency_label(version.get("review_frequency_months"))
+                        "Withdrawn"
+                        if is_withdrawn
+                        else (
+                            "Draft"
+                            if is_draft
+                            else self._review_frequency_label(version.get("review_frequency_months"))
+                        )
                     )
                 )
             )
