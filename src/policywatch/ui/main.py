@@ -59,6 +59,7 @@ from policywatch.ui.widgets import (
     BooleanIconDelegate,
     EnumComboPillDelegate,
     KpiCard,
+    PolicyLifecycleTimeline,
     apply_pill_delegate,
     apply_table_focusless,
     set_button_icon,
@@ -1568,6 +1569,9 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         if not version:
             return
+        self.lifecycle_timeline.set_current_stage(
+            self._resolve_lifecycle_stage(version["status"], version["ratified"])
+        )
         is_missing_status = (version["status"] or "").lower() == "missing"
         self.detail_status.blockSignals(True)
         self.detail_review_due.blockSignals(True)
@@ -2442,6 +2446,26 @@ class MainWindow(QtWidgets.QMainWindow):
         ).fetchone()
         return row["id"] if row else None
 
+    def _resolve_lifecycle_stage(self, status: str | None, ratified) -> str:
+        """Resolve the lifecycle stage for the timeline."""
+
+        status_value = (status or "").strip().lower()
+        if status_value == "archived":
+            return "Archived"
+        if status_value == "withdrawn":
+            return "Withdrawn"
+        if status_value == "active":
+            return "Active"
+        is_ratified = False
+        if ratified is not None:
+            try:
+                is_ratified = bool(int(ratified))
+            except (TypeError, ValueError):
+                is_ratified = bool(ratified)
+        if is_ratified:
+            return "Ratified"
+        return "Draft"
+
     def _clear_policy_metadata_fields(self) -> None:
         """Reset policy metadata fields when no version is selected."""
 
@@ -2467,6 +2491,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.detail_ratified_at.setText("")
         self.detail_ratified_by.setText("")
         self.detail_last_reviewed.setText("")
+        self.lifecycle_timeline.set_current_stage("Draft")
         self._version_locked = False
         self.version_locked_banner.setVisible(False)
         self.detail_status.blockSignals(False)
@@ -2669,6 +2694,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.version_table.itemSelectionChanged.connect(self._on_version_selected)
         versions_layout.addWidget(self.version_table)
 
+        self.lifecycle_timeline = PolicyLifecycleTimeline()
+
         summary = QtWidgets.QGroupBox()
         summary_layout = QtWidgets.QVBoxLayout(summary)
         summary_header = QtWidgets.QHBoxLayout()
@@ -2796,6 +2823,7 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row.addWidget(self.print_document_button)
 
         layout.addWidget(versions)
+        layout.addWidget(self.lifecycle_timeline)
         layout.addWidget(reviews)
         layout.addWidget(summary)
         layout.addLayout(button_row)
