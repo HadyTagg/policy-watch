@@ -8,6 +8,185 @@ from policywatch.ui import theme
 from policywatch.ui.styles import PILL_STYLES
 
 
+class PolicyLifecycleTimeline(QtWidgets.QFrame):
+    """Visual lifecycle timeline for a policy version."""
+
+    STAGES = ["Draft", "Ratified", "Active", "Withdrawn", "Archived"]
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("PolicyLifecycleTimeline")
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.setMinimumHeight(theme.SPACING["xl"] * 3)
+        self.setMouseTracking(True)
+        self._current_stage = "Draft"
+        self._step_hit_areas: list[QtCore.QRect] = []
+
+    def sizeHint(self) -> QtCore.QSize:
+        """Return a recommended size for the timeline."""
+
+        return QtCore.QSize(520, theme.SPACING["xl"] * 3)
+
+    def set_current_stage(self, stage: str | None) -> None:
+        """Update the currently highlighted stage."""
+
+        stage = stage or "Draft"
+        if stage not in self.STAGES:
+            stage = "Draft"
+        if stage == self._current_stage:
+            return
+        self._current_stage = stage
+        self.update()
+
+    def _current_index(self) -> int:
+        """Return the current stage index, defaulting to Draft."""
+
+        try:
+            return self.STAGES.index(self._current_stage)
+        except ValueError:
+            return 0
+
+    def paintEvent(self, event: QtGui.QPaintEvent) -> None:
+        """Paint the lifecycle timeline."""
+
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        option = QtWidgets.QStyleOption()
+        option.initFrom(self)
+        self.style().drawPrimitive(QtWidgets.QStyle.PE_Widget, option, painter, self)
+
+        rect = self.rect()
+        padding = theme.SPACING["md"]
+        content_rect = rect.adjusted(padding, padding, -padding, -padding)
+
+        stages = self.STAGES
+        stage_count = len(stages)
+        if stage_count < 2 or content_rect.width() <= 0:
+            return
+
+        accent = QtGui.QColor(theme.COLORS["accent"])
+        success = QtGui.QColor(PILL_STYLES["active"]["border"])
+        muted = self.palette().color(QtGui.QPalette.Disabled, QtGui.QPalette.Text)
+        text = self.palette().color(QtGui.QPalette.Text)
+        border = self.palette().color(QtGui.QPalette.Mid)
+
+        label_font = QtGui.QFont(self.font())
+        label_font.setPointSize(theme.FONT_SIZES["small"])
+        label_font.setWeight(QtGui.QFont.Medium)
+        painter.setFont(label_font)
+        metrics = QtGui.QFontMetrics(label_font)
+
+        base_radius = theme.SPACING["sm"]
+        current_radius = base_radius + 2
+        node_y = content_rect.top() + current_radius
+        label_y = node_y + current_radius + theme.SPACING["xs"]
+
+        available_width = content_rect.width() - current_radius * 2
+        step = available_width / (stage_count - 1)
+
+        centers = []
+        for index in range(stage_count):
+            x = content_rect.left() + current_radius + step * index
+            centers.append(QtCore.QPointF(x, node_y))
+
+        current_index = self._current_index()
+        self._step_hit_areas = []
+
+        line_pen = QtGui.QPen(border, 2)
+        painter.setPen(line_pen)
+        for index in range(stage_count - 1):
+            start = centers[index]
+            end = centers[index + 1]
+            if index < current_index:
+                line_pen.setColor(success)
+            else:
+                line_pen.setColor(muted)
+            painter.setPen(line_pen)
+            painter.drawLine(start, end)
+
+        for index, center in enumerate(centers):
+            stage = stages[index]
+            is_completed = index < current_index
+            is_current = index == current_index
+            radius = current_radius if is_current else base_radius
+            node_rect = QtCore.QRectF(
+                center.x() - radius,
+                center.y() - radius,
+                radius * 2,
+                radius * 2,
+            )
+            self._step_hit_areas.append(node_rect.toRect().adjusted(-6, -6, 6, 6))
+
+            if is_completed:
+                painter.setBrush(success)
+                painter.setPen(QtGui.QPen(success, 2))
+            elif is_current:
+                painter.setBrush(accent)
+                painter.setPen(QtGui.QPen(accent, 2))
+            else:
+                painter.setBrush(QtCore.Qt.NoBrush)
+                painter.setPen(QtGui.QPen(muted, 2))
+
+            painter.drawEllipse(node_rect)
+
+            if is_completed:
+                check_pen = QtGui.QPen(QtGui.QColor("#ffffff"), 2)
+                painter.setPen(check_pen)
+                check_path = QtGui.QPainterPath()
+                check_path.moveTo(center.x() - radius * 0.4, center.y() + radius * 0.05)
+                check_path.lineTo(center.x() - radius * 0.1, center.y() + radius * 0.35)
+                check_path.lineTo(center.x() + radius * 0.45, center.y() - radius * 0.35)
+                painter.drawPath(check_path)
+
+            label_width = max(step, 40)
+            label_rect = QtCore.QRectF(
+                center.x() - label_width / 2,
+                label_y,
+                label_width,
+                metrics.height(),
+            )
+            label_text = metrics.elidedText(stage, QtCore.Qt.ElideRight, int(label_width))
+            if is_current:
+                painter.setPen(accent)
+            elif is_completed:
+                painter.setPen(text)
+            else:
+                painter.setPen(muted)
+            painter.drawText(label_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, label_text)
+
+        painter.end()
+
+    def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
+        """Show tooltips for lifecycle steps."""
+
+        for index, hit in enumerate(self._step_hit_areas):
+            if hit.contains(event.pos()):
+                stage = self.STAGES[index]
+                current_index = self._current_index()
+                if index < current_index:
+                    message = f"{stage} has been completed for this policy version."
+                elif index == current_index:
+                    message = f"This policy version is currently {stage}."
+                else:
+                    message = f"{stage} is upcoming for this policy version."
+                QtWidgets.QToolTip.showText(
+                    event.globalPos(),
+                    message,
+                    self,
+                )
+                break
+        else:
+            QtWidgets.QToolTip.hideText()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event: QtCore.QEvent) -> None:
+        """Hide tooltip when leaving the widget."""
+
+        QtWidgets.QToolTip.hideText()
+        super().leaveEvent(event)
+
+
 FOCUSLESS_TABLE_STYLES = """
 QTableView::item:focus {
     outline: none;

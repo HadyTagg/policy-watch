@@ -164,6 +164,11 @@ def build_stylesheet(font_family: str) -> str:
         background: #eff6ff;
         border-color: {COLORS['accent']};
     }}
+    QFrame#PolicyLifecycleTimeline {{
+        background: #ffffff;
+        border: 1px solid {COLORS['neutral_100']};
+        border-radius: 10px;
+    }}
     QLabel#KpiTitle {{
         color: {COLORS['neutral_500']};
         font-size: {FONT_SIZES['small']}pt;
