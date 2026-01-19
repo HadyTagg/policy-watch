@@ -59,7 +59,6 @@ from policywatch.ui.widgets import (
     BooleanIconDelegate,
     EnumComboPillDelegate,
     KpiCard,
-    apply_boolean_icon_delegate,
     apply_pill_delegate,
     apply_table_focusless,
     set_button_icon,
@@ -234,8 +233,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
         apply_table_focusless(self.table)
-        apply_pill_delegate(self.table, ["Status", "Review Status"])
-        apply_boolean_icon_delegate(self.table, ["Ratified"])
+        apply_pill_delegate(
+            self.table,
+            ["Status", "Review Status", "Ratified", "Review Due", "Active Version", "Owner"],
+        )
 
         self.table.itemSelectionChanged.connect(self._on_policy_selected)
         self.table.doubleClicked.connect(self.open_policy_detail_from_index)
@@ -597,25 +598,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 status_item.setToolTip(status_payload["tooltip"])
                 is_draft = (policy.status or "").lower() == "draft"
                 review_due_item = QtWidgets.QTableWidgetItem(
-                    "" if is_draft else self._format_date_display(policy.review_due_date)
+                    "Draft" if is_draft else self._format_date_display(policy.review_due_date)
                 )
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
                 ratified_item = QtWidgets.QTableWidgetItem("Yes" if policy.ratified else "No")
-                ratified_item.setData(QtCore.Qt.UserRole, bool(policy.ratified))
                 owner_item = QtWidgets.QTableWidgetItem(policy.owner or "Unassigned")
             else:
-                active_version_item = QtWidgets.QTableWidgetItem("")
+                active_version_item = QtWidgets.QTableWidgetItem("No Version")
                 status_payload = self._build_status_chip("No version")
                 status_item = QtWidgets.QTableWidgetItem(status_payload["text"])
                 status_item.setToolTip(status_payload["tooltip"])
-                review_due_item = QtWidgets.QTableWidgetItem("")
+                review_due_item = QtWidgets.QTableWidgetItem("No Version")
                 review_status_payload = self._build_review_status_chip(policy)
                 days_remaining_item = QtWidgets.QTableWidgetItem(review_status_payload["text"])
                 days_remaining_item.setToolTip(review_status_payload["tooltip"])
-                ratified_item = QtWidgets.QTableWidgetItem("")
-                owner_item = QtWidgets.QTableWidgetItem("")
+                ratified_item = QtWidgets.QTableWidgetItem("No Version")
+                owner_item = QtWidgets.QTableWidgetItem("No Version")
             items = [
                 category_item,
                 title_item,
