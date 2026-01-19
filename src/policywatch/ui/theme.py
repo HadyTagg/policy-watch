@@ -173,6 +173,15 @@ def build_stylesheet(font_family: str) -> str:
         font-weight: 700;
         color: {COLORS['neutral_900']};
     }}
+    QLabel#KpiValue[kpiTone="success"] {{
+        color: #16a34a;
+    }}
+    QLabel#KpiValue[kpiTone="warning"] {{
+        color: #d97706;
+    }}
+    QLabel#KpiValue[kpiTone="danger"] {{
+        color: #dc2626;
+    }}
     """
 
 
