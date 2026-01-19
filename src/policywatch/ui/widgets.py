@@ -411,6 +411,8 @@ def _draw_editable_indicator(
 def _should_show_editable_indicator(index: QtCore.QModelIndex) -> bool:
     if not index.isValid():
         return False
+    if bool(index.data(QtCore.Qt.UserRole + 4)):
+        return False
     if not (index.flags() & QtCore.Qt.ItemIsEditable):
         return False
     if bool(index.data(QtCore.Qt.UserRole + 3)):
