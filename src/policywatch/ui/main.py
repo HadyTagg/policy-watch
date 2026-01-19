@@ -1164,6 +1164,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     flags &= ~QtCore.Qt.ItemIsEditable
                 item.setFlags(flags)
                 item.setData(QtCore.Qt.UserRole + 3, locked)
+                if column == 4:
+                    item.setData(QtCore.Qt.UserRole + 4, True)
                 if integrity_issue:
                     item.setForeground(QtGui.QColor("#9ca3af"))
                     item.setToolTip(f"Integrity issue: {issue_reason}")
@@ -2640,6 +2642,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
+        self.version_table.setProperty("editable_indicator", True)
         apply_table_focusless(self.version_table)
         apply_pill_delegate(self.version_table, ["Review Status", "Review Due"])
         popup_delay_ms = 0

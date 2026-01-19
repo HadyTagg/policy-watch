@@ -149,15 +149,18 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
         label = str(raw_text).strip() if raw_text is not None else ""
         if not label:
             super().paint(painter, option, index)
+            _draw_editable_indicator(painter, option, index)
             return
 
         style = self._style_map.get(label.lower(), self._default_style)
         if not style:
             super().paint(painter, option, index)
+            _draw_editable_indicator(painter, option, index)
             return
 
         if option.rect.width() <= 8 or option.rect.height() <= 8:
             super().paint(painter, option, index)
+            _draw_editable_indicator(painter, option, index)
             return
 
         painter.save()
@@ -209,6 +212,7 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
 
         painter.setPen(QtGui.QColor(style["fg"]))
         painter.drawText(chip_rect, QtCore.Qt.AlignCenter, elided_label)
+        _draw_editable_indicator(painter, option, index)
         painter.restore()
 
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
@@ -319,6 +323,7 @@ class BooleanIconDelegate(QtWidgets.QStyledItemDelegate):
         bool_value = self._coerce_bool(value)
         if bool_value is None:
             super().paint(painter, option, index)
+            _draw_editable_indicator(painter, option, index)
             return
 
         painter.save()
@@ -335,6 +340,7 @@ class BooleanIconDelegate(QtWidgets.QStyledItemDelegate):
             x = option.rect.x() + (option.rect.width() - pixmap.width()) // 2
             y = option.rect.y() + (option.rect.height() - pixmap.height()) // 2
             painter.drawPixmap(x, y, pixmap)
+        _draw_editable_indicator(painter, option, index)
         painter.restore()
 
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:
@@ -367,6 +373,57 @@ class BooleanIconDelegate(QtWidgets.QStyledItemDelegate):
             if normalized in {"no", "false", "0", "not ratified", "unratified"}:
                 return False
         return None
+
+
+def _draw_editable_indicator(
+    painter: QtGui.QPainter,
+    option: QtWidgets.QStyleOptionViewItem,
+    index: QtCore.QModelIndex,
+) -> None:
+    if not _should_show_editable_indicator(index):
+        return
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    padding = theme.SPACING["xs"]
+    size = max(8, int(option.rect.height() * 0.4))
+    if option.rect.width() <= size + padding * 2:
+        painter.restore()
+        return
+    center_x = option.rect.right() - padding - size / 2
+    center_y = option.rect.top() + option.rect.height() / 2
+    color = theme.COLORS["neutral_700"] if option.state & QtWidgets.QStyle.State_Selected else theme.COLORS[
+        "neutral_500"
+    ]
+    half = size / 2
+    triangle = QtGui.QPolygonF(
+        [
+            QtCore.QPointF(center_x - half, center_y - half / 1.2),
+            QtCore.QPointF(center_x + half, center_y - half / 1.2),
+            QtCore.QPointF(center_x, center_y + half / 1.2),
+        ]
+    )
+    painter.setPen(QtCore.Qt.NoPen)
+    painter.setBrush(QtGui.QColor(color))
+    painter.drawPolygon(triangle)
+    painter.restore()
+
+
+def _should_show_editable_indicator(index: QtCore.QModelIndex) -> bool:
+    if not index.isValid():
+        return False
+    if bool(index.data(QtCore.Qt.UserRole + 4)):
+        return False
+    if not (index.flags() & QtCore.Qt.ItemIsEditable):
+        return False
+    if bool(index.data(QtCore.Qt.UserRole + 3)):
+        return False
+    widget = None
+    parent = index.model()
+    if parent is not None:
+        widget = parent.parent()
+    if not isinstance(widget, QtWidgets.QWidget):
+        return False
+    return bool(widget.property("editable_indicator"))
 
 
 def apply_pill_delegate(
