@@ -382,24 +382,29 @@ def _draw_editable_indicator(
 ) -> None:
     if not _should_show_editable_indicator(index):
         return
-    indicator = "▾"
-    font = QtGui.QFont(option.font)
-    font.setPointSize(theme.FONT_SIZES["small"])
-    font.setWeight(QtGui.QFont.Medium)
-    metrics = QtGui.QFontMetrics(font)
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing)
     padding = theme.SPACING["xs"]
-    text_width = metrics.horizontalAdvance(indicator)
-    if option.rect.width() <= text_width + padding * 2:
+    size = max(8, int(option.rect.height() * 0.4))
+    if option.rect.width() <= size + padding * 2:
+        painter.restore()
         return
-    x = option.rect.right() - text_width - padding
-    baseline = option.rect.top() + (option.rect.height() + metrics.ascent() - metrics.descent()) // 2
+    center_x = option.rect.right() - padding - size / 2
+    center_y = option.rect.top() + option.rect.height() / 2
     color = theme.COLORS["neutral_700"] if option.state & QtWidgets.QStyle.State_Selected else theme.COLORS[
         "neutral_500"
     ]
-    painter.save()
-    painter.setFont(font)
-    painter.setPen(QtGui.QColor(color))
-    painter.drawText(QtCore.QPoint(x, baseline), indicator)
+    half = size / 2
+    triangle = QtGui.QPolygonF(
+        [
+            QtCore.QPointF(center_x - half, center_y - half / 1.2),
+            QtCore.QPointF(center_x + half, center_y - half / 1.2),
+            QtCore.QPointF(center_x, center_y + half / 1.2),
+        ]
+    )
+    painter.setPen(QtCore.Qt.NoPen)
+    painter.setBrush(QtGui.QColor(color))
+    painter.drawPolygon(triangle)
     painter.restore()
 
 
