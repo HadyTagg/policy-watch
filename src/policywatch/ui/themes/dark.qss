@@ -159,3 +159,12 @@ QLabel#KpiValue {
     font-weight: 700;
     color: #f8fafc;
 }
+QLabel#KpiValue[kpiTone="success"] {
+    color: #22c55e;
+}
+QLabel#KpiValue[kpiTone="warning"] {
+    color: #f59e0b;
+}
+QLabel#KpiValue[kpiTone="danger"] {
+    color: #f87171;
+}

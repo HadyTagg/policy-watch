@@ -97,6 +97,14 @@ class KpiCard(QtWidgets.QFrame):
         self.value_label = QtWidgets.QLabel(value)
         self.value_label.setObjectName("KpiValue")
         self.value_label.setAlignment(QtCore.Qt.AlignCenter)
+        tone_map = {
+            "active": "success",
+            "due_soon": "warning",
+            "overdue": "danger",
+        }
+        tone = tone_map.get(key)
+        if tone:
+            self.value_label.setProperty("kpiTone", tone)
         value_font = QtGui.QFont(self.value_label.font())
         value_font.setPointSize(36)
         value_font.setWeight(QtGui.QFont.Bold)
