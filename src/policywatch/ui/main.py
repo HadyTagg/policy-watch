@@ -2650,8 +2650,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_policy_detail(self) -> QtWidgets.QWidget:
         """Build the policy detail tab UI."""
 
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+
         wrapper = QtWidgets.QWidget()
+        wrapper.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
         layout = QtWidgets.QVBoxLayout(wrapper)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
 
         versions = QtWidgets.QGroupBox("Version History")
         versions_layout = QtWidgets.QVBoxLayout(versions)
@@ -2829,7 +2838,8 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(reviews)
         layout.addWidget(summary)
         layout.addLayout(button_row)
-        return wrapper
+        scroll_area.setWidget(wrapper)
+        return scroll_area
 
     def _build_email_compose(self) -> QtWidgets.QWidget:
         """Build the policy distributor tab UI."""
