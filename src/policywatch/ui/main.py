@@ -2640,6 +2640,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setPointSize(9)
         version_font.setBold(True)
         self.version_table.setFont(version_font)
+        self.version_table.setProperty("editable_indicator", True)
         apply_table_focusless(self.version_table)
         apply_pill_delegate(self.version_table, ["Review Status", "Review Due"])
         popup_delay_ms = 0

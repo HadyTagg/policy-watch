@@ -382,7 +382,7 @@ def _draw_editable_indicator(
 ) -> None:
     if not _should_show_editable_indicator(index):
         return
-    indicator = "✎"
+    indicator = "▾"
     font = QtGui.QFont(option.font)
     font.setPointSize(theme.FONT_SIZES["small"])
     font.setWeight(QtGui.QFont.Medium)
@@ -410,7 +410,13 @@ def _should_show_editable_indicator(index: QtCore.QModelIndex) -> bool:
         return False
     if bool(index.data(QtCore.Qt.UserRole + 3)):
         return False
-    return True
+    widget = None
+    parent = index.model()
+    if parent is not None:
+        widget = parent.parent()
+    if not isinstance(widget, QtWidgets.QWidget):
+        return False
+    return bool(widget.property("editable_indicator"))
 
 
 def apply_pill_delegate(
