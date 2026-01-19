@@ -59,6 +59,7 @@ from policywatch.ui.widgets import (
     BooleanIconDelegate,
     EnumComboPillDelegate,
     KpiCard,
+    apply_clickable_cell_indicator,
     apply_pill_delegate,
     apply_table_focusless,
     set_button_icon,
@@ -233,6 +234,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(44)
         apply_table_focusless(self.table)
+        apply_clickable_cell_indicator(self.table)
         apply_pill_delegate(
             self.table,
             ["Status", "Review Status", "Ratified", "Review Due", "Active Version", "Owner"],
@@ -2641,6 +2643,7 @@ class MainWindow(QtWidgets.QMainWindow):
         version_font.setBold(True)
         self.version_table.setFont(version_font)
         apply_table_focusless(self.version_table)
+        apply_clickable_cell_indicator(self.version_table)
         apply_pill_delegate(self.version_table, ["Review Status", "Review Due"])
         popup_delay_ms = 0
         status_delegate = EnumComboPillDelegate(
@@ -2825,6 +2828,7 @@ class MainWindow(QtWidgets.QMainWindow):
         send_font.setBold(True)
         self.policy_send_table.setFont(send_font)
         apply_table_focusless(self.policy_send_table)
+        apply_clickable_cell_indicator(self.policy_send_table)
 
         self.policy_send_table.itemChanged.connect(self._on_send_policy_item_changed)
         self.policy_send_table.itemClicked.connect(self._on_send_policy_item_clicked)
@@ -2865,6 +2869,7 @@ class MainWindow(QtWidgets.QMainWindow):
         audit_font.setBold(True)
         self.staff_table.setFont(audit_font)
         apply_table_focusless(self.staff_table)
+        apply_clickable_cell_indicator(self.staff_table)
 
 
         recipient_layout.addWidget(self.staff_table)

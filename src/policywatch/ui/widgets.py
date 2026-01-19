@@ -426,3 +426,13 @@ def apply_table_focusless(table: QtWidgets.QAbstractItemView) -> None:
         return
     combined = "\n".join(part for part in [current_stylesheet, FOCUSLESS_TABLE_STYLES] if part)
     table.setStyleSheet(combined)
+
+
+def apply_clickable_cell_indicator(table: QtWidgets.QAbstractItemView) -> None:
+    """Enable hover indicators for tables with clickable cells."""
+
+    table.setProperty("clickableCells", True)
+    table.setMouseTracking(True)
+    table.style().unpolish(table)
+    table.style().polish(table)
+    table.viewport().update()

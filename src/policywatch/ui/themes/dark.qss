@@ -77,6 +77,9 @@ QTableView::item:hover {
     background-color: #1f2937;
     padding-left: 12px;
 }
+QTableView[clickableCells="true"]::item:hover:!selected {
+    color: #60a5fa;
+}
 QTableView::item:selected:hover {
     background-color: #1f2937;
     padding-left: 12px;
@@ -103,6 +106,9 @@ QTableWidget::item:focus {
 QTableWidget::item:hover {
     background-color: #1f2937;
     padding-left: 12px;
+}
+QTableWidget[clickableCells="true"]::item:hover:!selected {
+    color: #60a5fa;
 }
 QTableWidget::item:selected:hover {
     background-color: #1f2937;

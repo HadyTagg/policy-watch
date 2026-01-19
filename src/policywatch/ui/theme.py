@@ -128,9 +128,15 @@ def build_stylesheet(font_family: str) -> str:
     QTableView::item:hover {{
         background-color: {COLORS['neutral_50']};
     }}
+    QTableView[clickableCells="true"]::item:hover:!selected {{
+        color: {COLORS['accent']};
+    }}
     QTableWidget::item:focus {{
         outline: none;
         border: none;
+    }}
+    QTableWidget[clickableCells="true"]::item:hover:!selected {{
+        color: {COLORS['accent']};
     }}
     QTabWidget::pane {{
         border: 1px solid {COLORS['neutral_100']};
